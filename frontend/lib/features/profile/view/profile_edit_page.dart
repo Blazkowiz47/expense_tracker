@@ -28,6 +28,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   final _picker = ImagePicker();
   Uint8List? _pickedImageBytes;
   String? _pickedImageName;
+  String? _photoUrl;
   bool _saving = false;
   bool _uploadingPhoto = false;
   double? _uploadProgress;
@@ -38,14 +39,22 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.profile.displayName);
+    _nameController.addListener(_onNameChanged);
     _emailController = TextEditingController(text: widget.profile.email);
+    _photoUrl = widget.profile.photoUrl;
   }
 
   @override
   void dispose() {
+    _nameController.removeListener(_onNameChanged);
     _nameController.dispose();
     _emailController.dispose();
     super.dispose();
+  }
+
+  void _onNameChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _pickPhoto() async {
@@ -100,7 +109,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       _status = 'Uploading profile photo...';
     });
     try {
-      await widget.repository.uploadProfilePhoto(
+      final downloadUrl = await widget.repository.uploadProfilePhoto(
         user: widget.user,
         bytes: bytes,
         fileNameHint: _pickedImageName ?? 'profile_photo.jpg',
@@ -111,6 +120,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       );
       if (!mounted) return;
       setState(() {
+        _photoUrl = downloadUrl;
+        _pickedImageBytes = null;
+        _pickedImageName = null;
         _status = 'Profile photo uploaded successfully.';
       });
     } on FirebaseException catch (error) {
@@ -177,11 +189,11 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final hasNameChanges =
+        _nameController.text.trim() != widget.profile.displayName;
     final photoProvider = _pickedImageBytes != null
         ? MemoryImage(_pickedImageBytes!)
-        : (widget.profile.photoUrl?.isNotEmpty == true
-                  ? NetworkImage(widget.profile.photoUrl!)
-                  : null)
+        : (_photoUrl?.isNotEmpty == true ? NetworkImage(_photoUrl!) : null)
               as ImageProvider<Object>?;
 
     return Scaffold(
@@ -253,17 +265,19 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                   ),
                 ],
               ],
-              const SizedBox(height: 20),
-              FilledButton(
-                onPressed: (_saving || _uploadingPhoto) ? null : _save,
-                child: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Save'),
-              ),
+              if (hasNameChanges) ...[
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: (_saving || _uploadingPhoto) ? null : _save,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save'),
+                ),
+              ],
             ],
           ),
         ),
