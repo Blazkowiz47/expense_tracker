@@ -2,6 +2,8 @@ import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/core/utils/platform_page_route.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/core/utils/responsive_layout.dart';
+import 'package:expense_tracker/core/widgets/smart_selection_area.dart';
+import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/account/view/account_page.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
@@ -95,29 +97,43 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   @override
   Widget build(BuildContext context) {
+    final accountPhotoUrl = context.select(
+      (AuthCubit cubit) => cubit.state.user?.photoURL,
+    );
     return BlocProvider.value(
       value: _dashboardCubit,
-      child: PlatformWidget(
-        ios: ResponsiveLayout(
-          mobile: _buildCupertinoMobileShell(),
-          tablet: _buildDesktopScaffold(),
-          desktop: _buildDesktopScaffold(),
-        ),
-        android: ResponsiveLayout(
-          mobile: _buildMobileScaffold(centerTitle: false),
-          tablet: _buildDesktopScaffold(),
-          desktop: _buildDesktopScaffold(),
-        ),
-        web: ResponsiveLayout(
-          mobile: _buildMobileScaffold(centerTitle: false),
-          tablet: _buildDesktopScaffold(),
-          desktop: _buildDesktopScaffold(),
+      child: SmartSelectionArea(
+        child: PlatformWidget(
+          ios: ResponsiveLayout(
+            mobile: _buildCupertinoMobileShell(accountPhotoUrl),
+            tablet: _buildDesktopScaffold(accountPhotoUrl),
+            desktop: _buildDesktopScaffold(accountPhotoUrl),
+          ),
+          android: ResponsiveLayout(
+            mobile: _buildMobileScaffold(
+              centerTitle: false,
+              accountPhotoUrl: accountPhotoUrl,
+            ),
+            tablet: _buildDesktopScaffold(accountPhotoUrl),
+            desktop: _buildDesktopScaffold(accountPhotoUrl),
+          ),
+          web: ResponsiveLayout(
+            mobile: _buildMobileScaffold(
+              centerTitle: false,
+              accountPhotoUrl: accountPhotoUrl,
+            ),
+            tablet: _buildDesktopScaffold(accountPhotoUrl),
+            desktop: _buildDesktopScaffold(accountPhotoUrl),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildMobileScaffold({required bool centerTitle}) {
+  Widget _buildMobileScaffold({
+    required bool centerTitle,
+    String? accountPhotoUrl,
+  }) {
     return Scaffold(
       appBar: AppBar(
         centerTitle: centerTitle,
@@ -131,13 +147,25 @@ class _HomeShellPageState extends State<HomeShellPage> {
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onDestinationSelected,
         destinations: _destinations
-            .map(
-              (d) => NavigationDestination(
-                icon: Icon(d.icon),
-                selectedIcon: Icon(d.selectedIcon),
-                label: d.label,
-              ),
-            )
+            .asMap()
+            .entries
+            .map((entry) {
+              final index = entry.key;
+              final destination = entry.value;
+              return NavigationDestination(
+                icon: _buildDestinationIcon(
+                  index: index,
+                  selected: false,
+                  accountPhotoUrl: accountPhotoUrl,
+                ),
+                selectedIcon: _buildDestinationIcon(
+                  index: index,
+                  selected: true,
+                  accountPhotoUrl: accountPhotoUrl,
+                ),
+                label: destination.label,
+              );
+            })
             .toList(growable: false),
       ),
       floatingActionButton: _showAddExpenseButton
@@ -147,7 +175,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
     );
   }
 
-  Widget _buildDesktopScaffold() {
+  Widget _buildDesktopScaffold(String? accountPhotoUrl) {
     return Scaffold(
       body: SafeArea(
         child: Row(
@@ -157,11 +185,21 @@ class _HomeShellPageState extends State<HomeShellPage> {
               labelType: NavigationRailLabelType.all,
               onDestinationSelected: _onDestinationSelected,
               destinations: _destinations
+                  .asMap()
+                  .entries
                   .map(
-                    (d) => NavigationRailDestination(
-                      icon: Icon(d.icon),
-                      selectedIcon: Icon(d.selectedIcon),
-                      label: Text(d.label),
+                    (entry) => NavigationRailDestination(
+                      icon: _buildDestinationIcon(
+                        index: entry.key,
+                        selected: false,
+                        accountPhotoUrl: accountPhotoUrl,
+                      ),
+                      selectedIcon: _buildDestinationIcon(
+                        index: entry.key,
+                        selected: true,
+                        accountPhotoUrl: accountPhotoUrl,
+                      ),
+                      label: Text(entry.value.label),
                     ),
                   )
                   .toList(growable: false),
@@ -208,13 +246,23 @@ class _HomeShellPageState extends State<HomeShellPage> {
     );
   }
 
-  Widget _buildCupertinoMobileShell() {
+  Widget _buildCupertinoMobileShell(String? accountPhotoUrl) {
     final tabItems = _destinations
+        .asMap()
+        .entries
         .map(
-          (d) => BottomNavigationBarItem(
-            icon: Icon(_toCupertinoIcon(d.icon)),
-            activeIcon: Icon(_toCupertinoIcon(d.selectedIcon)),
-            label: d.label,
+          (entry) => BottomNavigationBarItem(
+            icon: _buildCupertinoDestinationIcon(
+              index: entry.key,
+              selected: false,
+              accountPhotoUrl: accountPhotoUrl,
+            ),
+            activeIcon: _buildCupertinoDestinationIcon(
+              index: entry.key,
+              selected: true,
+              accountPhotoUrl: accountPhotoUrl,
+            ),
+            label: entry.value.label,
           ),
         )
         .toList(growable: false);
@@ -308,6 +356,41 @@ class _HomeShellPageState extends State<HomeShellPage> {
         return CupertinoIcons.circle;
     }
   }
+
+  Widget _buildDestinationIcon({
+    required int index,
+    required bool selected,
+    required String? accountPhotoUrl,
+  }) {
+    final destination = _destinations[index];
+    if (destination.label != 'Account') {
+      return Icon(selected ? destination.selectedIcon : destination.icon);
+    }
+    return _AccountDestinationAvatar(
+      photoUrl: accountPhotoUrl,
+      selected: selected,
+    );
+  }
+
+  Widget _buildCupertinoDestinationIcon({
+    required int index,
+    required bool selected,
+    required String? accountPhotoUrl,
+  }) {
+    final destination = _destinations[index];
+    if (destination.label != 'Account') {
+      return Icon(
+        _toCupertinoIcon(
+          selected ? destination.selectedIcon : destination.icon,
+        ),
+      );
+    }
+    return _AccountDestinationAvatar(
+      photoUrl: accountPhotoUrl,
+      selected: selected,
+      size: 22,
+    );
+  }
 }
 
 class _ShellDestination {
@@ -322,4 +405,41 @@ class _ShellDestination {
   final IconData icon;
   final IconData selectedIcon;
   final Widget page;
+}
+
+class _AccountDestinationAvatar extends StatelessWidget {
+  const _AccountDestinationAvatar({
+    required this.photoUrl,
+    required this.selected,
+    this.size = 22,
+  });
+
+  final String? photoUrl;
+  final bool selected;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (photoUrl == null || photoUrl!.isEmpty) {
+      return Icon(
+        selected ? Icons.account_circle : Icons.account_circle_outlined,
+      );
+    }
+
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image.network(
+          photoUrl!,
+          fit: BoxFit.cover,
+          webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+          errorBuilder: (context, error, stackTrace) => Icon(
+            selected ? Icons.account_circle : Icons.account_circle_outlined,
+            size: size,
+          ),
+        ),
+      ),
+    );
+  }
 }
