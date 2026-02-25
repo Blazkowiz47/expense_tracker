@@ -19,6 +19,7 @@ Run commands from each module directory.
 - For this repository, user approval is not required before running project-scoped `go` commands.
 - For this repository, user approval is not required before running `curl` commands against localhost/current-project URLs (for example `127.0.0.1`, `localhost`, and local dev ports like `8080` and `7357`).
 - After completing code/documentation changes, always run `git add` and create a brief, informative `git commit` summarizing what changed.
+- Since commits are created after changes, prefer using `git` (revert/reset/cherry-pick as appropriate and safe) to roll back mistakes instead of manually editing many previously changed files.
 
 Backend (`backend/`):
 - `go run ./cmd/server` - start local API server (default port `8080`).
