@@ -1,8 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -190,10 +189,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   Widget build(BuildContext context) {
     final hasNameChanges =
         _nameController.text.trim() != widget.profile.displayName;
-    final photoProvider = _pickedImageBytes != null
-        ? MemoryImage(_pickedImageBytes!)
-        : (_photoUrl?.isNotEmpty == true ? NetworkImage(_photoUrl!) : null)
-              as ImageProvider<Object>?;
+    final avatarDiameter = 88.0;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Edit profile')),
@@ -204,12 +200,31 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
             padding: const EdgeInsets.all(16),
             children: [
               Align(
-                child: CircleAvatar(
-                  radius: 44,
-                  backgroundImage: photoProvider,
-                  child: photoProvider == null
-                      ? const Icon(Icons.person, size: 44)
-                      : null,
+                child: SizedBox(
+                  width: avatarDiameter,
+                  height: avatarDiameter,
+                  child: ClipOval(
+                    child: _pickedImageBytes != null
+                        ? Image.memory(
+                            _pickedImageBytes!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                _AvatarFallback(iconSize: 44),
+                          )
+                        : (_photoUrl?.isNotEmpty == true
+                              ? Image.network(
+                                  _photoUrl!,
+                                  key: ValueKey(_photoUrl),
+                                  fit: BoxFit.cover,
+                                  webHtmlElementStrategy: kIsWeb
+                                      ? WebHtmlElementStrategy.prefer
+                                      : WebHtmlElementStrategy.never,
+                                  errorBuilder:
+                                      (context, error, stackTrace) =>
+                                      _AvatarFallback(iconSize: 44),
+                                )
+                              : const _AvatarFallback(iconSize: 44)),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -283,6 +298,21 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AvatarFallback extends StatelessWidget {
+  const _AvatarFallback({required this.iconSize});
+
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+      alignment: Alignment.center,
+      child: Icon(Icons.person, size: iconSize),
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/profile_edit_page.dart';
 import 'package:expense_tracker/features/theme/view/theme_settings_page.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -101,20 +102,45 @@ class _ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final photoProvider = profile.photoUrl?.isNotEmpty == true
-        ? NetworkImage(profile.photoUrl!)
-        : null;
+    const avatarSize = 44.0;
     return Card(
       child: ListTile(
         onTap: onEdit,
-        leading: CircleAvatar(
-          backgroundImage: photoProvider,
-          child: photoProvider == null ? const Icon(Icons.person) : null,
+        leading: SizedBox(
+          width: avatarSize,
+          height: avatarSize,
+          child: ClipOval(
+            child: profile.photoUrl?.isNotEmpty == true
+                ? Image.network(
+                    profile.photoUrl!,
+                    key: ValueKey(profile.photoUrl),
+                    fit: BoxFit.cover,
+                    webHtmlElementStrategy: kIsWeb
+                        ? WebHtmlElementStrategy.prefer
+                        : WebHtmlElementStrategy.never,
+                    errorBuilder: (context, error, stackTrace) =>
+                        _AccountAvatarFallback(),
+                  )
+                : const _AccountAvatarFallback(),
+          ),
         ),
         title: Text(profile.displayName),
         subtitle: Text(profile.email),
         trailing: TextButton(onPressed: onEdit, child: const Text('Edit')),
       ),
+    );
+  }
+}
+
+class _AccountAvatarFallback extends StatelessWidget {
+  const _AccountAvatarFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+      alignment: Alignment.center,
+      child: const Icon(Icons.person),
     );
   }
 }
