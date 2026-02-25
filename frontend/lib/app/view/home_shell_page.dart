@@ -11,8 +11,10 @@ import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit
 import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
+import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
+import 'package:expense_tracker/features/overview/view/overview_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -36,10 +38,22 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   static const _destinations = <_ShellDestination>[
     _ShellDestination(
+      label: 'Overview',
+      icon: Icons.dashboard_outlined,
+      selectedIcon: Icons.dashboard,
+      page: OverviewPage(),
+    ),
+    _ShellDestination(
       label: 'Friends',
       icon: Icons.person_outline,
       selectedIcon: Icons.person,
       page: FriendsPage(),
+    ),
+    _ShellDestination(
+      label: 'Family',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home,
+      page: FamilyPage(),
     ),
     _ShellDestination(
       label: 'Groups',
@@ -61,7 +75,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
     ),
   ];
 
-  bool get _showAddExpenseButton => _selectedIndex < 3;
+  bool get _showAddExpenseButton =>
+      _destinations[_selectedIndex].label != 'Account';
 
   @override
   void initState() {
@@ -278,7 +293,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
       ),
       tabBuilder: (context, index) {
         final destination = _destinations[index];
-        final showAddButton = index < 3;
+        final showAddButton = destination.label != 'Account';
 
         return CupertinoTabView(
           builder: (context) {
@@ -343,6 +358,14 @@ class _HomeShellPageState extends State<HomeShellPage> {
         return CupertinoIcons.person;
       case Icons.person:
         return CupertinoIcons.person_fill;
+      case Icons.dashboard_outlined:
+        return CupertinoIcons.chart_bar;
+      case Icons.dashboard:
+        return CupertinoIcons.chart_bar_fill;
+      case Icons.home_outlined:
+        return CupertinoIcons.house;
+      case Icons.home:
+        return CupertinoIcons.house_fill;
       case Icons.group_outlined:
         return CupertinoIcons.group;
       case Icons.group:
@@ -363,15 +386,19 @@ class _HomeShellPageState extends State<HomeShellPage> {
   String _routeForIndex(int index) {
     switch (index) {
       case 0:
-        return AppRoutes.friends;
+        return AppRoutes.overview;
       case 1:
-        return AppRoutes.groups;
+        return AppRoutes.friends;
       case 2:
-        return AppRoutes.activity;
+        return AppRoutes.family;
       case 3:
+        return AppRoutes.groups;
+      case 4:
+        return AppRoutes.activity;
+      case 5:
         return AppRoutes.account;
       default:
-        return AppRoutes.friends;
+        return AppRoutes.overview;
     }
   }
 

@@ -43,7 +43,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
             theme: theme,
             darkTheme: theme,
             themeMode: mode,
-            initialRoute: AppRoutes.friends,
+            initialRoute: AppRoutes.overview,
             onGenerateRoute: (settings) => _onGenerateRoute(
               settings: settings,
               profileRepository: profileRepository,
@@ -71,14 +71,16 @@ class ExpenseTrackerAppView extends StatelessWidget {
   String _normalizeRoute(String? name) {
     switch (name) {
       case AppRoutes.root:
+      case AppRoutes.overview:
       case AppRoutes.friends:
+      case AppRoutes.family:
       case AppRoutes.groups:
       case AppRoutes.activity:
       case AppRoutes.account:
       case AppRoutes.accountEdit:
-        return name ?? AppRoutes.friends;
+        return name ?? AppRoutes.overview;
       default:
-        return AppRoutes.friends;
+        return AppRoutes.overview;
     }
   }
 }
@@ -101,16 +103,21 @@ class _AuthGuardedRoute extends StatelessWidget {
         }
 
         switch (routeName) {
-          case AppRoutes.groups:
+          case AppRoutes.overview:
+            return const HomeShellPage(initialIndex: 0);
+          case AppRoutes.friends:
             return const HomeShellPage(initialIndex: 1);
-          case AppRoutes.activity:
+          case AppRoutes.family:
             return const HomeShellPage(initialIndex: 2);
-          case AppRoutes.account:
+          case AppRoutes.groups:
             return const HomeShellPage(initialIndex: 3);
+          case AppRoutes.activity:
+            return const HomeShellPage(initialIndex: 4);
+          case AppRoutes.account:
+            return const HomeShellPage(initialIndex: 5);
           case AppRoutes.accountEdit:
             return AccountEditRoutePage(profileRepository: profileRepository);
           case AppRoutes.root:
-          case AppRoutes.friends:
           default:
             return const HomeShellPage(initialIndex: 0);
         }
