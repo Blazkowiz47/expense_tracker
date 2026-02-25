@@ -5,7 +5,6 @@ import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/profile_edit_page.dart';
 import 'package:expense_tracker/features/theme/view/theme_settings_page.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -115,9 +114,6 @@ class _ProfileCard extends StatelessWidget {
                     profile.photoUrl!,
                     key: ValueKey(profile.photoUrl),
                     fit: BoxFit.cover,
-                    webHtmlElementStrategy: kIsWeb
-                        ? WebHtmlElementStrategy.prefer
-                        : WebHtmlElementStrategy.never,
                     errorBuilder: (context, error, stackTrace) =>
                         _AccountAvatarFallback(),
                   )

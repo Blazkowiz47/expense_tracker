@@ -1,7 +1,6 @@
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -216,11 +215,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                                   _photoUrl!,
                                   key: ValueKey(_photoUrl),
                                   fit: BoxFit.cover,
-                                  webHtmlElementStrategy: kIsWeb
-                                      ? WebHtmlElementStrategy.prefer
-                                      : WebHtmlElementStrategy.never,
-                                  errorBuilder:
-                                      (context, error, stackTrace) =>
+                                  errorBuilder: (context, error, stackTrace) =>
                                       _AvatarFallback(iconSize: 44),
                                 )
                               : const _AvatarFallback(iconSize: 44)),
