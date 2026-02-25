@@ -1,3 +1,4 @@
+import 'package:expense_tracker/app/routes/app_routes.dart';
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/core/utils/platform_page_route.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
@@ -18,8 +19,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
 
 class HomeShellPage extends StatefulWidget {
-  const HomeShellPage({this.repository, super.key});
+  const HomeShellPage({this.initialIndex = 0, this.repository, super.key});
 
+  final int initialIndex;
   final DashboardSnapshotRepository? repository;
 
   @override
@@ -27,7 +29,7 @@ class HomeShellPage extends StatefulWidget {
 }
 
 class _HomeShellPageState extends State<HomeShellPage> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
   http.Client? _httpClient;
   late final bool _ownsHttpClient;
   late final DashboardSnapshotCubit _dashboardCubit;
@@ -64,6 +66,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
   @override
   void initState() {
     super.initState();
+    _selectedIndex = widget.initialIndex;
     _ownsHttpClient = widget.repository == null;
     final repository = widget.repository ?? _buildApiRepository();
     _dashboardCubit = DashboardSnapshotCubit(repository: repository)..load();
@@ -84,9 +87,9 @@ class _HomeShellPageState extends State<HomeShellPage> {
   }
 
   void _onDestinationSelected(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    if (index == _selectedIndex) return;
+    final path = _routeForIndex(index);
+    Navigator.of(context).pushReplacementNamed(path);
   }
 
   void _openAddExpense() {
@@ -354,6 +357,21 @@ class _HomeShellPageState extends State<HomeShellPage> {
         return CupertinoIcons.profile_circled;
       default:
         return CupertinoIcons.circle;
+    }
+  }
+
+  String _routeForIndex(int index) {
+    switch (index) {
+      case 0:
+        return AppRoutes.friends;
+      case 1:
+        return AppRoutes.groups;
+      case 2:
+        return AppRoutes.activity;
+      case 3:
+        return AppRoutes.account;
+      default:
+        return AppRoutes.friends;
     }
   }
 

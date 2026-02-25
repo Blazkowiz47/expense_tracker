@@ -1,9 +1,9 @@
+import 'package:expense_tracker/app/routes/app_routes.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
-import 'package:expense_tracker/features/profile/view/profile_edit_page.dart';
 import 'package:expense_tracker/features/theme/view/theme_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -53,15 +53,9 @@ class AccountPage extends StatelessWidget {
                     _ProfileCard(
                       profile: profile,
                       onEdit: () async {
-                        await Navigator.of(context).push<bool>(
-                          MaterialPageRoute<bool>(
-                            builder: (_) => ProfileEditPage(
-                              user: user,
-                              profile: profile,
-                              repository: repo,
-                            ),
-                          ),
-                        );
+                        await Navigator.of(
+                          context,
+                        ).pushNamed<void>(AppRoutes.accountEdit);
                       },
                     ),
                     const SizedBox(height: 16),

@@ -9,11 +9,15 @@ class UserProfileRepository {
   UserProfileRepository({
     FirebaseFirestore? firestore,
     FirebaseStorage? storage,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-       _storage = storage ?? FirebaseStorage.instance;
+  }) : _firestoreOverride = firestore,
+       _storageOverride = storage;
 
-  final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
+  final FirebaseFirestore? _firestoreOverride;
+  final FirebaseStorage? _storageOverride;
+
+  FirebaseFirestore get _firestore =>
+      _firestoreOverride ?? FirebaseFirestore.instance;
+  FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
 
   Future<void> ensureUserDocument(User user) async {
     await _upsertUserDoc(
