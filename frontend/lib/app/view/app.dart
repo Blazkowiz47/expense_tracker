@@ -5,9 +5,11 @@ import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_state.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/auth/view/login_page.dart';
+import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/account_edit_route_page.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
+import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -100,24 +102,33 @@ class _AuthGuardedRoute extends StatelessWidget {
         if (authState.status != AuthStatus.authenticated) {
           return const LoginPage();
         }
-
-        switch (routeName) {
-          case AppRoutes.overview:
-            return const HomeShellPage(initialIndex: 0);
-          case AppRoutes.friends:
-            return const HomeShellPage(initialIndex: 1);
-          case AppRoutes.groups:
-            return const HomeShellPage(initialIndex: 2);
-          case AppRoutes.activity:
-            return const HomeShellPage(initialIndex: 3);
-          case AppRoutes.account:
-            return const HomeShellPage(initialIndex: 4);
-          case AppRoutes.accountEdit:
-            return AccountEditRoutePage(profileRepository: profileRepository);
-          case AppRoutes.root:
-          default:
-            return const HomeShellPage(initialIndex: 0);
+        final user = authState.user;
+        if (user == null) {
+          return const LoginPage();
         }
+
+        final routed = switch (routeName) {
+          AppRoutes.overview => const HomeShellPage(initialIndex: 0),
+          AppRoutes.friends => const HomeShellPage(initialIndex: 1),
+          AppRoutes.groups => const HomeShellPage(initialIndex: 2),
+          AppRoutes.activity => const HomeShellPage(initialIndex: 3),
+          AppRoutes.account => const HomeShellPage(initialIndex: 4),
+          AppRoutes.accountEdit => AccountEditRoutePage(
+            profileRepository: profileRepository,
+          ),
+          _ => const HomeShellPage(initialIndex: 0),
+        };
+
+        return RepositoryProvider(
+          create: (_) => ExpenseRepository(),
+          dispose: (repository) => repository.dispose(),
+          child: BlocProvider(
+            create: (context) =>
+                ExpensesBloc(repository: context.read<ExpenseRepository>())
+                  ..add(const LoadExpenses()),
+            child: routed,
+          ),
+        );
       },
     );
   }

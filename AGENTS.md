@@ -37,6 +37,7 @@ Frontend (`frontend/`):
 - Go: use `gofmt` formatting (tabs), lowercase package names, and `CamelCase` exported symbols.
 - Dart/Flutter: 2-space indentation, `dart format .`, `lowerCamelCase` members, `UpperCamelCase` classes.
 - Flutter state management: prefer Bloc/Cubit with immutable state classes (`copyWith`, explicit status/action fields) for feature workflows; avoid keeping business/process state directly in widgets when it can live in Bloc state.
+- Architecture rule: frontend is a presentation/API client only for expense/group data. Frontend must send CRUD requests to backend APIs; backend owns writes/reads to Firebase Firestore/Storage. Do not add direct frontend expense/group persistence via Firestore, Storage, or local databases as canonical storage.
 - Keep HTTP error responses consistent with the JSON error envelope in `backend/internal/httpapi/response.go`.
 
 ## Testing Guidelines

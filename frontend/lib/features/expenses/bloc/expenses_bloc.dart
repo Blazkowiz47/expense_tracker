@@ -29,6 +29,7 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
   ) async {
     emit(const ExpensesLoading());
     try {
+      await _repository.initialize();
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));
     } catch (e) {
@@ -85,11 +86,7 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
     Emitter<ExpensesState> emit,
   ) async {
     try {
-      // Mark as deleted locally
-      final expense = _repository.getExpenseById(event.id);
-      if (expense != null) {
-        await _repository.updateExpense(expense.copyWith(deleted: true));
-      }
+      await _repository.deleteExpense(event.id);
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));
     } catch (e) {

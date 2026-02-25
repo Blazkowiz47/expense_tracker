@@ -1,188 +1,182 @@
-import 'dart:developer';
+import 'dart:convert';
 
-import 'package:expense_tracker/data/datasources/local/expenses.dart';
-import 'package:expense_tracker/data/datasources/remote/expenses.dart';
+import 'package:expense_tracker/core/auth/auth_token_provider.dart';
+import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/expense.dart';
+import 'package:expense_tracker/data/models/expense_core.dart';
+import 'package:http/http.dart' as http;
 
 class ExpenseRepository {
-  final ExpensesRemoteDatasource _remoteDataSource;
-  final ExpensesLocalDatasource _localDataSource;
+  ExpenseRepository({http.Client? client, AuthTokenProvider? authTokenProvider})
+    : _client = client ?? http.Client(),
+      _authTokenProvider =
+          authTokenProvider ?? const FirebaseAuthTokenProvider();
 
-  // In-memory cache for fast access
+  final http.Client _client;
+  final AuthTokenProvider _authTokenProvider;
   final Map<String, Expense> _expensesCache = {};
-  bool _isInitialized = false;
 
-  ExpenseRepository({
-    required ExpensesRemoteDatasource remoteDataSource,
-    required ExpensesLocalDatasource localDataSource,
-  }) : _remoteDataSource = remoteDataSource,
-       _localDataSource = localDataSource;
+  Future<void> initialize() => refresh();
 
-  /// Initialize the repository by loading all expenses from local storage
-  Future<void> initialize() async {
-    if (_isInitialized) return;
-
-    try {
-      final expenses = await _localDataSource.getExpenses();
-      _expensesCache.clear();
-      for (final expense in expenses) {
-        _expensesCache[expense.id] = expense;
-      }
-      _isInitialized = true;
-      log(
-        'ExpenseRepository initialized with ${_expensesCache.length} expenses',
-      );
-    } catch (e) {
-      log('Error initializing ExpenseRepository: $e', level: 3);
-      rethrow;
-    }
+  Future<void> refresh() async {
+    final expenses = await _fetchExpenses();
+    _expensesCache
+      ..clear()
+      ..addEntries(expenses.map((expense) => MapEntry(expense.id, expense)));
   }
 
-  /// Create a new expense locally (marked as unsynced)
   Future<void> createExpense(Expense expense) async {
-    try {
-      // Always save locally with isSynced: false
-      final unsyncedExpense = expense.copyWith(isSynced: false);
-      final success = await _localDataSource.createExpense(unsyncedExpense);
-      if (!success) throw Exception('Failed to create expense locally');
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses');
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.post(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(<String, dynamic>{
+        'amount': expense.amount,
+        'category': expense.category ?? 'Personal',
+        'description': expense.description ?? expense.title,
+        'date': expense.createdAt.toUtc().toIso8601String(),
+      }),
+    );
 
-      // Update cache
-      _expensesCache[expense.id] = unsyncedExpense;
-      log('Created expense ${expense.id} locally (unsynced)');
-    } catch (e) {
-      log('Error creating expense: $e', level: 3);
-      rethrow;
+    if (response.statusCode != 201) {
+      throw Exception(
+        'create expense failed (${response.statusCode}): ${response.body}',
+      );
     }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final created = _fromBackend(payload);
+    _expensesCache[created.id] = created;
   }
 
-  /// Update an expense locally (marked as unsynced)
   Future<void> updateExpense(Expense expense) async {
-    try {
-      // Always save locally with isSynced: false
-      final unsyncedExpense = expense.copyWith(isSynced: false);
-      final success = await _localDataSource.updateExpense(unsyncedExpense);
-      if (!success) throw Exception('Failed to update expense locally');
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses/${expense.id}');
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.put(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(<String, dynamic>{
+        'amount': expense.amount,
+        'category': expense.category ?? 'Personal',
+        'description': expense.description ?? expense.title,
+        'date': expense.createdAt.toUtc().toIso8601String(),
+      }),
+    );
 
-      // Update cache
-      _expensesCache[expense.id] = unsyncedExpense;
-      log('Updated expense ${expense.id} locally (unsynced)');
-    } catch (e) {
-      log('Error updating expense: $e', level: 3);
-      rethrow;
+    if (response.statusCode != 200) {
+      throw Exception(
+        'update expense failed (${response.statusCode}): ${response.body}',
+      );
     }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final updated = _fromBackend(payload);
+    _expensesCache[updated.id] = updated;
   }
 
-  /// Get expense by ID from cache
-  Expense? getExpenseById(String id) {
-    return _expensesCache[id];
+  Future<void> deleteExpense(String id) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses/$id');
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.delete(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception(
+        'delete expense failed (${response.statusCode}): ${response.body}',
+      );
+    }
+
+    _expensesCache.remove(id);
   }
 
-  /// Get all expenses from cache
-  List<Expense> getExpenses() {
-    return _expensesCache.values.toList();
-  }
+  List<Expense> getExpenses() =>
+      _expensesCache.values.toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-  /// Get unsynced expenses from cache
-  List<Expense> getUnsyncedExpenses() {
-    return _expensesCache.values.where((expense) => !expense.isSynced).toList();
-  }
+  Expense? getExpenseById(String id) => _expensesCache[id];
 
-  /// Get expenses by date range from cache
+  List<Expense> getUnsyncedExpenses() => const [];
+
   List<Expense> getExpensesByDateRange(DateTime start, DateTime end) {
     return _expensesCache.values
         .where(
           (expense) =>
-              expense.createdAt.isAfter(start) &&
-              expense.createdAt.isBefore(end),
+              !expense.createdAt.isBefore(start) &&
+              !expense.createdAt.isAfter(end),
         )
-        .toList();
+        .toList(growable: false);
   }
 
-  /// Sync all unsynced expenses to remote
   Future<void> syncExpenses() async {
-    try {
-      final unsyncedExpenses = getUnsyncedExpenses();
-      log('Starting sync for ${unsyncedExpenses.length} expenses');
-
-      if (unsyncedExpenses.isEmpty) {
-        log('No expenses to sync');
-        return;
-      }
-
-      // Iterate a copy so we don't run into accidental modification issues
-      for (final expense in List<Expense>.from(unsyncedExpenses)) {
-        await _syncExpenseToRemote(expense);
-      }
-
-      log('Completed syncing ${unsyncedExpenses.length} expenses');
-    } catch (e) {
-      log('Error syncing expenses: $e', level: 3);
-      rethrow;
-    }
+    await refresh();
   }
 
-  /// Refresh all expenses from remote and sync local changes
-  Future<void> refresh() async {
-    try {
-      log('Starting refresh from remote');
+  Future<List<Expense>> _fetchExpenses() async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/expenses?page=1&limit=200',
+    );
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.get(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
 
-      // First, sync all local unsynced changes to remote
-      await syncExpenses();
-
-      // Then, pull latest from remote
-      final remoteExpenses = await _remoteDataSource.getExpenses();
-      // Persist remote results to local storage (upsert-like behavior)
-      _expensesCache.clear();
-      for (final expense in remoteExpenses) {
-        // Try update; if update fails (not found), create
-        final updated = await _localDataSource.updateExpense(expense);
-        if (!updated) {
-          await _localDataSource.createExpense(expense);
-        }
-
-        // Mark remote records as synced locally
-        final syncedRemote = expense.copyWith(isSynced: true);
-        _expensesCache[syncedRemote.id] = syncedRemote;
-      }
-
-      log(
-        'Refreshed ${_expensesCache.length} expenses from remote and persisted locally',
+    if (response.statusCode != 200) {
+      throw Exception(
+        'expenses request failed (${response.statusCode}): ${response.body}',
       );
-    } catch (e) {
-      log('Error refreshing expenses: $e', level: 3);
-      rethrow;
     }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final list = (payload['expenses'] as List<dynamic>? ?? const [])
+        .cast<Map<String, dynamic>>();
+    return list.map(_fromBackend).toList(growable: false);
   }
 
-  /// Sync a single expense to remote
-  Future<void> _syncExpenseToRemote(Expense expense) async {
-    try {
-      bool synced = false;
+  Expense _fromBackend(Map<String, dynamic> json) {
+    final description = (json['description'] as String?)?.trim();
+    final category = (json['category'] as String?)?.trim();
+    final dateRaw = (json['date'] as String?) ?? '';
+    final createdAt = DateTime.tryParse(dateRaw)?.toLocal() ?? DateTime.now();
+    final updatedRaw = json['updatedAt'] as String?;
 
-      if (expense.deleted) {
-        // Soft-deleted locally -> we don't have a remote delete method anymore.
-        // Instead, we update the remote record to mark it as deleted too.
-        synced = await _remoteDataSource.updateExpense(expense);
-      } else {
-        // For new or updated expenses, try update first. If remote says it
-        // doesn't exist (update returns false), try create.
-        synced = await _remoteDataSource.updateExpense(expense);
-        if (!synced) {
-          synced = await _remoteDataSource.createExpense(expense);
-        }
-      }
+    return Expense(
+      core: ExpenseCore(
+        id: (json['id'] as String?) ?? '',
+        title: (description != null && description.isNotEmpty)
+            ? description
+            : (category != null && category.isNotEmpty ? category : 'Expense'),
+        amount: (json['amount'] as num?)?.toDouble() ?? 0,
+        currency: 'INR',
+        category: category,
+        createdAt: createdAt,
+      ),
+      description: description,
+      updatedAt: updatedRaw != null ? DateTime.tryParse(updatedRaw) : null,
+      paymentMethod: null,
+      isSynced: true,
+      deleted: false,
+    );
+  }
 
-      if (synced) {
-        // Mark as synced in both local and cache
-        final syncedExpense = expense.copyWith(isSynced: true);
-        await _localDataSource.updateExpense(syncedExpense);
-        _expensesCache[expense.id] = syncedExpense;
-        log('Successfully synced expense ${expense.id}');
-      } else {
-        log('Failed to sync expense ${expense.id}', level: 2);
-      }
-    } catch (e) {
-      log('Error syncing expense ${expense.id} to remote: $e', level: 3);
-    }
+  void dispose() {
+    _client.close();
   }
 }
