@@ -121,6 +121,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                           child: state.pickedImageBytes != null
                               ? Image.memory(
                                   state.pickedImageBytes!,
+                                  gaplessPlayback: true,
                                   errorBuilder: (context, error, stackTrace) =>
                                       _AvatarFallback(iconSize: 44),
                                 )
@@ -130,6 +131,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                                         key: ValueKey(
                                           '${state.photoUrl}|${state.avatarVersion}',
                                         ),
+                                        gaplessPlayback: true,
                                         webHtmlElementStrategy:
                                             WebHtmlElementStrategy.prefer,
                                         errorBuilder:
