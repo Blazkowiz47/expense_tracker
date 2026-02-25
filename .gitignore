@@ -8,6 +8,7 @@ firebase-debug.log
 firebase-debug.*.log
 *serviceAccount*.json
 *.private-key.json
+firebase_config/*.json
 
 # Mobile signing material
 *.jks
