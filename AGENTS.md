@@ -16,6 +16,7 @@
   <local_workflow_preferences>
     <rule><code>tmux</code> uses 1-based indexing (<code>base-index 1</code>); target windows as <code>:1</code>, <code>:2</code>, <code>:3</code>.</rule>
     <rule>Reuse the existing <code>expense-dev</code> session for iteration: backend in <code>:1</code>, frontend in <code>:2</code>.</rule>
+    <rule>For a clean tmux re-initialization, prefer <code>scripts/start_expense_dev_tmux.sh --no-attach</code>, then verify with <code>tmux list-windows -t expense-dev</code>.</rule>
     <rule>After code changes, restart processes in-place in tmux so browser refresh picks up changes quickly.</rule>
     <rule>After any tmux create/restart/kill operation, verify with <code>tmux list-windows -t expense-dev</code> plus relevant health checks.</rule>
     <rule>After any code change, ensure both backend and frontend processes are healthy before asking user to reload.</rule>
