@@ -1,57 +1,144 @@
-# Repository Guidelines
+<agent_spec>
+  <title>Expense Tracker Repository Guidelines</title>
 
-## Project Structure & Module Organization
-This repository is split into two apps:
-- `frontend/`: Flutter client for iOS, Android, and Web. Main app code lives in `frontend/lib/`; tests live in `frontend/test/`; platform folders include `android/`, `ios/`, and `web/`.
-- `backend/`: Go API service. Entrypoint is `backend/cmd/server/main.go`; internal packages live in `backend/internal/` (`auth`, `config`, `expense`, `httpapi`, `middleware`, `server`).
-- `plan.md`: execution plan and milestones for the project.
+  <project_structure>
+    <rule>Repository has two applications: <code>frontend/</code> (Flutter) and <code>backend/</code> (Go).</rule>
+    <rule>Frontend source is in <code>frontend/lib/</code>; tests are in <code>frontend/test/</code>; platform folders include <code>android/</code>, <code>ios/</code>, and <code>web/</code>.</rule>
+    <rule>Backend entrypoint is <code>backend/cmd/server/main.go</code>; core packages are under <code>backend/internal/</code> (<code>auth</code>, <code>config</code>, <code>expense</code>, <code>httpapi</code>, <code>middleware</code>, <code>server</code>).</rule>
+    <rule><code>plan.md</code> contains execution milestones.</rule>
+  </project_structure>
 
-## Build, Test, and Development Commands
-Run commands from each module directory.
+  <command_policy>
+    <rule>Run commands from the relevant module directory unless explicitly project-scoped.</rule>
+    <rule>Prefer fast project search tools (<code>rg</code>, <code>rg --files</code>).</rule>
+  </command_policy>
 
-## Local Workflow Preferences
-- `tmux` window indexing is 1-based in this environment (`base-index 1`), so target windows as `:1`, `:2`, `:3`, etc.
-- Reuse the running `expense-dev` tmux session for iterative development by sending commands to existing windows (`:1` backend, `:2` frontend) instead of creating new sessions each time.
-- After code changes, prefer restarting processes in-place in tmux (stop/start or rerun commands) so a browser refresh picks up updates quickly.
-- After every tmux command that creates/restarts/kills windows, always verify the result with `tmux list-windows -t expense-dev` (and relevant health checks) to ensure expected tabs/processes are still running.
-- After any code change, always ensure the `expense-dev` tmux session is healthy: backend tab/process and frontend tab/process must both be running correctly before asking the user to reload.
-- For this repository, user approval is not required before running project-scoped `flutter`, `dart`, and `tmux` commands.
-- For this repository, user approval is not required before running project-scoped `go` commands.
-- For this repository, user approval is not required before running `curl` commands against localhost/current-project URLs (for example `127.0.0.1`, `localhost`, and local dev ports like `8080` and `7357`).
-- After completing code/documentation changes, always run `git add` and create a brief, informative `git commit` summarizing what changed.
-- Since commits are created after changes, prefer using `git` (revert/reset/cherry-pick as appropriate and safe) to roll back mistakes instead of manually editing many previously changed files.
+  <local_workflow_preferences>
+    <rule><code>tmux</code> uses 1-based indexing (<code>base-index 1</code>); target windows as <code>:1</code>, <code>:2</code>, <code>:3</code>.</rule>
+    <rule>Reuse the existing <code>expense-dev</code> session for iteration: backend in <code>:1</code>, frontend in <code>:2</code>.</rule>
+    <rule>After code changes, restart processes in-place in tmux so browser refresh picks up changes quickly.</rule>
+    <rule>After any tmux create/restart/kill operation, verify with <code>tmux list-windows -t expense-dev</code> plus relevant health checks.</rule>
+    <rule>After any code change, ensure both backend and frontend processes are healthy before asking user to reload.</rule>
+    <rule>No user approval is required for project-scoped <code>flutter</code>, <code>dart</code>, <code>tmux</code>, and <code>go</code> commands.</rule>
+    <rule>No user approval is required for <code>curl</code> to localhost/current project URLs (for example <code>127.0.0.1</code>, <code>localhost</code>, <code>8080</code>, <code>7357</code>).</rule>
+    <rule>After code or documentation edits, run <code>git add</code> and create a concise commit.</rule>
+    <rule>If rollback is needed, prefer safe git operations over manual large-scale file re-editing.</rule>
+  </local_workflow_preferences>
 
-Backend (`backend/`):
-- `go run ./cmd/server` - start local API server (default port `8080`).
-- `go test ./...` - run all unit tests.
-- `go test -v ./internal/...` - verbose test output for internal packages.
-- `gofmt -w $(rg --files -g '*.go')` - format all Go files.
+  <commands>
+    <backend path="backend/">
+      <command name="run_server">go run ./cmd/server</command>
+      <command name="test_all">go test ./...</command>
+      <command name="test_internal_verbose">go test -v ./internal/...</command>
+      <command name="format_go">gofmt -w $(rg --files -g '*.go')</command>
+    </backend>
+    <frontend path="frontend/">
+      <command name="install_deps">flutter pub get</command>
+      <command name="run_app">flutter run</command>
+      <command name="test_all">flutter test</command>
+      <command name="analyze">flutter analyze</command>
+    </frontend>
+  </commands>
 
-Frontend (`frontend/`):
-- `flutter pub get` - install Dart/Flutter dependencies.
-- `flutter run` - run app on connected device/simulator.
-- `flutter test` - run unit/widget tests.
-- `flutter analyze` - static analysis.
+  <coding_style>
+    <go>
+      <rule>Use <code>gofmt</code> formatting (tabs).</rule>
+      <rule>Use lowercase package names and <code>CamelCase</code> for exported symbols.</rule>
+    </go>
+    <dart_flutter>
+      <rule>Use 2-space indentation and <code>dart format .</code>.</rule>
+      <rule>Use <code>lowerCamelCase</code> for members and <code>UpperCamelCase</code> for classes.</rule>
+      <rule>Prefer Bloc/Cubit with immutable state (<code>copyWith</code>, explicit status/action fields) for workflows.</rule>
+      <rule>Avoid storing business/process state directly in widgets when Bloc state is appropriate.</rule>
+    </dart_flutter>
+  </coding_style>
 
-## Coding Style & Naming Conventions
-- Go: use `gofmt` formatting (tabs), lowercase package names, and `CamelCase` exported symbols.
-- Dart/Flutter: 2-space indentation, `dart format .`, `lowerCamelCase` members, `UpperCamelCase` classes.
-- Flutter state management: prefer Bloc/Cubit with immutable state classes (`copyWith`, explicit status/action fields) for feature workflows; avoid keeping business/process state directly in widgets when it can live in Bloc state.
-- Architecture rule: frontend is a presentation/API client only for expense/group data. Frontend must send CRUD requests to backend APIs; backend owns writes/reads to Firebase Firestore/Storage. Do not add direct frontend expense/group persistence via Firestore, Storage, or local databases as canonical storage.
-- Keep HTTP error responses consistent with the JSON error envelope in `backend/internal/httpapi/response.go`.
+  <architecture_rules>
+    <rule>Frontend is a presentation/API client for expense/group data only.</rule>
+    <rule>Frontend must use backend CRUD APIs for expense/group operations.</rule>
+    <rule>Backend is the canonical owner of writes/reads to Firebase Firestore/Storage.</rule>
+    <rule>Do not add direct frontend canonical persistence via Firestore, Storage, or local databases.</rule>
+    <rule>Keep HTTP error responses consistent with <code>backend/internal/httpapi/response.go</code>.</rule>
+  </architecture_rules>
 
-## Testing Guidelines
-- Backend tests use Go's `testing` package. Place tests as `*_test.go` next to source files.
-- Prefer table-driven tests for service and handler edge cases.
-- Frontend tests live under `frontend/test/` and should cover blocs, repositories, and key widgets.
-- Run module-local test suites before opening a PR.
+  <testing_guidelines>
+    <rule>Backend tests use Go <code>testing</code>; place <code>*_test.go</code> beside source files.</rule>
+    <rule>Prefer table-driven tests for service and handler edge cases.</rule>
+    <rule>Frontend tests live in <code>frontend/test/</code> and should cover blocs, repositories, and key widgets.</rule>
+    <rule>Run module-local test suites before opening a PR.</rule>
+  </testing_guidelines>
 
-## Commit & Pull Request Guidelines
-- Git history currently shows a single initial commit (`first commit`), so no strong convention is established yet.
-- Use clear, imperative commit messages going forward, e.g., `backend: add auth middleware tests`.
-- PRs should include: scope summary, test evidence (commands + results), config/env changes, and screenshots for UI changes.
+  <git_and_pr_guidelines>
+    <rule>Use clear, imperative commit messages (example: <code>backend: add auth middleware tests</code>).</rule>
+    <rule>PRs should include scope summary, test evidence (commands/results), config or env changes, and UI screenshots when applicable.</rule>
+  </git_and_pr_guidelines>
 
-## Security & Configuration Tips
-- Do not commit secrets (`serviceAccountKey.json`, API keys, tokens).
-- Use environment variables for backend runtime configuration (`PORT`, `APP_ENV`, `DEV_AUTH_TOKEN`, `DEV_AUTH_UID`).
-- Firebase production setup will be added later; current backend auth verifier is local-development oriented.
+  <security_and_config>
+    <rule>Never commit secrets such as <code>serviceAccountKey.json</code>, API keys, or tokens.</rule>
+    <rule>Use environment variables for backend runtime configuration: <code>PORT</code>, <code>APP_ENV</code>, <code>DEV_AUTH_TOKEN</code>, <code>DEV_AUTH_UID</code>.</rule>
+    <rule>Current backend auth verifier is local-development oriented; production Firebase setup is pending.</rule>
+  </security_and_config>
+
+  <gpt5_prompting_alignment>
+    <preferred_prompt_structure>
+      <rule>Use explicit XML-style sections to improve instruction clarity and execution reliability.</rule>
+      <template language="xml"><![CDATA[
+<role>You are a pragmatic coding agent working in this repository.</role>
+<objective>Implement the user request end-to-end with verification.</objective>
+<context>
+  <repo>/Users/sushrutpatwardhan/1Projects/expense_tracker</repo>
+  <modules>frontend (Flutter), backend (Go)</modules>
+</context>
+<constraints>
+  <rule>Do not invent outputs; verify with tools.</rule>
+  <rule>Prefer non-destructive commands.</rule>
+  <rule>Keep responses concise and actionable.</rule>
+</constraints>
+<workflow>
+  <step>Restate goal and plan briefly.</step>
+  <step>Execute changes.</step>
+  <step>Run validations/tests.</step>
+  <step>Summarize outcomes and risks.</step>
+</workflow>
+<output_format>
+  <item>Outcome</item>
+  <item>Files changed</item>
+  <item>Validation results</item>
+  <item>Next steps (if any)</item>
+</output_format>
+]]></template>
+    </preferred_prompt_structure>
+
+    <agentic_workflow_predictability>
+      <rule>Before substantial tool use, restate goal and provide a short plan.</rule>
+      <rule>For multi-step tasks, send concise progress updates while executing.</rule>
+      <rule>Complete end-to-end resolution in one turn when feasible; avoid partial stops unless blocked.</rule>
+      <rule>If uncertain, gather more evidence with tools instead of guessing.</rule>
+    </agentic_workflow_predictability>
+
+    <instruction_quality>
+      <rule>Use explicit, concrete instructions; avoid vague directives.</rule>
+      <rule>Avoid contradictory constraints; if conflict exists, follow highest-priority rule and state the tradeoff.</rule>
+      <rule>Keep rules scoped and structured for consistent compliance.</rule>
+    </instruction_quality>
+
+    <reasoning_and_effort>
+      <rule>Match effort to complexity: low for simple edits, medium by default, high for risky or complex tasks.</rule>
+      <rule>Decompose complex work into verifiable steps and validate each step.</rule>
+    </reasoning_and_effort>
+
+    <tooling_and_editing>
+      <rule>Verify behavior and facts with tools; never invent command outputs.</rule>
+      <rule>Prefer <code>apply_patch</code> for focused, reviewable edits.</rule>
+      <rule>Run relevant checks/tests where practical and report residual risk.</rule>
+      <rule>Use non-destructive operations unless user explicitly requests destructive actions.</rule>
+    </tooling_and_editing>
+
+    <response_formatting>
+      <rule>Keep responses concise, structured, and actionable.</rule>
+      <rule>Use Markdown only when it improves readability.</rule>
+      <rule>Wrap commands, file paths, environment variables, and identifiers in backticks.</rule>
+      <rule>For larger tasks, report outcome, key file changes, validation results, and next steps.</rule>
+    </response_formatting>
+  </gpt5_prompting_alignment>
+</agent_spec>
