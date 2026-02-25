@@ -1,0 +1,21 @@
+# Root-level sensitive files
+.env
+.env.*
+*.local
+
+# Firebase / GCP secrets and diagnostics
+firebase-debug.log
+firebase-debug.*.log
+*serviceAccount*.json
+*.private-key.json
+
+# Mobile signing material
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+
+# Firebase app config files (kept local; platform-specific copies may exist)
+**/google-services.json
+**/GoogleService-Info.plist

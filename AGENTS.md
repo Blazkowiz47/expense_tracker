@@ -9,6 +9,17 @@ This repository is split into two apps:
 ## Build, Test, and Development Commands
 Run commands from each module directory.
 
+## Local Workflow Preferences
+- `tmux` window indexing is 1-based in this environment (`base-index 1`), so target windows as `:1`, `:2`, `:3`, etc.
+- Reuse the running `expense-dev` tmux session for iterative development by sending commands to existing windows (`:1` backend, `:2` frontend) instead of creating new sessions each time.
+- After code changes, prefer restarting processes in-place in tmux (stop/start or rerun commands) so a browser refresh picks up updates quickly.
+- After every tmux command that creates/restarts/kills windows, always verify the result with `tmux list-windows -t expense-dev` (and relevant health checks) to ensure expected tabs/processes are still running.
+- After any code change, always ensure the `expense-dev` tmux session is healthy: backend tab/process and frontend tab/process must both be running correctly before asking the user to reload.
+- For this repository, user approval is not required before running project-scoped `flutter`, `dart`, and `tmux` commands.
+- For this repository, user approval is not required before running project-scoped `go` commands.
+- For this repository, user approval is not required before running `curl` commands against localhost/current-project URLs (for example `127.0.0.1`, `localhost`, and local dev ports like `8080` and `7357`).
+- After completing code/documentation changes, always run `git add` and create a brief, informative `git commit` summarizing what changed.
+
 Backend (`backend/`):
 - `go run ./cmd/server` - start local API server (default port `8080`).
 - `go test ./...` - run all unit tests.
