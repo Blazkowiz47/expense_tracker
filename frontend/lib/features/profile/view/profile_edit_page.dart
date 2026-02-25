@@ -121,7 +121,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       if (!mounted) return;
       setState(() {
         _photoUrl = downloadUrl;
-        _pickedImageBytes = null;
         _pickedImageName = null;
         _status = 'Profile photo uploaded successfully.';
       });
@@ -255,9 +254,11 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
               if (_status != null) ...[
                 const SizedBox(height: 12),
                 Text(_status!),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(value: _uploadProgress, minHeight: 6),
-                if (_uploadProgress != null) ...[
+                if (_uploadingPhoto || _uploadProgress != null) ...[
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: _uploadProgress, minHeight: 6),
+                ],
+                if (_uploadingPhoto && _uploadProgress != null) ...[
                   const SizedBox(height: 6),
                   Text(
                     '${(_uploadProgress! * 100).toStringAsFixed(0)}%',
