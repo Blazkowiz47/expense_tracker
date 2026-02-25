@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
 
 class ProfileEditPage extends StatefulWidget {
@@ -32,6 +33,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   Uint8List? _pickedImageBytes;
   String? _pickedImageName;
+  int _avatarVersion = 0;
 
   @override
   void initState() {
@@ -106,8 +108,24 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       child: BlocConsumer<ProfileEditCubit, ProfileEditState>(
         listenWhen: (previous, current) =>
             previous.action != current.action &&
-            current.action == ProfileEditAction.profileSaved,
-        listener: (context, state) => Navigator.of(context).pop(true),
+            current.action != ProfileEditAction.none,
+        listener: (context, state) {
+          if (state.action == ProfileEditAction.profileSaved) {
+            Navigator.of(context).pop(true);
+            return;
+          }
+          if (state.action == ProfileEditAction.photoUploaded) {
+            PaintingBinding.instance.imageCache.clear();
+            PaintingBinding.instance.imageCache.clearLiveImages();
+            if (mounted) {
+              setState(() {
+                _pickedImageBytes = null;
+                _pickedImageName = null;
+                _avatarVersion += 1;
+              });
+            }
+          }
+        },
         builder: (context, state) {
           final busy = state.isBusy;
           return Scaffold(
@@ -133,7 +151,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                               : (state.photoUrl?.isNotEmpty == true
                                     ? Image.network(
                                         state.photoUrl!,
-                                        key: ValueKey(state.photoUrl),
+                                        key: ValueKey(
+                                          '${state.photoUrl}|$_avatarVersion',
+                                        ),
                                         fit: BoxFit.cover,
                                         webHtmlElementStrategy:
                                             WebHtmlElementStrategy.prefer,
