@@ -1,5 +1,17 @@
 import 'package:equatable/equatable.dart';
 
+enum GroupType { split, family }
+
+GroupType groupTypeFromString(String? raw) {
+  switch (raw) {
+    case 'family':
+      return GroupType.family;
+    case 'split':
+    default:
+      return GroupType.split;
+  }
+}
+
 /// Represents a group of users who share expenses together.
 ///
 /// Groups are the primary way to manage shared expenses in the app.
@@ -27,6 +39,9 @@ class Group extends Equatable {
   /// Whether the group is currently active or archived
   final bool isActive;
 
+  /// Group behavior mode.
+  final GroupType groupType;
+
   const Group({
     required this.id,
     required this.name,
@@ -35,6 +50,7 @@ class Group extends Equatable {
     required this.memberNames,
     required this.createdAt,
     required this.isActive,
+    this.groupType = GroupType.split,
   });
 
   /// Creates a Group from a JSON map
@@ -47,6 +63,7 @@ class Group extends Equatable {
       memberNames: Map<String, String>.from(json['memberNames'] as Map),
       createdAt: DateTime.parse(json['createdAt'] as String),
       isActive: json['isActive'] as bool,
+      groupType: groupTypeFromString(json['groupType'] as String?),
     );
   }
 
@@ -60,6 +77,7 @@ class Group extends Equatable {
       'memberNames': memberNames,
       'createdAt': createdAt.toIso8601String(),
       'isActive': isActive,
+      'groupType': groupType.name,
     };
   }
 
@@ -72,6 +90,7 @@ class Group extends Equatable {
     Map<String, String>? memberNames,
     DateTime? createdAt,
     bool? isActive,
+    GroupType? groupType,
   }) {
     return Group(
       id: id ?? this.id,
@@ -81,6 +100,7 @@ class Group extends Equatable {
       memberNames: memberNames ?? this.memberNames,
       createdAt: createdAt ?? this.createdAt,
       isActive: isActive ?? this.isActive,
+      groupType: groupType ?? this.groupType,
     );
   }
 
@@ -93,12 +113,13 @@ class Group extends Equatable {
     memberNames,
     createdAt,
     isActive,
+    groupType,
   ];
 
   @override
   String toString() {
     return 'Group(id: $id, name: $name, creatorId: $creatorId, '
         'memberIds: $memberIds, memberNames: $memberNames, '
-        'createdAt: $createdAt, isActive: $isActive)';
+        'createdAt: $createdAt, isActive: $isActive, groupType: $groupType)';
   }
 }

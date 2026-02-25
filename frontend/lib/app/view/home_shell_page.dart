@@ -11,7 +11,6 @@ import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit
 import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
-import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/overview/view/overview_page.dart';
@@ -48,12 +47,6 @@ class _HomeShellPageState extends State<HomeShellPage> {
       icon: Icons.person_outline,
       selectedIcon: Icons.person,
       page: FriendsPage(),
-    ),
-    _ShellDestination(
-      label: 'Family',
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home,
-      page: FamilyPage(),
     ),
     _ShellDestination(
       label: 'Groups',
@@ -390,12 +383,10 @@ class _HomeShellPageState extends State<HomeShellPage> {
       case 1:
         return AppRoutes.friends;
       case 2:
-        return AppRoutes.family;
-      case 3:
         return AppRoutes.groups;
-      case 4:
+      case 3:
         return AppRoutes.activity;
-      case 5:
+      case 4:
         return AppRoutes.account;
       default:
         return AppRoutes.overview;

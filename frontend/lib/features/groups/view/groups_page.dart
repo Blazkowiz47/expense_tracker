@@ -1,16 +1,40 @@
+import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
+import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-class GroupsPage extends StatelessWidget {
+class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
+
+  @override
+  State<GroupsPage> createState() => _GroupsPageState();
+}
+
+class _GroupsPageState extends State<GroupsPage> {
+  final List<_UiGroup> _createdGroups = <_UiGroup>[];
+
+  Future<void> _openCreateGroupDialog() async {
+    final created = await showDialog<_UiGroup>(
+      context: context,
+      builder: (context) => const _CreateGroupDialog(),
+    );
+    if (created == null) return;
+    setState(() => _createdGroups.insert(0, created));
+  }
+
+  void _openGroupDetails(_UiGroup group) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => _GroupDetailsPage(group: group)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardSnapshotCubit, DashboardSnapshotState>(
       builder: (context, state) {
         if (state is DashboardSnapshotFailure) {
-          return Center(child: Text(state.message));
+          return SelectableErrorMessage(state.message);
         }
 
         if (state is! DashboardSnapshotLoaded) {
@@ -18,6 +42,18 @@ class GroupsPage extends StatelessWidget {
         }
 
         final snapshot = state.snapshot;
+        final seededGroups = snapshot.groupItems
+            .map(
+              (item) => _UiGroup(
+                title: item.title,
+                subtitle: item.subtitle,
+                amountText: item.amountText,
+                type: GroupType.split,
+              ),
+            )
+            .toList(growable: false);
+        final groups = [..._createdGroups, ...seededGroups];
+
         return Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
@@ -33,17 +69,21 @@ class GroupsPage extends StatelessWidget {
                       : Theme.of(context).colorScheme.error,
                 ),
                 const SizedBox(height: 16),
-                if (snapshot.groupItems.isEmpty)
+                _GroupsHeader(onCreateGroup: _openCreateGroupDialog),
+                if (groups.isEmpty)
                   const _GroupTile(
-                    title: 'No groups yet',
-                    subtitle: 'Create a group to split expenses with others.',
-                    trailing: 'Create group',
+                    group: _UiGroup(
+                      title: 'No groups yet',
+                      subtitle:
+                          'Create a split or family group to get started.',
+                      amountText: 'Create group',
+                      type: GroupType.split,
+                    ),
                   ),
-                ...snapshot.groupItems.map(
-                  (item) => _GroupTile(
-                    title: item.title,
-                    subtitle: item.subtitle,
-                    trailing: item.amountText,
+                ...groups.map(
+                  (group) => _GroupTile(
+                    group: group,
+                    onTap: () => _openGroupDetails(group),
                   ),
                 ),
               ],
@@ -51,6 +91,209 @@ class GroupsPage extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _UiGroup {
+  const _UiGroup({
+    required this.title,
+    required this.subtitle,
+    required this.amountText,
+    required this.type,
+  });
+
+  final String title;
+  final String subtitle;
+  final String amountText;
+  final GroupType type;
+}
+
+class _GroupsHeader extends StatelessWidget {
+  const _GroupsHeader({required this.onCreateGroup});
+
+  final VoidCallback onCreateGroup;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Text('Groups', style: Theme.of(context).textTheme.titleMedium),
+          const Spacer(),
+          TextButton(
+            onPressed: onCreateGroup,
+            child: const Text('Create group'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CreateGroupDialog extends StatefulWidget {
+  const _CreateGroupDialog();
+
+  @override
+  State<_CreateGroupDialog> createState() => _CreateGroupDialogState();
+}
+
+class _CreateGroupDialogState extends State<_CreateGroupDialog> {
+  final _nameController = TextEditingController();
+  GroupType _type = GroupType.split;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+
+    final group = _UiGroup(
+      title: name,
+      subtitle: _type == GroupType.family
+          ? 'Family monthly tracking (no balances)'
+          : 'Split expenses with members',
+      amountText: _type == GroupType.family
+          ? 'Tracking only'
+          : 'No balances yet',
+      type: _type,
+    );
+    Navigator.of(context).pop(group);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Create group'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: 'Group name'),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<GroupType>(
+            initialValue: _type,
+            decoration: const InputDecoration(labelText: 'Group type'),
+            items: const [
+              DropdownMenuItem(
+                value: GroupType.split,
+                child: Text('Split (owes/owed)'),
+              ),
+              DropdownMenuItem(
+                value: GroupType.family,
+                child: Text('Family (tracking only)'),
+              ),
+            ],
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _type = value);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Create')),
+      ],
+    );
+  }
+}
+
+class _GroupDetailsPage extends StatelessWidget {
+  const _GroupDetailsPage({required this.group});
+
+  final _UiGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(group.title)),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: group.type == GroupType.family
+            ? _FamilyGroupBody(group: group)
+            : _SplitGroupBody(group: group),
+      ),
+    );
+  }
+}
+
+class _FamilyGroupBody extends StatelessWidget {
+  const _FamilyGroupBody({required this.group});
+
+  final _UiGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        Card(
+          child: ListTile(
+            title: const Text('Monthly spend'),
+            subtitle: const Text(
+              'Family tracking mode (no settlement balances)',
+            ),
+            trailing: Text(
+              group.amountText == 'Tracking only'
+                  ? 'INR 0.00'
+                  : group.amountText,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Card(
+          child: ListTile(
+            title: Text('Recent expenses'),
+            subtitle: Text(
+              'No expenses yet. Add monthly household spend here.',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SplitGroupBody extends StatelessWidget {
+  const _SplitGroupBody({required this.group});
+
+  final _UiGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        Card(
+          child: ListTile(
+            title: const Text('Settlement status'),
+            subtitle: Text(group.subtitle),
+            trailing: Text(
+              group.amountText,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Card(
+          child: ListTile(
+            title: Text('Balances'),
+            subtitle: Text(
+              'Per-member owes/owed breakdown will be shown here.',
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -91,27 +334,42 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _GroupTile extends StatelessWidget {
-  const _GroupTile({
-    required this.title,
-    required this.subtitle,
-    required this.trailing,
-  });
+  const _GroupTile({required this.group, this.onTap});
 
-  final String title;
-  final String subtitle;
-  final String trailing;
+  final _UiGroup group;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final badge = group.type == GroupType.family ? 'Family' : 'Split';
+    final icon = group.type == GroupType.family
+        ? Icons.home_outlined
+        : Icons.group_outlined;
     return Card(
       child: ListTile(
+        onTap: onTap,
         leading: CircleAvatar(
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: const Icon(Icons.group_outlined),
+          child: Icon(icon),
         ),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: Text(trailing, style: Theme.of(context).textTheme.labelLarge),
+        title: Row(
+          children: [
+            Expanded(child: Text(group.title)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(badge, style: Theme.of(context).textTheme.labelSmall),
+            ),
+          ],
+        ),
+        subtitle: Text(group.subtitle),
+        trailing: Text(
+          group.amountText,
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
       ),
     );
   }

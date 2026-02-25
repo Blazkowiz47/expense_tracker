@@ -73,7 +73,6 @@ class ExpenseTrackerAppView extends StatelessWidget {
       case AppRoutes.root:
       case AppRoutes.overview:
       case AppRoutes.friends:
-      case AppRoutes.family:
       case AppRoutes.groups:
       case AppRoutes.activity:
       case AppRoutes.account:
@@ -107,14 +106,12 @@ class _AuthGuardedRoute extends StatelessWidget {
             return const HomeShellPage(initialIndex: 0);
           case AppRoutes.friends:
             return const HomeShellPage(initialIndex: 1);
-          case AppRoutes.family:
-            return const HomeShellPage(initialIndex: 2);
           case AppRoutes.groups:
-            return const HomeShellPage(initialIndex: 3);
+            return const HomeShellPage(initialIndex: 2);
           case AppRoutes.activity:
-            return const HomeShellPage(initialIndex: 4);
+            return const HomeShellPage(initialIndex: 3);
           case AppRoutes.account:
-            return const HomeShellPage(initialIndex: 5);
+            return const HomeShellPage(initialIndex: 4);
           case AppRoutes.accountEdit:
             return AccountEditRoutePage(profileRepository: profileRepository);
           case AppRoutes.root:
