@@ -55,6 +55,7 @@ void main() {
         user: user,
         bytes: Uint8List.fromList([1, 2, 3]),
         fileNameHint: 'a.jpg',
+        previewPath: 'blob:test-preview',
       ),
       expect: () => [
         isA<ProfileEditState>()
@@ -79,6 +80,11 @@ void main() {
               (state) => state.action,
               'action',
               ProfileEditAction.photoUploaded,
+            )
+            .having(
+              (state) => state.pickedImagePath,
+              'pickedImagePath',
+              'blob:test-preview',
             )
             .having(
               (state) => state.pickedImageBytes,

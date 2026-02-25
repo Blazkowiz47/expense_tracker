@@ -13,6 +13,7 @@ class ProfileEditState extends Equatable {
     this.uploadProgress,
     this.photoUrl,
     this.pickedImageBytes,
+    this.pickedImagePath,
     this.pickedImageName,
     this.avatarVersion = 0,
     this.message,
@@ -24,6 +25,7 @@ class ProfileEditState extends Equatable {
   final double? uploadProgress;
   final String? photoUrl;
   final Uint8List? pickedImageBytes;
+  final String? pickedImagePath;
   final String? pickedImageName;
   final int avatarVersion;
   final String? message;
@@ -42,6 +44,8 @@ class ProfileEditState extends Equatable {
     bool clearPhotoUrl = false,
     Uint8List? pickedImageBytes,
     bool clearPickedImageBytes = false,
+    String? pickedImagePath,
+    bool clearPickedImagePath = false,
     String? pickedImageName,
     bool clearPickedImageName = false,
     int? avatarVersion,
@@ -60,6 +64,9 @@ class ProfileEditState extends Equatable {
       pickedImageBytes: clearPickedImageBytes
           ? null
           : (pickedImageBytes ?? this.pickedImageBytes),
+      pickedImagePath: clearPickedImagePath
+          ? null
+          : (pickedImagePath ?? this.pickedImagePath),
       pickedImageName: clearPickedImageName
           ? null
           : (pickedImageName ?? this.pickedImageName),
@@ -76,6 +83,7 @@ class ProfileEditState extends Equatable {
     uploadProgress,
     photoUrl,
     pickedImageBytes,
+    pickedImagePath,
     pickedImageName,
     avatarVersion,
     message,

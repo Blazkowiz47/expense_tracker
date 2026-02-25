@@ -18,6 +18,7 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
     required User user,
     required Uint8List bytes,
     required String fileNameHint,
+    String? previewPath,
   }) async {
     emit(
       state.copyWith(
@@ -25,6 +26,7 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
         action: ProfileEditAction.none,
         uploadProgress: 0,
         pickedImageBytes: bytes,
+        pickedImagePath: previewPath,
         pickedImageName: fileNameHint,
         clearError: true,
         clearMessage: true,
@@ -46,6 +48,7 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
           action: ProfileEditAction.photoUploaded,
           photoUrl: _withCacheBuster(downloadUrl),
           pickedImageBytes: bytes,
+          pickedImagePath: previewPath,
           pickedImageName: fileNameHint,
           clearUploadProgress: true,
           avatarVersion: state.avatarVersion + 1,

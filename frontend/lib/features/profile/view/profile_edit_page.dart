@@ -3,6 +3,7 @@ import 'package:expense_tracker/features/profile/cubit/profile_edit_state.dart';
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
@@ -72,6 +73,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
         user: widget.user,
         bytes: bytes,
         fileNameHint: file.name,
+        previewPath: file.path,
       );
     } catch (error) {
       _cubit.onImagePickFailed(error);
@@ -119,12 +121,28 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                         height: avatarDiameter,
                         child: ClipOval(
                           child: state.pickedImageBytes != null
-                              ? Image.memory(
-                                  state.pickedImageBytes!,
-                                  gaplessPlayback: true,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      _AvatarFallback(iconSize: 44),
-                                )
+                              ? (kIsWeb &&
+                                        state.pickedImagePath != null &&
+                                        state.pickedImagePath!.isNotEmpty
+                                    ? Image.network(
+                                        state.pickedImagePath!,
+                                        key: ValueKey(
+                                          '${state.pickedImagePath}|${state.avatarVersion}',
+                                        ),
+                                        gaplessPlayback: true,
+                                        webHtmlElementStrategy:
+                                            WebHtmlElementStrategy.prefer,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                _AvatarFallback(iconSize: 44),
+                                      )
+                                    : Image.memory(
+                                        state.pickedImageBytes!,
+                                        gaplessPlayback: true,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                _AvatarFallback(iconSize: 44),
+                                      ))
                               : (state.photoUrl?.isNotEmpty == true
                                     ? Image.network(
                                         state.photoUrl!,
