@@ -101,11 +101,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
         listener: (context, state) {
           if (state.action == ProfileEditAction.profileSaved) {
             Navigator.of(context).pop(true);
-            return;
-          }
-          if (state.action == ProfileEditAction.photoUploaded) {
-            PaintingBinding.instance.imageCache.clear();
-            PaintingBinding.instance.imageCache.clearLiveImages();
           }
         },
         builder: (context, state) {

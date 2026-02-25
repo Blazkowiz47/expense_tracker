@@ -45,6 +45,8 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
           status: ProfileEditStatus.success,
           action: ProfileEditAction.photoUploaded,
           photoUrl: _withCacheBuster(downloadUrl),
+          pickedImageBytes: bytes,
+          pickedImageName: fileNameHint,
           clearUploadProgress: true,
           avatarVersion: state.avatarVersion + 1,
           message: 'Profile photo uploaded successfully.',
