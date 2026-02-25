@@ -15,6 +15,7 @@ class ExpenseRepository {
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;
   final Map<String, Expense> _expensesCache = {};
+  static const _requestTimeout = Duration(seconds: 20);
 
   Future<void> initialize() => refresh();
 
@@ -28,20 +29,22 @@ class ExpenseRepository {
   Future<void> createExpense(Expense expense) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses');
     final token = await _authTokenProvider.getBearerToken();
-    final response = await _client.post(
-      uri,
-      headers: <String, String>{
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode(<String, dynamic>{
-        'amount': expense.amount,
-        'category': expense.category ?? 'Personal',
-        'description': expense.description ?? expense.title,
-        'date': expense.createdAt.toUtc().toIso8601String(),
-      }),
-    );
+    final response = await _client
+        .post(
+          uri,
+          headers: <String, String>{
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(<String, dynamic>{
+            'amount': expense.amount,
+            'category': expense.category ?? 'Personal',
+            'description': expense.description ?? expense.title,
+            'date': expense.createdAt.toUtc().toIso8601String(),
+          }),
+        )
+        .timeout(_requestTimeout);
 
     if (response.statusCode != 201) {
       throw Exception(
@@ -57,20 +60,22 @@ class ExpenseRepository {
   Future<void> updateExpense(Expense expense) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses/${expense.id}');
     final token = await _authTokenProvider.getBearerToken();
-    final response = await _client.put(
-      uri,
-      headers: <String, String>{
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode(<String, dynamic>{
-        'amount': expense.amount,
-        'category': expense.category ?? 'Personal',
-        'description': expense.description ?? expense.title,
-        'date': expense.createdAt.toUtc().toIso8601String(),
-      }),
-    );
+    final response = await _client
+        .put(
+          uri,
+          headers: <String, String>{
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(<String, dynamic>{
+            'amount': expense.amount,
+            'category': expense.category ?? 'Personal',
+            'description': expense.description ?? expense.title,
+            'date': expense.createdAt.toUtc().toIso8601String(),
+          }),
+        )
+        .timeout(_requestTimeout);
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -86,13 +91,15 @@ class ExpenseRepository {
   Future<void> deleteExpense(String id) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses/$id');
     final token = await _authTokenProvider.getBearerToken();
-    final response = await _client.delete(
-      uri,
-      headers: <String, String>{
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
+    final response = await _client
+        .delete(
+          uri,
+          headers: <String, String>{
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        )
+        .timeout(_requestTimeout);
 
     if (response.statusCode != 200 && response.statusCode != 204) {
       throw Exception(
@@ -130,13 +137,15 @@ class ExpenseRepository {
       '${ApiConfig.baseUrl}/api/v1/expenses?page=1&limit=200',
     );
     final token = await _authTokenProvider.getBearerToken();
-    final response = await _client.get(
-      uri,
-      headers: <String, String>{
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    );
+    final response = await _client
+        .get(
+          uri,
+          headers: <String, String>{
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        )
+        .timeout(_requestTimeout);
 
     if (response.statusCode != 200) {
       throw Exception(

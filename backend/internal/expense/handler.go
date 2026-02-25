@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -195,9 +196,11 @@ func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 		Date:        date,
 	})
 	if err != nil {
+		log.Printf("expense create failed uid=%s category=%s err=%v", uid, payload.Category, err)
 		h.handleServiceError(w, err)
 		return
 	}
+	log.Printf("expense created uid=%s id=%s amount=%.2f category=%s", uid, expense.ID, expense.Amount, expense.Category)
 
 	httpapi.WriteJSON(w, http.StatusCreated, expense)
 }

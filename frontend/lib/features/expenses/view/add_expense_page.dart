@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/data/models/expense.dart';
@@ -66,9 +68,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
       final bloc = context.read<ExpensesBloc>();
       bloc.add(CreateExpense(expense: expense));
 
-      final resultState = await bloc.stream.firstWhere(
-        (state) => state is ExpensesLoaded || state is ExpensesError,
-      );
+      final resultState = await bloc.stream
+          .firstWhere(
+            (state) => state is ExpensesLoaded || state is ExpensesError,
+          )
+          .timeout(const Duration(seconds: 25));
 
       if (!mounted) return;
 
@@ -81,6 +85,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
       }
 
       Navigator.of(context).pop(true);
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error =
+            'Timed out while saving expense. Please check backend connectivity and try again.';
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
