@@ -1,0 +1,25 @@
+# Go build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.test
+
+# Coverage and profiling output
+*.out
+coverage/
+coverage.out
+cpu.prof
+mem.prof
+
+# Environment and local config
+.env
+.env.*
+
+# IDE / OS files
+.DS_Store
