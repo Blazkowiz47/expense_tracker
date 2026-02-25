@@ -1,10 +1,94 @@
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
+import 'package:expense_tracker/data/models/expense.dart';
+import 'package:expense_tracker/data/models/expense_core.dart';
+import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
-class AddExpensePage extends StatelessWidget {
+class AddExpensePage extends StatefulWidget {
   const AddExpensePage({super.key});
+
+  @override
+  State<AddExpensePage> createState() => _AddExpensePageState();
+}
+
+class _AddExpensePageState extends State<AddExpensePage> {
+  final _descriptionController = TextEditingController();
+  final _amountController = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final description = _descriptionController.text.trim();
+    final amountText = _amountController.text.trim();
+    final amount = double.tryParse(amountText);
+
+    if (description.isEmpty) {
+      setState(() => _error = 'Description is required.');
+      return;
+    }
+    if (amount == null || amount <= 0) {
+      setState(() => _error = 'Enter a valid amount greater than 0.');
+      return;
+    }
+
+    final expense = Expense(
+      core: ExpenseCore(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        title: description,
+        amount: amount,
+        currency: 'INR',
+        category: 'Personal',
+        createdAt: DateTime.now(),
+      ),
+      description: description,
+      paymentMethod: 'cash',
+      updatedAt: DateTime.now(),
+      isSynced: false,
+      deleted: false,
+    );
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    try {
+      final bloc = context.read<ExpensesBloc>();
+      bloc.add(CreateExpense(expense: expense));
+
+      final resultState = await bloc.stream.firstWhere(
+        (state) => state is ExpensesLoaded || state is ExpensesError,
+      );
+
+      if (!mounted) return;
+
+      if (resultState is ExpensesError) {
+        setState(() {
+          _saving = false;
+          _error = resultState.message;
+        });
+        return;
+      }
+
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = error.toString();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +101,7 @@ class AddExpensePage extends StatelessWidget {
 
   Widget _buildMaterial(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add an expense')),
+      appBar: AppBar(title: const Text('Add personal expense')),
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
@@ -32,69 +116,45 @@ class AddExpensePage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'With you and',
+                        'Personal expense',
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: const [
-                          Chip(label: Text('All of this group')),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      const TextField(
-                        decoration: InputDecoration(
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _descriptionController,
+                        decoration: const InputDecoration(
                           labelText: 'Description',
                           border: OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 12),
-                      const TextField(
-                        keyboardType: TextInputType.numberWithOptions(
+                      TextField(
+                        controller: _amountController,
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: 'Amount',
                           prefixText: 'INR ',
                           border: OutlineInputBorder(),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownMenu<String>(
-                              initialSelection: 'You',
-                              label: const Text('Paid by'),
-                              dropdownMenuEntries: const [
-                                DropdownMenuEntry(value: 'You', label: 'You'),
-                              ],
-                            ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownMenu<String>(
-                              initialSelection: 'Equally',
-                              label: const Text('Split'),
-                              dropdownMenuEntries: const [
-                                DropdownMenuEntry(
-                                  value: 'Equally',
-                                  label: 'Equally',
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: _saving ? null : _save,
                 icon: const Icon(Icons.check),
                 label: const Text('Save expense'),
               ),
@@ -108,11 +168,11 @@ class AddExpensePage extends StatelessWidget {
   Widget _buildCupertino(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('Add an expense'),
+        middle: const Text('Add personal expense'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           minimumSize: const Size(30, 30),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _saving ? null : _save,
           child: const Text('Save'),
         ),
       ),
@@ -124,75 +184,47 @@ class AddExpensePage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(AppSpacing.md),
               children: [
-                const Text(
-                  'With you and',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                const Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [_CupertinoPill(label: 'All of this group')],
-                ),
-                const SizedBox(height: AppSpacing.md),
                 CupertinoFormSection.insetGrouped(
                   children: [
                     CupertinoFormRow(
                       prefix: const Text('Description'),
-                      child: const CupertinoTextField(
+                      child: CupertinoTextField(
+                        controller: _descriptionController,
                         placeholder: 'Enter a description',
                         textAlign: TextAlign.end,
                       ),
                     ),
                     CupertinoFormRow(
                       prefix: const Text('Amount'),
-                      child: const CupertinoTextField(
+                      child: CupertinoTextField(
+                        controller: _amountController,
                         placeholder: 'INR 0.00',
-                        keyboardType: TextInputType.numberWithOptions(
+                        keyboardType: const TextInputType.numberWithOptions(
                           decimal: true,
                         ),
                         textAlign: TextAlign.end,
                       ),
                     ),
-                    CupertinoFormRow(
-                      prefix: const Text('Paid by'),
-                      child: const Text('You'),
-                    ),
-                    CupertinoFormRow(
-                      prefix: const Text('Split'),
-                      child: const Text('Equally'),
-                    ),
                   ],
                 ),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: CupertinoTheme.of(context).primaryColor,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.md),
                 CupertinoButton.filled(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _saving ? null : _save,
                   child: const Text('Save expense'),
                 ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CupertinoPill extends StatelessWidget {
-  const _CupertinoPill({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey5.resolveFrom(context),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(label, style: const TextStyle(fontSize: 14)),
       ),
     );
   }
