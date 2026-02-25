@@ -78,67 +78,33 @@
     <rule>Use environment variables for backend runtime configuration: <code>PORT</code>, <code>APP_ENV</code>, <code>DEV_AUTH_TOKEN</code>, <code>DEV_AUTH_UID</code>.</rule>
     <rule>Current backend auth verifier is local-development oriented; production Firebase setup is pending.</rule>
   </security_and_config>
-
-  <gpt5_prompting_alignment>
-    <preferred_prompt_structure>
-      <rule>Use explicit XML-style sections to improve instruction clarity and execution reliability.</rule>
-      <template language="xml"><![CDATA[
-<role>You are a pragmatic coding agent working in this repository.</role>
-<objective>Implement the user request end-to-end with verification.</objective>
-<context>
-  <repo>/Users/sushrutpatwardhan/1Projects/expense_tracker</repo>
-  <modules>frontend (Flutter), backend (Go)</modules>
-</context>
-<constraints>
-  <rule>Do not invent outputs; verify with tools.</rule>
-  <rule>Prefer non-destructive commands.</rule>
-  <rule>Keep responses concise and actionable.</rule>
-</constraints>
-<workflow>
-  <step>Restate goal and plan briefly.</step>
-  <step>Execute changes.</step>
-  <step>Run validations/tests.</step>
-  <step>Summarize outcomes and risks.</step>
-</workflow>
-<output_format>
-  <item>Outcome</item>
-  <item>Files changed</item>
-  <item>Validation results</item>
-  <item>Next steps (if any)</item>
-</output_format>
-]]></template>
-    </preferred_prompt_structure>
-
-    <agentic_workflow_predictability>
-      <rule>Before substantial tool use, restate goal and provide a short plan.</rule>
-      <rule>For multi-step tasks, send concise progress updates while executing.</rule>
-      <rule>Complete end-to-end resolution in one turn when feasible; avoid partial stops unless blocked.</rule>
-      <rule>If uncertain, gather more evidence with tools instead of guessing.</rule>
-    </agentic_workflow_predictability>
-
-    <instruction_quality>
-      <rule>Use explicit, concrete instructions; avoid vague directives.</rule>
-      <rule>Avoid contradictory constraints; if conflict exists, follow highest-priority rule and state the tradeoff.</rule>
-      <rule>Keep rules scoped and structured for consistent compliance.</rule>
-    </instruction_quality>
-
-    <reasoning_and_effort>
-      <rule>Match effort to complexity: low for simple edits, medium by default, high for risky or complex tasks.</rule>
-      <rule>Decompose complex work into verifiable steps and validate each step.</rule>
-    </reasoning_and_effort>
-
-    <tooling_and_editing>
-      <rule>Verify behavior and facts with tools; never invent command outputs.</rule>
-      <rule>Prefer <code>apply_patch</code> for focused, reviewable edits.</rule>
-      <rule>Run relevant checks/tests where practical and report residual risk.</rule>
-      <rule>Use non-destructive operations unless user explicitly requests destructive actions.</rule>
-    </tooling_and_editing>
-
-    <response_formatting>
-      <rule>Keep responses concise, structured, and actionable.</rule>
-      <rule>Use Markdown only when it improves readability.</rule>
-      <rule>Wrap commands, file paths, environment variables, and identifiers in backticks.</rule>
-      <rule>For larger tasks, report outcome, key file changes, validation results, and next steps.</rule>
-    </response_formatting>
-  </gpt5_prompting_alignment>
+  <agent_behavior>
+        <agentic_workflow_predictability>
+          <rule>Before substantial tool use, restate goal and provide a short plan.</rule>
+          <rule>For multi-step tasks, send concise progress updates while executing.</rule>
+          <rule>Complete end-to-end resolution in one turn when feasible; avoid partial stops unless blocked.</rule>
+          <rule>If uncertain, gather more evidence with tools instead of guessing.</rule>
+        </agentic_workflow_predictability>
+        <instruction_quality>
+          <rule>Use explicit, concrete instructions; avoid vague directives.</rule>
+          <rule>Avoid contradictory constraints; if conflict exists, follow highest-priority rule and state the tradeoff.</rule>
+          <rule>Keep rules scoped and structured for consistent compliance.</rule>
+        </instruction_quality>
+        <reasoning_and_effort>
+          <rule>Match effort to complexity: low for simple edits, medium by default, high for risky or complex tasks.</rule>
+          <rule>Decompose complex work into verifiable steps and validate each step.</rule>
+        </reasoning_and_effort>
+        <tooling_and_editing>
+          <rule>Verify behavior and facts with tools; never invent command outputs.</rule>
+          <rule>Prefer <code>apply_patch</code> for focused, reviewable edits.</rule>
+          <rule>Run relevant checks/tests where practical and report residual risk.</rule>
+          <rule>Use non-destructive operations unless user explicitly requests destructive actions.</rule>
+        </tooling_and_editing>
+        <response_formatting>
+          <rule>Keep responses concise, structured, and actionable.</rule>
+          <rule>Use Markdown only when it improves readability.</rule>
+          <rule>Wrap commands, file paths, environment variables, and identifiers in backticks.</rule>
+          <rule>For larger tasks, report outcome, key file changes, validation results, and next steps.</rule>
+        </response_formatting>
+  </agent_behavior>
 </agent_spec>
