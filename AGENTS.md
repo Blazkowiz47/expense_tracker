@@ -20,6 +20,8 @@
     <rule>After code changes, restart processes in-place in tmux so browser refresh picks up changes quickly.</rule>
     <rule>After any tmux create/restart/kill operation, verify with <code>tmux list-windows -t expense-dev</code> plus relevant health checks.</rule>
     <rule>After any code change, ensure both backend and frontend processes are healthy before asking user to reload.</rule>
+    <rule>The agent must execute tmux lifecycle commands itself (start/restart/health checks) and not delegate that verification to the user.</rule>
+    <rule>Default full-session restart command is <code>scripts/start_expense_dev_tmux.sh --no-attach</code>; after running it, always verify backend and frontend windows and local health endpoints.</rule>
     <rule>No user approval is required for project-scoped <code>flutter</code>, <code>dart</code>, <code>tmux</code>, and <code>go</code> commands.</rule>
     <rule>No user approval is required for <code>curl</code> to localhost/current project URLs (for example <code>127.0.0.1</code>, <code>localhost</code>, <code>8080</code>, <code>7357</code>).</rule>
     <rule>After code or documentation edits, run <code>git add</code> and create a concise commit.</rule>
