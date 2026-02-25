@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:equatable/equatable.dart';
 
 enum ProfileEditStatus { idle, uploadingPhoto, savingName, success, failure }
@@ -10,6 +12,9 @@ class ProfileEditState extends Equatable {
     this.action = ProfileEditAction.none,
     this.uploadProgress,
     this.photoUrl,
+    this.pickedImageBytes,
+    this.pickedImageName,
+    this.avatarVersion = 0,
     this.message,
     this.error,
   });
@@ -18,6 +23,9 @@ class ProfileEditState extends Equatable {
   final ProfileEditAction action;
   final double? uploadProgress;
   final String? photoUrl;
+  final Uint8List? pickedImageBytes;
+  final String? pickedImageName;
+  final int avatarVersion;
   final String? message;
   final String? error;
 
@@ -32,6 +40,11 @@ class ProfileEditState extends Equatable {
     bool clearUploadProgress = false,
     String? photoUrl,
     bool clearPhotoUrl = false,
+    Uint8List? pickedImageBytes,
+    bool clearPickedImageBytes = false,
+    String? pickedImageName,
+    bool clearPickedImageName = false,
+    int? avatarVersion,
     String? message,
     bool clearMessage = false,
     String? error,
@@ -44,6 +57,13 @@ class ProfileEditState extends Equatable {
           ? null
           : (uploadProgress ?? this.uploadProgress),
       photoUrl: clearPhotoUrl ? null : (photoUrl ?? this.photoUrl),
+      pickedImageBytes: clearPickedImageBytes
+          ? null
+          : (pickedImageBytes ?? this.pickedImageBytes),
+      pickedImageName: clearPickedImageName
+          ? null
+          : (pickedImageName ?? this.pickedImageName),
+      avatarVersion: avatarVersion ?? this.avatarVersion,
       message: clearMessage ? null : (message ?? this.message),
       error: clearError ? null : (error ?? this.error),
     );
@@ -55,6 +75,9 @@ class ProfileEditState extends Equatable {
     action,
     uploadProgress,
     photoUrl,
+    pickedImageBytes,
+    pickedImageName,
+    avatarVersion,
     message,
     error,
   ];

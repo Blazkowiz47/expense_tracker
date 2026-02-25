@@ -57,11 +57,18 @@ void main() {
         fileNameHint: 'a.jpg',
       ),
       expect: () => [
-        const ProfileEditState(
-          status: ProfileEditStatus.uploadingPhoto,
-          action: ProfileEditAction.none,
-          uploadProgress: 0,
-        ),
+        isA<ProfileEditState>()
+            .having(
+              (state) => state.status,
+              'status',
+              ProfileEditStatus.uploadingPhoto,
+            )
+            .having((state) => state.uploadProgress, 'uploadProgress', 0)
+            .having(
+              (state) => state.pickedImageName,
+              'pickedImageName',
+              'a.jpg',
+            ),
         isA<ProfileEditState>()
             .having(
               (state) => state.status,
@@ -73,6 +80,7 @@ void main() {
               'action',
               ProfileEditAction.photoUploaded,
             )
+            .having((state) => state.avatarVersion, 'avatarVersion', 1)
             .having(
               (state) => state.photoUrl,
               'photoUrl',

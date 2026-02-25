@@ -3,7 +3,6 @@ import 'package:expense_tracker/features/profile/cubit/profile_edit_state.dart';
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
@@ -29,10 +28,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   late final TextEditingController _emailController;
   late final ProfileEditCubit _cubit;
   final _picker = ImagePicker();
-
-  Uint8List? _pickedImageBytes;
-  String? _pickedImageName;
-  int _avatarVersion = 0;
 
   @override
   void initState() {
@@ -73,11 +68,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) return;
 
-      setState(() {
-        _pickedImageBytes = bytes;
-        _pickedImageName = file.name;
-      });
-
       await _cubit.uploadPhoto(
         user: widget.user,
         bytes: bytes,
@@ -116,13 +106,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           if (state.action == ProfileEditAction.photoUploaded) {
             PaintingBinding.instance.imageCache.clear();
             PaintingBinding.instance.imageCache.clearLiveImages();
-            if (mounted) {
-              setState(() {
-                _pickedImageBytes = null;
-                _pickedImageName = null;
-                _avatarVersion += 1;
-              });
-            }
           }
         },
         builder: (context, state) {
@@ -140,10 +123,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                         width: avatarDiameter,
                         height: avatarDiameter,
                         child: ClipOval(
-                          child: _pickedImageBytes != null
+                          child: state.pickedImageBytes != null
                               ? Image.memory(
-                                  _pickedImageBytes!,
-                                  fit: BoxFit.cover,
+                                  state.pickedImageBytes!,
                                   errorBuilder: (context, error, stackTrace) =>
                                       _AvatarFallback(iconSize: 44),
                                 )
@@ -151,9 +133,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                                     ? Image.network(
                                         state.photoUrl!,
                                         key: ValueKey(
-                                          '${state.photoUrl}|$_avatarVersion',
+                                          '${state.photoUrl}|${state.avatarVersion}',
                                         ),
-                                        fit: BoxFit.cover,
                                         webHtmlElementStrategy:
                                             WebHtmlElementStrategy.prefer,
                                         errorBuilder:
@@ -173,12 +154,13 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (_pickedImageName != null)
+                    if (state.pickedImageName != null)
                       Text(
-                        'Selected image: $_pickedImageName',
+                        'Selected image: ${state.pickedImageName}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
-                    if (_pickedImageName != null) const SizedBox(height: 12),
+                    if (state.pickedImageName != null)
+                      const SizedBox(height: 12),
                     TextField(
                       controller: _nameController,
                       enabled: !busy,

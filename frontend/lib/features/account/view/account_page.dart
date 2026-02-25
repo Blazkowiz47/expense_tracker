@@ -113,7 +113,6 @@ class _ProfileCard extends StatelessWidget {
                 ? Image.network(
                     profile.photoUrl!,
                     key: ValueKey(profile.photoUrl),
-                    fit: BoxFit.cover,
                     webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
                     errorBuilder: (context, error, stackTrace) =>
                         _AccountAvatarFallback(),
