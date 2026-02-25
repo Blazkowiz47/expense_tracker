@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
