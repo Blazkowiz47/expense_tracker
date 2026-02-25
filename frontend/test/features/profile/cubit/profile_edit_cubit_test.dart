@@ -80,6 +80,11 @@ void main() {
               'action',
               ProfileEditAction.photoUploaded,
             )
+            .having(
+              (state) => state.pickedImageBytes,
+              'pickedImageBytes',
+              isNotNull,
+            )
             .having((state) => state.avatarVersion, 'avatarVersion', 1)
             .having(
               (state) => state.photoUrl,

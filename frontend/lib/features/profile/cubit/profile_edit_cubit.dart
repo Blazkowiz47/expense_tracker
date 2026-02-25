@@ -46,8 +46,6 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
           action: ProfileEditAction.photoUploaded,
           photoUrl: _withCacheBuster(downloadUrl),
           clearUploadProgress: true,
-          clearPickedImageBytes: true,
-          clearPickedImageName: true,
           avatarVersion: state.avatarVersion + 1,
           message: 'Profile photo uploaded successfully.',
           clearError: true,
@@ -60,8 +58,6 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
           action: ProfileEditAction.none,
           clearUploadProgress: true,
           clearMessage: true,
-          clearPickedImageBytes: true,
-          clearPickedImageName: true,
           error:
               'Failed to upload photo (${error.code}): ${error.message ?? 'Unknown Firebase error'}',
         ),
@@ -73,8 +69,6 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
           action: ProfileEditAction.none,
           clearUploadProgress: true,
           clearMessage: true,
-          clearPickedImageBytes: true,
-          clearPickedImageName: true,
           error: 'Failed to upload photo: $error',
         ),
       );
