@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 
@@ -13,17 +14,56 @@ import (
 func main() {
 	cfg := config.Load()
 
-	repo := expense.NewInMemoryRepository()
+	var (
+		repo        expense.Repository = expense.NewInMemoryRepository()
+		repoBackend                    = "in-memory"
+	)
+	if cfg.FirebaseProjectID != "" {
+		firestoreRepo, err := expense.NewFirestoreRepository(
+			context.Background(),
+			cfg.FirebaseProjectID,
+			cfg.FirebaseCredentialsFile,
+		)
+		if err != nil {
+			log.Fatalf("firestore repository initialization failed: %v", err)
+		}
+		defer firestoreRepo.Close()
+		repo = firestoreRepo
+		repoBackend = "firestore"
+	}
+
 	service := expense.NewService(repo)
 	handler := expense.NewHandler(service)
-	verifier := auth.NewStaticVerifier(map[string]string{
-		cfg.DevAuthToken: cfg.DevAuthUID,
-	})
+
+	var verifier auth.Verifier
+	switch cfg.AuthMode {
+	case "firebase":
+		firebaseVerifier, err := auth.NewFirebaseVerifier(context.Background(), auth.FirebaseVerifierConfig{
+			ProjectID:       cfg.FirebaseProjectID,
+			CredentialsFile: cfg.FirebaseCredentialsFile,
+		})
+		if err != nil {
+			log.Fatalf("firebase auth initialization failed: %v", err)
+		}
+		verifier = firebaseVerifier
+	case "dev":
+		verifier = auth.NewStaticVerifier(map[string]string{
+			cfg.DevAuthToken: cfg.DevAuthUID,
+		})
+	default:
+		log.Fatalf("unsupported AUTH_MODE %q (allowed: dev, firebase)", cfg.AuthMode)
+	}
 
 	router := server.NewRouter(verifier, handler)
 	addr := ":" + cfg.Port
 
-	log.Printf("backend listening on %s (env=%s)", addr, cfg.Environment)
+	log.Printf(
+		"backend listening on %s (env=%s auth_mode=%s expense_repo=%s)",
+		addr,
+		cfg.Environment,
+		cfg.AuthMode,
+		repoBackend,
+	)
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
