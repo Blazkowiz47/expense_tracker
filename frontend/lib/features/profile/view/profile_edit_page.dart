@@ -34,6 +34,11 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   String? _status;
   String? _error;
 
+  String _withCacheBuster(String url) {
+    final separator = url.contains('?') ? '&' : '?';
+    return '$url${separator}v=${DateTime.now().millisecondsSinceEpoch}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -119,7 +124,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       );
       if (!mounted) return;
       setState(() {
-        _photoUrl = downloadUrl;
+        _photoUrl = _withCacheBuster(downloadUrl);
+        _pickedImageBytes = null;
         _pickedImageName = null;
         _status = 'Profile photo uploaded successfully.';
       });
@@ -204,7 +210,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                   width: avatarDiameter,
                   height: avatarDiameter,
                   child: ClipOval(
-                    child: _pickedImageBytes != null
+                    child: _uploadingPhoto && _pickedImageBytes != null
                         ? Image.memory(
                             _pickedImageBytes!,
                             fit: BoxFit.cover,
