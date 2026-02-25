@@ -36,6 +36,7 @@ Frontend (`frontend/`):
 ## Coding Style & Naming Conventions
 - Go: use `gofmt` formatting (tabs), lowercase package names, and `CamelCase` exported symbols.
 - Dart/Flutter: 2-space indentation, `dart format .`, `lowerCamelCase` members, `UpperCamelCase` classes.
+- Flutter state management: prefer Bloc/Cubit with immutable state classes (`copyWith`, explicit status/action fields) for feature workflows; avoid keeping business/process state directly in widgets when it can live in Bloc state.
 - Keep HTTP error responses consistent with the JSON error envelope in `backend/internal/httpapi/response.go`.
 
 ## Testing Guidelines
