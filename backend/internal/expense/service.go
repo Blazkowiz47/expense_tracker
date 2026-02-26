@@ -2,11 +2,12 @@ package expense
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
@@ -26,10 +27,12 @@ type Service struct {
 	now         nowFn
 }
 
-var idCounter atomic.Uint64
-
 func defaultIDGenerator() string {
-	return fmt.Sprintf("exp_%d", idCounter.Add(1))
+	var b [12]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		return "exp_" + hex.EncodeToString(b[:])
+	}
+	return fmt.Sprintf("exp_%d", time.Now().UTC().UnixNano())
 }
 
 func defaultNow() time.Time {
