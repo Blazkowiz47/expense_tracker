@@ -16,6 +16,7 @@ class _FriendsPageState extends State<FriendsPage> {
 
   List<FriendContact> _friends = const [];
   bool _loading = true;
+  bool _addingFriend = false;
   String? _error;
 
   @override
@@ -52,9 +53,11 @@ class _FriendsPageState extends State<FriendsPage> {
   }
 
   Future<void> _addFriendFlow() async {
+    if (_addingFriend) return;
     final query = await _openAddFriendDialog();
     if (query == null || query.isEmpty) return;
 
+    setState(() => _addingFriend = true);
     try {
       final resolved = await _repository.resolveFriend(query);
       if (!resolved.exists) {
@@ -67,16 +70,75 @@ class _FriendsPageState extends State<FriendsPage> {
 
       await _repository.addFriend(query);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Friend added.')));
       await _loadFriends();
+      await _showSuccessTickAnimation();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _addingFriend = false);
+      }
     }
+  }
+
+  Future<void> _showSuccessTickAnimation() async {
+    if (!mounted) return;
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'Friend added',
+      barrierColor: Colors.black38,
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Center(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  blurRadius: 16,
+                  color: Colors.black26,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle, size: 56, color: Color(0xFF1B8C67)),
+                  SizedBox(height: 8),
+                  Text('Friend added'),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (
+        dialogContext,
+        animation,
+        secondaryAnimation,
+        child,
+      ) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
+            child: child,
+          ),
+        );
+      },
+    );
+
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
   }
 
   Future<String?> _openAddFriendDialog() async {
@@ -109,48 +171,82 @@ class _FriendsPageState extends State<FriendsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _SummaryCard(
-              title: 'Friends',
-              amount: '${_friends.length}',
-              amountColor: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 16),
-            _ListSectionHeader(
-              title: 'Friends',
-              actionLabel: 'Add friend',
-              onAction: _addFriendFlow,
-            ),
-            if (_loading)
-              const Card(child: ListTile(title: Text('Loading friends...')))
-            else if (_error != null)
-              Card(
-                child: ListTile(
-                  title: const Text('Failed to load friends'),
-                  subtitle: Text(_error!),
+    return Stack(
+      children: [
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _SummaryCard(
+                  title: 'Friends',
+                  amount: '${_friends.length}',
+                  amountColor: Theme.of(context).colorScheme.primary,
                 ),
-              )
-            else if (_friends.isEmpty)
-              const _BalanceTile(
-                name: 'No friends yet',
-                subtitle: 'Add by email or phone number.',
-              )
-            else
-              ..._friends.map(
-                (friend) => _BalanceTile(
-                  name: friend.label,
-                  subtitle: friend.email.isNotEmpty ? friend.email : friend.uid,
+                const SizedBox(height: 16),
+                _ListSectionHeader(
+                  title: 'Friends',
+                  actionLabel: 'Add friend',
+                  onAction: _addingFriend ? null : _addFriendFlow,
+                ),
+                if (_loading)
+                  const Card(child: ListTile(title: Text('Loading friends...')))
+                else if (_error != null)
+                  Card(
+                    child: ListTile(
+                      title: const Text('Failed to load friends'),
+                      subtitle: Text(_error!),
+                    ),
+                  )
+                else if (_friends.isEmpty)
+                  const _BalanceTile(
+                    name: 'No friends yet',
+                    subtitle: 'Add by email or phone number.',
+                  )
+                else
+                  ..._friends.map(
+                    (friend) => _BalanceTile(
+                      name: friend.label,
+                      subtitle: friend.email.isNotEmpty
+                          ? friend.email
+                          : friend.uid,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (_addingFriend)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black26,
+              child: Center(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.4),
+                        ),
+                        SizedBox(width: 12),
+                        Text('Adding friend...'),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -199,7 +295,7 @@ class _ListSectionHeader extends StatelessWidget {
 
   final String title;
   final String actionLabel;
-  final VoidCallback onAction;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
