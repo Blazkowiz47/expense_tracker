@@ -94,38 +94,47 @@ class _FriendsPageState extends State<FriendsPage> {
       barrierColor: Colors.black38,
       transitionDuration: const Duration(milliseconds: 180),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        final colorScheme = Theme.of(context).colorScheme;
         return Center(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(
-                  blurRadius: 16,
-                  color: Colors.black26,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.check_circle,
-                    size: 56,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Friend added',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface,
-                      fontWeight: FontWeight.w700,
-                    ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [
+                  BoxShadow(
+                    blurRadius: 16,
+                    color: Colors.black26,
+                    offset: Offset(0, 8),
                   ),
                 ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      size: 56,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Friend added',
+                      style: TextStyle(
+                        color: colorScheme.onSurface,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
