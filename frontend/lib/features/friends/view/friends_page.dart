@@ -1,64 +1,156 @@
-import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
+import 'package:expense_tracker/features/friends/models/friend_contact.dart';
+import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:http/http.dart' as http;
 
-class FriendsPage extends StatelessWidget {
+class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<DashboardSnapshotCubit, DashboardSnapshotState>(
-      builder: (context, state) {
-        if (state is DashboardSnapshotFailure) {
-          return Center(child: Text(state.message));
-        }
+  State<FriendsPage> createState() => _FriendsPageState();
+}
 
-        if (state is! DashboardSnapshotLoaded) {
-          return const Center(child: CircularProgressIndicator());
-        }
+class _FriendsPageState extends State<FriendsPage> {
+  late final http.Client _client;
+  late final ApiFriendsRepository _repository;
 
-        final snapshot = state.snapshot;
-        return Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _SummaryCard(
-                  title: snapshot.overallLabel,
-                  amount: snapshot.overallAmountText,
-                  amountColor: snapshot.overallPositive
-                      ? const Color(0xFF1B8C67)
-                      : Theme.of(context).colorScheme.error,
-                ),
-                const SizedBox(height: 16),
-                const _ListSectionHeader(
-                  title: 'Friends',
-                  actionLabel: 'Add friend',
-                ),
-                if (snapshot.friendItems.isEmpty)
-                  const _BalanceTile(
-                    name: 'No friends yet',
-                    subtitle: 'Your friend balances will appear here.',
-                    amount: 'Add your first friend',
-                    amountColor: Color(0xFF58646F),
-                  ),
-                ...snapshot.friendItems.map(
-                  (item) => _BalanceTile(
-                    name: item.title,
-                    subtitle: item.subtitle,
-                    amount: item.amountText,
-                    amountColor: item.positive
-                        ? const Color(0xFF1B8C67)
-                        : Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ],
-            ),
+  List<FriendContact> _friends = const [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _client = http.Client();
+    _repository = ApiFriendsRepository(client: _client);
+    _loadFriends();
+  }
+
+  @override
+  void dispose() {
+    _client.close();
+    super.dispose();
+  }
+
+  Future<void> _loadFriends() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final friends = await _repository.fetchFriends();
+      if (!mounted) return;
+      setState(() => _friends = friends);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _addFriendFlow() async {
+    final query = await _openAddFriendDialog();
+    if (query == null || query.isEmpty) return;
+
+    try {
+      final resolved = await _repository.resolveFriend(query);
+      if (!resolved.exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No account found.')));
+        return;
+      }
+
+      await _repository.addFriend(query);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Friend added.')));
+      await _loadFriends();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
+  Future<String?> _openAddFriendDialog() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add friend'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Email or phone',
+            hintText: 'friend@example.com or +15551234567',
           ),
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Find & add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _SummaryCard(
+              title: 'Friends',
+              amount: '${_friends.length}',
+              amountColor: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            _ListSectionHeader(
+              title: 'Friends',
+              actionLabel: 'Add friend',
+              onAction: _addFriendFlow,
+            ),
+            if (_loading)
+              const Card(child: ListTile(title: Text('Loading friends...')))
+            else if (_error != null)
+              Card(
+                child: ListTile(
+                  title: const Text('Failed to load friends'),
+                  subtitle: Text(_error!),
+                ),
+              )
+            else if (_friends.isEmpty)
+              const _BalanceTile(
+                name: 'No friends yet',
+                subtitle: 'Add by email or phone number.',
+              )
+            else
+              ..._friends.map(
+                (friend) => _BalanceTile(
+                  name: friend.label,
+                  subtitle: friend.email.isNotEmpty ? friend.email : friend.uid,
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -99,10 +191,15 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _ListSectionHeader extends StatelessWidget {
-  const _ListSectionHeader({required this.title, required this.actionLabel});
+  const _ListSectionHeader({
+    required this.title,
+    required this.actionLabel,
+    required this.onAction,
+  });
 
   final String title;
   final String actionLabel;
+  final VoidCallback onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -112,7 +209,7 @@ class _ListSectionHeader extends StatelessWidget {
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const Spacer(),
-          TextButton(onPressed: () {}, child: Text(actionLabel)),
+          TextButton(onPressed: onAction, child: Text(actionLabel)),
         ],
       ),
     );
@@ -120,17 +217,10 @@ class _ListSectionHeader extends StatelessWidget {
 }
 
 class _BalanceTile extends StatelessWidget {
-  const _BalanceTile({
-    required this.name,
-    required this.subtitle,
-    required this.amount,
-    required this.amountColor,
-  });
+  const _BalanceTile({required this.name, required this.subtitle});
 
   final String name;
   final String subtitle;
-  final String amount;
-  final Color amountColor;
 
   @override
   Widget build(BuildContext context) {
@@ -144,12 +234,6 @@ class _BalanceTile extends StatelessWidget {
         ),
         title: Text(name),
         subtitle: Text(subtitle),
-        trailing: Text(
-          amount,
-          style: Theme.of(
-            context,
-          ).textTheme.labelLarge?.copyWith(color: amountColor),
-        ),
       ),
     );
   }

@@ -10,6 +10,7 @@ import (
 
 	"expense_tracker_backend/internal/auth"
 	"expense_tracker_backend/internal/expense"
+	"expense_tracker_backend/internal/friend"
 	"expense_tracker_backend/internal/server"
 )
 
@@ -17,8 +18,10 @@ func setupTestServer() http.Handler {
 	repo := expense.NewInMemoryRepository()
 	svc := expense.NewService(repo)
 	h := expense.NewHandler(svc)
+	friendStore := friend.NewInMemoryStore()
+	friendHandler := friend.NewHandler(friendStore)
 	verifier := auth.NewStaticVerifier(map[string]string{"dev-token": "uid-1"})
-	return server.NewRouter(verifier, h)
+	return server.NewRouter(verifier, h, friendHandler)
 }
 
 func TestCreateExpenseUnauthorized(t *testing.T) {

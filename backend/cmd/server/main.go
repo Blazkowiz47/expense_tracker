@@ -8,6 +8,7 @@ import (
 	"expense_tracker_backend/internal/auth"
 	"expense_tracker_backend/internal/config"
 	"expense_tracker_backend/internal/expense"
+	"expense_tracker_backend/internal/friend"
 	"expense_tracker_backend/internal/server"
 )
 
@@ -35,6 +36,25 @@ func main() {
 	service := expense.NewService(repo)
 	handler := expense.NewHandler(service)
 
+	var (
+		friendStore   friend.Store = friend.NewInMemoryStore()
+		friendBackend              = "in-memory"
+	)
+	if cfg.FirebaseProjectID != "" {
+		firestoreFriendStore, err := friend.NewFirestoreStore(
+			context.Background(),
+			cfg.FirebaseProjectID,
+			cfg.FirebaseCredentialsFile,
+		)
+		if err != nil {
+			log.Fatalf("friend firestore store initialization failed: %v", err)
+		}
+		defer firestoreFriendStore.Close()
+		friendStore = firestoreFriendStore
+		friendBackend = "firestore"
+	}
+	friendHandler := friend.NewHandler(friendStore)
+
 	var verifier auth.Verifier
 	switch cfg.AuthMode {
 	case "firebase":
@@ -54,15 +74,16 @@ func main() {
 		log.Fatalf("unsupported AUTH_MODE %q (allowed: dev, firebase)", cfg.AuthMode)
 	}
 
-	router := server.NewRouter(verifier, handler)
+	router := server.NewRouter(verifier, handler, friendHandler)
 	addr := ":" + cfg.Port
 
 	log.Printf(
-		"backend listening on %s (env=%s auth_mode=%s expense_repo=%s)",
+		"backend listening on %s (env=%s auth_mode=%s expense_repo=%s friend_repo=%s)",
 		addr,
 		cfg.Environment,
 		cfg.AuthMode,
 		repoBackend,
+		friendBackend,
 	)
 	if err := http.ListenAndServe(addr, router); err != nil {
 		log.Fatalf("server failed: %v", err)
