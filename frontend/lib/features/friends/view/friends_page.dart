@@ -17,6 +17,7 @@ class _FriendsPageState extends State<FriendsPage> {
   List<FriendContact> _friends = const [];
   bool _loading = true;
   bool _addingFriend = false;
+  bool _showFriendAddedSuccess = false;
   String? _removingFriendUid;
   String? _error;
 
@@ -72,6 +73,8 @@ class _FriendsPageState extends State<FriendsPage> {
       await _repository.addFriend(query);
       if (!mounted) return;
       await _loadFriends();
+      if (!mounted) return;
+      setState(() => _addingFriend = false);
       await _showSuccessTickAnimation();
     } catch (error) {
       if (!mounted) return;
@@ -79,7 +82,7 @@ class _FriendsPageState extends State<FriendsPage> {
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
     } finally {
-      if (mounted) {
+      if (mounted && _addingFriend) {
         setState(() => _addingFriend = false);
       }
     }
@@ -87,73 +90,10 @@ class _FriendsPageState extends State<FriendsPage> {
 
   Future<void> _showSuccessTickAnimation() async {
     if (!mounted) return;
-    showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      barrierLabel: 'Friend added',
-      barrierColor: Colors.black38,
-      transitionDuration: const Duration(milliseconds: 180),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        final colorScheme = Theme.of(context).colorScheme;
-        return Center(
-          child: Material(
-            type: MaterialType.transparency,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    blurRadius: 16,
-                    color: Colors.black26,
-                    offset: Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 28,
-                  vertical: 24,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.check_circle,
-                      size: 56,
-                      color: colorScheme.primary,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Friend added',
-                      style: TextStyle(
-                        color: colorScheme.onSurface,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-      transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
-        return FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
-            child: child,
-          ),
-        );
-      },
-    );
-
+    setState(() => _showFriendAddedSuccess = true);
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
-    Navigator.of(context, rootNavigator: true).pop();
+    setState(() => _showFriendAddedSuccess = false);
   }
 
   Future<void> _removeFriendFlow(FriendContact friend) async {
@@ -280,7 +220,7 @@ class _FriendsPageState extends State<FriendsPage> {
             ),
           ),
         ),
-        if (_addingFriend)
+        if (_addingFriend || _showFriendAddedSuccess)
           Positioned.fill(
             child: ColoredBox(
               color: Colors.black26,
@@ -291,17 +231,47 @@ class _FriendsPageState extends State<FriendsPage> {
                       horizontal: 20,
                       vertical: 16,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2.4),
-                        ),
-                        SizedBox(width: 12),
-                        Text('Adding friend...'),
-                      ],
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: _addingFriend
+                          ? const Row(
+                              key: ValueKey('adding_friend'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                  ),
+                                ),
+                                SizedBox(width: 12),
+                                Text('Adding friend...'),
+                              ],
+                            )
+                          : Column(
+                              key: const ValueKey('friend_added'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.check_circle_rounded,
+                                  size: 44,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Friend added',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        decoration: TextDecoration.none,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ],
+                            ),
                     ),
                   ),
                 ),
