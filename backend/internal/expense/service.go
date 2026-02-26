@@ -30,9 +30,9 @@ type Service struct {
 func defaultIDGenerator() string {
 	var b [12]byte
 	if _, err := rand.Read(b[:]); err == nil {
-		return "exp_" + hex.EncodeToString(b[:])
+		return hex.EncodeToString(b[:])
 	}
-	return fmt.Sprintf("exp_%d", time.Now().UTC().UnixNano())
+	return fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 }
 
 func defaultNow() time.Time {
