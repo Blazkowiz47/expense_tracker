@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,7 +11,7 @@ class ActivityPage extends StatelessWidget {
     return BlocBuilder<DashboardSnapshotCubit, DashboardSnapshotState>(
       builder: (context, state) {
         if (state is DashboardSnapshotFailure) {
-          return Center(child: Text(state.message));
+          return SelectableErrorMessage(state.message);
         }
 
         if (state is! DashboardSnapshotLoaded) {
@@ -28,6 +29,9 @@ class ActivityPage extends StatelessWidget {
               separatorBuilder: (_, _) => const SizedBox(height: 10),
               itemBuilder: (context, index) {
                 final item = items[index];
+                final isSpending = item.amountText.toLowerCase().startsWith(
+                  'you spent',
+                );
                 return Card(
                   child: ListTile(
                     leading: const Icon(Icons.receipt_long_outlined),
@@ -36,7 +40,9 @@ class ActivityPage extends StatelessWidget {
                     trailing: Text(
                       item.amountText,
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: item.positive
+                        color: isSpending
+                            ? null
+                            : item.positive
                             ? const Color(0xFF1B8C67)
                             : Theme.of(context).colorScheme.error,
                       ),

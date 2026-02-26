@@ -20,11 +20,18 @@ class OverviewPage extends StatelessWidget {
         }
 
         final snapshot = state.snapshot;
+        final settledUp = snapshot.overallLabel.toLowerCase().contains(
+          'settled',
+        );
         final isCredit = snapshot.overallPositive;
-        final title = isCredit ? 'You are in credit' : 'You are in debt';
-        final subtitle = isCredit
-            ? 'You should receive money overall.'
-            : 'You owe money overall.';
+        final title = settledUp
+            ? 'You are all settled up'
+            : (isCredit ? 'You are in credit' : 'You are in debt');
+        final subtitle = settledUp
+            ? 'No one owes you and you do not owe anyone.'
+            : (isCredit
+                  ? 'You should receive money overall.'
+                  : 'You owe money overall.');
 
         return Align(
           alignment: Alignment.topCenter,
@@ -49,7 +56,9 @@ class OverviewPage extends StatelessWidget {
                           style: Theme.of(context).textTheme.headlineMedium
                               ?.copyWith(
                                 fontWeight: FontWeight.w700,
-                                color: isCredit
+                                color: settledUp
+                                    ? Theme.of(context).colorScheme.primary
+                                    : isCredit
                                     ? const Color(0xFF1B8C67)
                                     : Theme.of(context).colorScheme.error,
                               ),

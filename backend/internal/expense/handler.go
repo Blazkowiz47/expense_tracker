@@ -106,32 +106,6 @@ func (h *Handler) DashboardSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type categoryTotal struct {
-		category string
-		amount   float64
-	}
-
-	categoryTotals := make([]categoryTotal, 0, len(analytics.ByCategory))
-	for category, amount := range analytics.ByCategory {
-		categoryTotals = append(categoryTotals, categoryTotal{
-			category: category,
-			amount:   amount,
-		})
-	}
-	sort.Slice(categoryTotals, func(i, j int) bool {
-		return categoryTotals[i].amount > categoryTotals[j].amount
-	})
-
-	balanceItems := make([]DashboardBalanceItem, 0, len(categoryTotals))
-	for _, total := range categoryTotals {
-		balanceItems = append(balanceItems, DashboardBalanceItem{
-			Title:      total.category,
-			Subtitle:   "category total",
-			AmountText: formatINR(total.amount),
-			Positive:   total.amount >= 0,
-		})
-	}
-
 	activityItems := make([]DashboardActivityItem, 0, len(expenses))
 	for _, exp := range expenses {
 		title := exp.Description
@@ -141,25 +115,25 @@ func (h *Handler) DashboardSnapshot(w http.ResponseWriter, r *http.Request) {
 		activityItems = append(activityItems, DashboardActivityItem{
 			Title:      title,
 			Subtitle:   exp.Date.UTC().Format(time.RFC3339),
-			AmountText: "You owe " + formatINR(exp.Amount),
+			AmountText: "You spent " + formatINR(exp.Amount),
 			Positive:   false,
 		})
 	}
+	sort.Slice(activityItems, func(i, j int) bool {
+		return activityItems[i].Subtitle > activityItems[j].Subtitle
+	})
 
-	total := analytics.TotalAmount
 	snapshot := DashboardSnapshot{
-		OverallLabel:      "Overall, you are owed",
-		OverallAmountText: formatINR(abs(total)),
-		OverallPositive:   total >= 0,
-		FriendItems:       firstNBalanceItems(balanceItems, 5),
-		GroupItems:        balanceItems,
+		OverallLabel:      "You are all settled up",
+		OverallAmountText: formatINR(0),
+		OverallPositive:   true,
+		FriendItems:       []DashboardBalanceItem{},
+		GroupItems:        []DashboardBalanceItem{},
 		ActivityItems:     activityItems,
 		AccountName:       "Local User",
 		AccountEmail:      uid + "@local",
 	}
-	if total < 0 {
-		snapshot.OverallLabel = "Overall, you owe"
-	}
+	_ = analytics
 
 	httpapi.WriteJSON(w, http.StatusOK, snapshot)
 }
