@@ -17,6 +17,7 @@ class _FriendsPageState extends State<FriendsPage> {
   List<FriendContact> _friends = const [];
   bool _loading = true;
   bool _addingFriend = false;
+  String? _removingFriendUid;
   String? _error;
 
   @override
@@ -120,12 +121,7 @@ class _FriendsPageState extends State<FriendsPage> {
           ),
         );
       },
-      transitionBuilder: (
-        dialogContext,
-        animation,
-        secondaryAnimation,
-        child,
-      ) {
+      transitionBuilder: (dialogContext, animation, secondaryAnimation, child) {
         return FadeTransition(
           opacity: animation,
           child: ScaleTransition(
@@ -139,6 +135,47 @@ class _FriendsPageState extends State<FriendsPage> {
     await Future<void>.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
+  }
+
+  Future<void> _removeFriendFlow(FriendContact friend) async {
+    if (_removingFriendUid != null || _addingFriend) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove friend'),
+        content: Text('Remove ${friend.label} from your friends list?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _removingFriendUid = friend.uid);
+    try {
+      await _repository.removeFriendByUid(friend.uid);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Friend removed.')));
+      await _loadFriends();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _removingFriendUid = null);
+      }
+    }
   }
 
   Future<String?> _openAddFriendDialog() async {
@@ -212,6 +249,8 @@ class _FriendsPageState extends State<FriendsPage> {
                       subtitle: friend.email.isNotEmpty
                           ? friend.email
                           : friend.uid,
+                      removing: _removingFriendUid == friend.uid,
+                      onRemove: () => _removeFriendFlow(friend),
                     ),
                   ),
               ],
@@ -313,10 +352,17 @@ class _ListSectionHeader extends StatelessWidget {
 }
 
 class _BalanceTile extends StatelessWidget {
-  const _BalanceTile({required this.name, required this.subtitle});
+  const _BalanceTile({
+    required this.name,
+    required this.subtitle,
+    this.removing = false,
+    this.onRemove,
+  });
 
   final String name;
   final String subtitle;
+  final bool removing;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -330,6 +376,17 @@ class _BalanceTile extends StatelessWidget {
         ),
         title: Text(name),
         subtitle: Text(subtitle),
+        trailing: removing
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              )
+            : IconButton(
+                tooltip: 'Remove friend',
+                onPressed: onRemove,
+                icon: const Icon(Icons.person_remove_outlined),
+              ),
       ),
     );
   }

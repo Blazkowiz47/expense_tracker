@@ -27,6 +27,10 @@ func (f *fakeStore) AddFriendship(_ context.Context, _, _ string) error {
 	return nil
 }
 
+func (f *fakeStore) RemoveFriendship(_ context.Context, _, _ string) error {
+	return nil
+}
+
 func (f *fakeStore) ListFriends(_ context.Context, _ string) ([]friend.Friend, error) {
 	return f.friends, nil
 }
@@ -96,5 +100,18 @@ func TestListFriends(t *testing.T) {
 	rawFriends, ok := payload["friends"].([]any)
 	if !ok || len(rawFriends) != 1 {
 		t.Fatalf("expected one friend entry, got %#v", payload["friends"])
+	}
+}
+
+func TestRemoveFriendByUID(t *testing.T) {
+	router := setupTestServer(&fakeStore{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/friends/uid-2", nil)
+	req.Header.Set("Authorization", "Bearer dev-token")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

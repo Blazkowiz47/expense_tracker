@@ -42,6 +42,10 @@ class ApiFriendsRepository {
     );
   }
 
+  Future<void> removeFriendByUid(String uid) async {
+    await _request(method: 'DELETE', path: '/api/v1/friends/$uid');
+  }
+
   Future<http.Response> _request({
     required String method,
     required String path,
@@ -64,6 +68,7 @@ class ApiFriendsRepository {
         headers: headers,
         body: body == null ? null : jsonEncode(body),
       ),
+      'DELETE' => _client.delete(uri, headers: headers),
       _ => throw UnsupportedError('Unsupported method $method'),
     };
 

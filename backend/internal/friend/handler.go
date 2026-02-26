@@ -91,6 +91,21 @@ func (h *Handler) Add(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) ByUID(w http.ResponseWriter, r *http.Request) {
+	friendUID := strings.TrimPrefix(r.URL.Path, "/api/v1/friends/")
+	if strings.TrimSpace(friendUID) == "" || strings.Contains(friendUID, "/") {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "resource not found")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodDelete:
+		h.removeByUID(w, r, friendUID)
+	default:
+		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+	}
+}
+
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
@@ -108,6 +123,23 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"friends": friends})
+}
+
+func (h *Handler) removeByUID(w http.ResponseWriter, r *http.Request, friendUID string) {
+	uid, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || uid == "" {
+		httpapi.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user missing from context")
+		return
+	}
+	if uid == friendUID {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "cannot remove yourself")
+		return
+	}
+	if err := h.store.RemoveFriendship(r.Context(), uid, friendUID); err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to remove friend")
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"removed": true})
 }
 
 func decodePayload(r *http.Request) (resolvePayload, error) {

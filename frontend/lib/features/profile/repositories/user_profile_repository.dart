@@ -135,12 +135,9 @@ class UserProfileRepository {
       }
       if (email != null && email.isNotEmpty) {
         data['email'] = email;
-        final normalizedEmail = email.trim().toLowerCase();
-        if (normalizedEmail.isNotEmpty) {
-          data['email_normalized'] = normalizedEmail;
-          data['emails'] = FieldValue.arrayUnion([normalizedEmail]);
-        }
       }
+      data['email_normalized'] = FieldValue.delete();
+      data['emails'] = FieldValue.delete();
       if (displayName != null) {
         data['display_name'] = displayName;
       }

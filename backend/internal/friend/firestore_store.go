@@ -52,17 +52,7 @@ func (s *FirestoreStore) ResolveByEmailOrPhone(ctx context.Context, query string
 
 	// Email lookup
 	if strings.Contains(normalized, "@") {
-		if uid, ok, err := s.lookupSingle(ctx, usersCollection, "email_normalized", normalized); err != nil {
-			return ResolveResult{}, err
-		} else if ok {
-			return ResolveResult{Exists: true, UID: uid}, nil
-		}
 		if uid, ok, err := s.lookupSingle(ctx, usersCollection, "email", normalized); err != nil {
-			return ResolveResult{}, err
-		} else if ok {
-			return ResolveResult{Exists: true, UID: uid}, nil
-		}
-		if uid, ok, err := s.lookupArray(ctx, usersCollection, "emails", normalized); err != nil {
 			return ResolveResult{}, err
 		} else if ok {
 			return ResolveResult{Exists: true, UID: uid}, nil
@@ -112,6 +102,18 @@ func (s *FirestoreStore) AddFriendship(ctx context.Context, uid, friendUID strin
 		data["created_at"] = now
 		return tx.Set(docRef, data)
 	})
+}
+
+func (s *FirestoreStore) RemoveFriendship(ctx context.Context, uid, friendUID string) error {
+	pair := []string{uid, friendUID}
+	sort.Strings(pair)
+	docID := pair[0] + "_" + pair[1]
+
+	_, err := s.client.Collection(friendshipsCollection).Doc(docID).Delete(ctx)
+	if err != nil {
+		return fmt.Errorf("remove friendship: %w", err)
+	}
+	return nil
 }
 
 func (s *FirestoreStore) ListFriends(ctx context.Context, uid string) ([]Friend, error) {

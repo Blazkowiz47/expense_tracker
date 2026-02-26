@@ -46,6 +46,13 @@ func (s *InMemoryStore) AddFriendship(_ context.Context, uid, friendUID string) 
 	return nil
 }
 
+func (s *InMemoryStore) RemoveFriendship(_ context.Context, uid, friendUID string) error {
+	pair := []string{uid, friendUID}
+	sort.Strings(pair)
+	delete(s.links, pair[0]+"_"+pair[1])
+	return nil
+}
+
 func (s *InMemoryStore) ListFriends(_ context.Context, uid string) ([]Friend, error) {
 	result := make([]Friend, 0)
 	for link := range s.links {
