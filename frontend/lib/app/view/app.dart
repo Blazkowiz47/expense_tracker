@@ -66,7 +66,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
       routeName: routeName,
       profileRepository: profileRepository,
     );
-    if (kIsWeb && _isShellRoute(routeName)) {
+    if (kIsWeb) {
       return PageRouteBuilder<void>(
         settings: RouteSettings(name: routeName),
         pageBuilder: (context, animation, secondaryAnimation) => page,
@@ -79,14 +79,6 @@ class ExpenseTrackerAppView extends StatelessWidget {
       settings: RouteSettings(name: routeName),
       builder: (_) => page,
     );
-  }
-
-  bool _isShellRoute(String routeName) {
-    return routeName == AppRoutes.overview ||
-        routeName == AppRoutes.friends ||
-        routeName == AppRoutes.groups ||
-        routeName == AppRoutes.activity ||
-        routeName == AppRoutes.account;
   }
 
   String _normalizeRoute(String? name) {
