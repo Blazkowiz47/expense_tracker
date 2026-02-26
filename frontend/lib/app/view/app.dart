@@ -10,6 +10,7 @@ import 'package:expense_tracker/features/profile/repositories/user_profile_repos
 import 'package:expense_tracker/features/profile/view/account_edit_route_page.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -61,13 +62,31 @@ class ExpenseTrackerAppView extends StatelessWidget {
     required UserProfileRepository profileRepository,
   }) {
     final routeName = _normalizeRoute(settings.name);
+    final page = _AuthGuardedRoute(
+      routeName: routeName,
+      profileRepository: profileRepository,
+    );
+    if (kIsWeb && _isShellRoute(routeName)) {
+      return PageRouteBuilder<void>(
+        settings: RouteSettings(name: routeName),
+        pageBuilder: (context, animation, secondaryAnimation) => page,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      );
+    }
+
     return MaterialPageRoute<void>(
       settings: RouteSettings(name: routeName),
-      builder: (_) => _AuthGuardedRoute(
-        routeName: routeName,
-        profileRepository: profileRepository,
-      ),
+      builder: (_) => page,
     );
+  }
+
+  bool _isShellRoute(String routeName) {
+    return routeName == AppRoutes.overview ||
+        routeName == AppRoutes.friends ||
+        routeName == AppRoutes.groups ||
+        routeName == AppRoutes.activity ||
+        routeName == AppRoutes.account;
   }
 
   String _normalizeRoute(String? name) {
