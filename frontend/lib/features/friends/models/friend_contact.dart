@@ -5,28 +5,38 @@ class FriendContact extends Equatable {
     required this.uid,
     required this.displayName,
     required this.email,
+    required this.phone,
   });
 
   final String uid;
   final String displayName;
   final String email;
+  final String phone;
 
   factory FriendContact.fromJson(Map<String, dynamic> json) {
     return FriendContact(
       uid: (json['uid'] ?? '').toString(),
       displayName: (json['displayName'] ?? '').toString(),
       email: (json['email'] ?? '').toString(),
+      phone: (json['phone'] ?? '').toString(),
     );
   }
 
   String get label {
     if (displayName.trim().isNotEmpty) return displayName.trim();
     if (email.trim().isNotEmpty) return email.trim();
+    if (phone.trim().isNotEmpty) return phone.trim();
     return uid;
   }
 
+  String get contactHint {
+    if (email.trim().isNotEmpty) return email.trim();
+    if (phone.trim().isNotEmpty) return phone.trim();
+    return '';
+  }
+
   @override
-  List<Object?> get props => [uid, displayName, email];
+  List<Object?> get props => [uid, displayName, email, phone];
 }
 
 class FriendResolveResult extends Equatable {

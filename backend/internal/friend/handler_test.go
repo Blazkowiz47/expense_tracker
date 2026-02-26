@@ -104,9 +104,12 @@ func TestListFriends(t *testing.T) {
 }
 
 func TestRemoveFriendByUID(t *testing.T) {
-	router := setupTestServer(&fakeStore{})
+	router := setupTestServer(&fakeStore{
+		resolve: friend.ResolveResult{Exists: true, UID: "uid-2"},
+	})
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/friends/uid-2", nil)
+	body := []byte(`{"emailOrPhone":"friend2@example.com"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/friends/remove", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer dev-token")
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)

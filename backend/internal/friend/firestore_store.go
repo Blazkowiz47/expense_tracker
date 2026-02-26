@@ -147,10 +147,16 @@ func (s *FirestoreStore) ListFriends(ctx context.Context, uid string) ([]Friend,
 		data := userDoc.Data()
 		displayName, _ := data["display_name"].(string)
 		email, _ := data["email"].(string)
+		phone := firstNonEmptyString(
+			stringFrom(data["phone"]),
+			stringFrom(data["phone_e164"]),
+			stringFrom(data["primary_phone"]),
+		)
 		friends = append(friends, Friend{
 			UID:         friendUID,
 			DisplayName: strings.TrimSpace(displayName),
 			Email:       strings.TrimSpace(email),
+			Phone:       phone,
 		})
 	}
 
@@ -167,6 +173,20 @@ func (s *FirestoreStore) ListFriends(ctx context.Context, uid string) ([]Friend,
 	})
 
 	return friends, nil
+}
+
+func stringFrom(value any) string {
+	v, _ := value.(string)
+	return strings.TrimSpace(v)
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (s *FirestoreStore) lookupSingle(ctx context.Context, collection, field, value string) (string, bool, error) {

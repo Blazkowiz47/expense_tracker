@@ -160,7 +160,11 @@ class _FriendsPageState extends State<FriendsPage> {
 
     setState(() => _removingFriendUid = friend.uid);
     try {
-      await _repository.removeFriendByUid(friend.uid);
+      final contact = friend.contactHint;
+      if (contact.isEmpty) {
+        throw Exception('No contact available to remove this friend.');
+      }
+      await _repository.removeFriend(contact);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -246,9 +250,9 @@ class _FriendsPageState extends State<FriendsPage> {
                   ..._friends.map(
                     (friend) => _BalanceTile(
                       name: friend.label,
-                      subtitle: friend.email.isNotEmpty
-                          ? friend.email
-                          : friend.uid,
+                      subtitle: friend.contactHint.isNotEmpty
+                          ? friend.contactHint
+                          : 'No email/phone',
                       removing: _removingFriendUid == friend.uid,
                       onRemove: () => _removeFriendFlow(friend),
                     ),

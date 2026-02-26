@@ -51,9 +51,9 @@ func NewRouter(verifier auth.Verifier, expenseHandler *expense.Handler, friendHa
 	mux.Handle("/api/v1/analytics", middleware.RequireAuth(verifier, http.HandlerFunc(expenseHandler.Analytics)))
 	mux.Handle("/api/v1/dashboard/snapshot", middleware.RequireAuth(verifier, http.HandlerFunc(expenseHandler.DashboardSnapshot)))
 	mux.Handle("/api/v1/friends", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.List)))
-	mux.Handle("/api/v1/friends/", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.ByUID)))
 	mux.Handle("/api/v1/friends/resolve", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Resolve)))
 	mux.Handle("/api/v1/friends/add", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Add)))
+	mux.Handle("/api/v1/friends/remove", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Remove)))
 
 	return middleware.CORS(mux)
 }
