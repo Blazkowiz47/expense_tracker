@@ -10,11 +10,18 @@ FIREBASE_CREDS_DEFAULT="$ROOT/firebase_config/expense-tracker-275c3-firebase-adm
 FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-expense-tracker-275c3}"
 FIREBASE_CREDENTIALS_FILE="${FIREBASE_CREDENTIALS_FILE:-$FIREBASE_CREDS_DEFAULT}"
 
-BACKEND_CMD="cd \"$BACKEND_DIR\" && AUTH_MODE=dev DEV_AUTH_TOKEN=dev-token DEV_AUTH_UID=local-user"
+AUTH_MODE_USED="${AUTH_MODE:-dev}"
+if [[ -f "$FIREBASE_CREDENTIALS_FILE" ]]; then
+  AUTH_MODE_USED="${AUTH_MODE:-firebase}"
+fi
+
+BACKEND_CMD="cd \"$BACKEND_DIR\" && AUTH_MODE=$AUTH_MODE_USED DEV_AUTH_TOKEN=dev-token DEV_AUTH_UID=local-user"
 if [[ -f "$FIREBASE_CREDENTIALS_FILE" ]]; then
   BACKEND_CMD="$BACKEND_CMD FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID FIREBASE_CREDENTIALS_FILE=\"$FIREBASE_CREDENTIALS_FILE\""
 fi
 BACKEND_CMD="$BACKEND_CMD go run ./cmd/server"
+
+FRONTEND_CMD="cd \"$FRONTEND_DIR\" && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 7357 --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=DEV_AUTH_TOKEN=dev-token --dart-define=AUTH_MODE=$AUTH_MODE_USED"
 
 ATTACH=1
 if [[ "${1:-}" == "--no-attach" ]]; then
@@ -33,7 +40,7 @@ tmux send-keys -t "$SESSION:1" \
 # Window 2: frontend.
 tmux new-window -t "$SESSION" -n frontend
 tmux send-keys -t "$SESSION:2" \
-  "cd \"$FRONTEND_DIR\" && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 7357 --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=DEV_AUTH_TOKEN=dev-token" C-m
+  "$FRONTEND_CMD" C-m
 
 tmux list-windows -t "$SESSION"
 
