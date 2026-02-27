@@ -73,7 +73,7 @@ func main() {
 		groupStore = firestoreGroupStore
 		groupBackend = "firestore"
 	}
-	groupHandler := group.NewHandler(groupStore)
+	groupHandler := group.NewHandler(groupStore, friendStore)
 
 	var verifier auth.Verifier
 	switch cfg.AuthMode {

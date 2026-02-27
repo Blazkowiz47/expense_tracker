@@ -28,11 +28,16 @@ class ApiGroupsRepository {
   Future<GroupSummary> createGroup({
     required String name,
     required GroupType groupType,
+    List<String> members = const [],
   }) async {
     final response = await _request(
       method: 'POST',
       path: '/api/v1/groups',
-      body: <String, dynamic>{'name': name, 'groupType': groupType.name},
+      body: <String, dynamic>{
+        'name': name,
+        'groupType': groupType.name,
+        'members': members,
+      },
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     return GroupSummary.fromJson(payload);

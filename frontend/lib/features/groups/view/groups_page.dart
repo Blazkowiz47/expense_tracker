@@ -66,6 +66,7 @@ class _GroupsPageState extends State<GroupsPage> {
       await _repository.createGroup(
         name: created.name,
         groupType: created.type,
+        members: created.members,
       );
       if (!mounted) return;
       await _loadGroups();
@@ -170,18 +171,26 @@ class _CreateGroupDialog extends StatefulWidget {
 
 class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   final _nameController = TextEditingController();
+  final _membersController = TextEditingController();
   GroupType _type = GroupType.split;
 
   @override
   void dispose() {
     _nameController.dispose();
+    _membersController.dispose();
     super.dispose();
   }
 
   void _submit() {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
-    final input = _CreateGroupInput(name: name, type: _type);
+    final members = _membersController.text
+        .split(RegExp(r'[\n,]'))
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final input = _CreateGroupInput(name: name, type: _type, members: members);
     Navigator.of(context).pop(input);
   }
 
@@ -195,6 +204,16 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
           TextField(
             controller: _nameController,
             decoration: const InputDecoration(labelText: 'Group name'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _membersController,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Add members (email or phone)',
+              hintText: 'alice@example.com, +15551234567',
+            ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<GroupType>(
@@ -405,8 +424,13 @@ class _GroupTile extends StatelessWidget {
 }
 
 class _CreateGroupInput {
-  const _CreateGroupInput({required this.name, required this.type});
+  const _CreateGroupInput({
+    required this.name,
+    required this.type,
+    required this.members,
+  });
 
   final String name;
   final GroupType type;
+  final List<String> members;
 }

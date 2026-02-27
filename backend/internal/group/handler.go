@@ -3,20 +3,26 @@ package group
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"expense_tracker_backend/internal/friend"
 	"expense_tracker_backend/internal/httpapi"
 	"expense_tracker_backend/internal/middleware"
 	"github.com/google/uuid"
 )
 
 type Handler struct {
-	store Store
+	store       Store
+	friendStore friend.Store
 }
 
-func NewHandler(store Store) *Handler {
-	return &Handler{store: store}
+func NewHandler(store Store, friendStore friend.Store) *Handler {
+	return &Handler{
+		store:       store,
+		friendStore: friendStore,
+	}
 }
 
 func (h *Handler) GroupsCollection(w http.ResponseWriter, r *http.Request) {
@@ -46,8 +52,9 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 type createGroupPayload struct {
-	Name      string `json:"name"`
-	GroupType string `json:"groupType"`
+	Name      string   `json:"name"`
+	GroupType string   `json:"groupType"`
+	Members   []string `json:"members"`
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +74,41 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "group name is required")
 		return
 	}
+	memberUIDs := []string{uid}
+	for _, contact := range payload.Members {
+		trimmed := strings.TrimSpace(contact)
+		if trimmed == "" {
+			continue
+		}
+		if h.friendStore == nil {
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "friend store unavailable")
+			return
+		}
+		resolved, err := h.friendStore.ResolveByEmailOrPhone(r.Context(), trimmed)
+		if err != nil {
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to resolve group member")
+			return
+		}
+		if !resolved.Exists {
+			httpapi.WriteError(
+				w,
+				http.StatusNotFound,
+				"NOT_FOUND",
+				"group member not found: "+trimmed,
+			)
+			return
+		}
+		if resolved.UID == uid {
+			continue
+		}
+		if !slices.Contains(memberUIDs, resolved.UID) {
+			memberUIDs = append(memberUIDs, resolved.UID)
+		}
+		if err := h.friendStore.AddFriendship(r.Context(), uid, resolved.UID); err != nil {
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to add member friendship")
+			return
+		}
+	}
 
 	now := time.Now().UTC()
 	group := Group{
@@ -74,8 +116,8 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Name:        name,
 		GroupType:   normalizeGroupType(payload.GroupType),
 		CreatedBy:   uid,
-		MemberUIDs:  []string{uid},
-		MemberCount: 1,
+		MemberUIDs:  memberUIDs,
+		MemberCount: len(memberUIDs),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
