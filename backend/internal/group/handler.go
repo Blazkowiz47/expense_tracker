@@ -3,8 +3,10 @@ package group
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,20 +46,48 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(path, "/")
-	if len(parts) != 2 || parts[1] != "leave" || parts[0] == "" {
+	if parts[0] == "" {
 		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
 		return
 	}
 	groupID := parts[0]
-	if r.Method != http.MethodPost {
-		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
-		return
-	}
 	uid, ok := middleware.UserIDFromContext(r.Context())
 	if !ok || uid == "" {
 		httpapi.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user missing from context")
 		return
 	}
+
+	if len(parts) == 2 && parts[1] == "leave" {
+		if r.Method != http.MethodPost {
+			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+			return
+		}
+		h.handleLeave(w, r, groupID, uid)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "members" && parts[2] == "add" {
+		if r.Method != http.MethodPost {
+			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+			return
+		}
+		h.handleAddMember(w, r, groupID, uid)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "expenses" {
+		switch r.Method {
+		case http.MethodGet:
+			h.handleListExpenses(w, r, groupID, uid)
+		case http.MethodPost:
+			h.handleCreateExpense(w, r, groupID, uid)
+		default:
+			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+		}
+		return
+	}
+	httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+}
+
+func (h *Handler) handleLeave(w http.ResponseWriter, r *http.Request, groupID, uid string) {
 
 	deleted, err := h.store.Leave(r.Context(), groupID, uid)
 	if err != nil {
@@ -75,6 +105,122 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		"left":    true,
 		"deleted": deleted,
 	})
+}
+
+type addMemberPayload struct {
+	EmailOrPhone string `json:"emailOrPhone"`
+}
+
+func (h *Handler) handleAddMember(w http.ResponseWriter, r *http.Request, groupID, uid string) {
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+
+	var payload addMemberPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid payload")
+		return
+	}
+	contact := strings.TrimSpace(payload.EmailOrPhone)
+	if contact == "" {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "emailOrPhone is required")
+		return
+	}
+	resolved, err := h.friendStore.ResolveByEmailOrPhone(r.Context(), contact)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to resolve member")
+		return
+	}
+	if !resolved.Exists || strings.TrimSpace(resolved.UID) == "" {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "member not found")
+		return
+	}
+	if err := h.friendStore.AddFriendship(r.Context(), uid, resolved.UID); err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to link friendship")
+		return
+	}
+	updated, err := h.store.AddMember(r.Context(), groupID, resolved.UID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to add member")
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, updated)
+}
+
+type groupExpensePayload struct {
+	Amount      float64 `json:"amount"`
+	Description string  `json:"description"`
+	Date        string  `json:"date"`
+}
+
+func (h *Handler) handleListExpenses(w http.ResponseWriter, r *http.Request, groupID, uid string) {
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+	items, err := h.store.ListExpenses(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to list group expenses")
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"expenses": items})
+}
+
+func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request, groupID, uid string) {
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+	var payload groupExpensePayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid payload")
+		return
+	}
+	description := strings.TrimSpace(payload.Description)
+	if description == "" || payload.Amount <= 0 {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "description and positive amount required")
+		return
+	}
+	date := time.Now().UTC()
+	if strings.TrimSpace(payload.Date) != "" {
+		parsed, err := time.Parse(time.RFC3339, payload.Date)
+		if err != nil {
+			httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "date must be RFC3339")
+			return
+		}
+		date = parsed.UTC()
+	}
+	expense := GroupExpense{
+		ID:          strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
+		GroupID:     groupID,
+		CreatedBy:   uid,
+		Amount:      payload.Amount,
+		Description: description,
+		Date:        date,
+		CreatedAt:   time.Now().UTC(),
+	}
+	created, err := h.store.CreateExpense(r.Context(), expense)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", fmt.Sprintf("failed to create group expense: %v", err))
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusCreated, created)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {

@@ -19,3 +19,13 @@ type Group struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
+
+type GroupExpense struct {
+	ID          string    `json:"id"`
+	GroupID     string    `json:"groupId"`
+	CreatedBy   string    `json:"createdBy"`
+	Amount      float64   `json:"amount"`
+	Description string    `json:"description"`
+	Date        time.Time `json:"date"`
+	CreatedAt   time.Time `json:"createdAt"`
+}

@@ -1,6 +1,7 @@
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
+import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:flutter/material.dart';
@@ -373,18 +374,53 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   }
 }
 
-class _GroupDetailsPage extends StatelessWidget {
+class _GroupDetailsPage extends StatefulWidget {
   const _GroupDetailsPage({required this.group, required this.repository});
 
   final GroupSummary group;
   final ApiGroupsRepository repository;
 
-  Future<void> _leaveGroup(BuildContext context) async {
+  @override
+  State<_GroupDetailsPage> createState() => _GroupDetailsPageState();
+}
+
+class _GroupDetailsPageState extends State<_GroupDetailsPage> {
+  List<GroupExpense> _expenses = const [];
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExpenses();
+  }
+
+  Future<void> _loadExpenses() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final items = await widget.repository.fetchExpenses(widget.group.id);
+      if (!mounted) return;
+      setState(() => _expenses = items);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _leaveGroup() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Leave group'),
-        content: Text('Leave "${group.name}"?'),
+        content: Text('Leave "${widget.group.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -397,10 +433,11 @@ class _GroupDetailsPage extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed != true || !context.mounted) return;
+    if (confirmed != true || !mounted) return;
     try {
-      final result = await repository.leaveGroup(group.id);
-      if (!context.mounted) return;
+      setState(() => _busy = true);
+      final result = await widget.repository.leaveGroup(widget.group.id);
+      if (!mounted) return;
       final deleted = result['deleted'] == true;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -413,7 +450,130 @@ class _GroupDetailsPage extends StatelessWidget {
       );
       Navigator.of(context).pop(true);
     } catch (error) {
-      if (!context.mounted) return;
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _addMember() async {
+    final controller = TextEditingController();
+    final contact = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add member'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Email or phone',
+            hintText: 'friend@example.com or +15551234567',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (contact == null || contact.isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await widget.repository.addMember(
+        groupId: widget.group.id,
+        emailOrPhone: contact,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Member added.')));
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+      setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _addExpense() async {
+    final descriptionController = TextEditingController();
+    final amountController = TextEditingController();
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add group expense'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: descriptionController,
+              decoration: const InputDecoration(labelText: 'Description'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: amountController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: 'INR ',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop({
+              'description': descriptionController.text.trim(),
+              'amount': double.tryParse(amountController.text.trim()),
+            }),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || payload == null) return;
+    final description = (payload['description'] as String?) ?? '';
+    final amount = payload['amount'] as double?;
+    if (description.isEmpty || amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid description and amount.')),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await widget.repository.addExpense(
+        groupId: widget.group.id,
+        description: description,
+        amount: amount,
+        date: DateTime.now(),
+      );
+      if (!mounted) return;
+      await _loadExpenses();
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Group expense added.')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
@@ -422,12 +582,23 @@ class _GroupDetailsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final total = _expenses.fold<double>(0, (sum, e) => sum + e.amount);
     return Scaffold(
       appBar: AppBar(
-        title: Text(group.name),
+        title: Text(widget.group.name),
         actions: [
+          IconButton(
+            onPressed: _busy ? null : _addMember,
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            tooltip: 'Add member',
+          ),
+          IconButton(
+            onPressed: _busy ? null : _addExpense,
+            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Add expense',
+          ),
           TextButton(
-            onPressed: () => _leaveGroup(context),
+            onPressed: _busy ? null : _leaveGroup,
             child: Text(
               'Leave group',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
@@ -437,78 +608,53 @@ class _GroupDetailsPage extends StatelessWidget {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: group.groupType == GroupType.family
-            ? _FamilyGroupBody(group: group)
-            : _SplitGroupBody(group: group),
+        child: ListView(
+          children: [
+            Card(
+              child: ListTile(
+                title: Text(
+                  widget.group.groupType == GroupType.family
+                      ? 'Family monthly spend'
+                      : 'Group total spend',
+                ),
+                subtitle: Text('${widget.group.memberCount} member(s)'),
+                trailing: Text(
+                  'INR ${total.toStringAsFixed(2)}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_loading)
+              const Card(
+                child: ListTile(title: Text('Loading group expenses...')),
+              )
+            else if (_error != null)
+              SelectableErrorMessage(_error!)
+            else if (_expenses.isEmpty)
+              const Card(
+                child: ListTile(
+                  title: Text('No group expenses yet'),
+                  subtitle: Text(
+                    'Use the receipt icon in top-right to add the first group expense.',
+                  ),
+                ),
+              )
+            else
+              ..._expenses.map(
+                (expense) => Card(
+                  child: ListTile(
+                    title: Text(expense.description),
+                    subtitle: Text(
+                      expense.date.toLocal().toString().split('.').first,
+                    ),
+                    trailing: Text('INR ${expense.amount.toStringAsFixed(2)}'),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
-    );
-  }
-}
-
-class _FamilyGroupBody extends StatelessWidget {
-  const _FamilyGroupBody({required this.group});
-
-  final GroupSummary group;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        Card(
-          child: ListTile(
-            title: const Text('Monthly spend'),
-            subtitle: const Text(
-              'Family tracking mode (no settlement balances)',
-            ),
-            trailing: Text(
-              'INR 0.00',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        const Card(
-          child: ListTile(
-            title: Text('Recent expenses'),
-            subtitle: Text(
-              'No expenses yet. Add monthly household spend here.',
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SplitGroupBody extends StatelessWidget {
-  const _SplitGroupBody({required this.group});
-
-  final GroupSummary group;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        Card(
-          child: ListTile(
-            title: const Text('Settlement status'),
-            subtitle: const Text('Split expenses with members'),
-            trailing: Text(
-              'No balances yet',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        const Card(
-          child: ListTile(
-            title: Text('Balances'),
-            subtitle: Text(
-              'Per-member owes/owed breakdown will be shown here.',
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

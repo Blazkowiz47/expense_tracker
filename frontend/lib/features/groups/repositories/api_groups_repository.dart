@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:http/http.dart' as http;
 
@@ -49,6 +50,49 @@ class ApiGroupsRepository {
       path: '/api/v1/groups/$groupId/leave',
     );
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<GroupSummary> addMember({
+    required String groupId,
+    required String emailOrPhone,
+  }) async {
+    final response = await _request(
+      method: 'POST',
+      path: '/api/v1/groups/$groupId/members/add',
+      body: <String, dynamic>{'emailOrPhone': emailOrPhone},
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return GroupSummary.fromJson(payload);
+  }
+
+  Future<List<GroupExpense>> fetchExpenses(String groupId) async {
+    final response = await _request(
+      method: 'GET',
+      path: '/api/v1/groups/$groupId/expenses',
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawExpenses = (payload['expenses'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    return rawExpenses.map(GroupExpense.fromJson).toList(growable: false);
+  }
+
+  Future<GroupExpense> addExpense({
+    required String groupId,
+    required String description,
+    required double amount,
+    required DateTime date,
+  }) async {
+    final response = await _request(
+      method: 'POST',
+      path: '/api/v1/groups/$groupId/expenses',
+      body: <String, dynamic>{
+        'description': description,
+        'amount': amount,
+        'date': date.toUtc().toIso8601String(),
+      },
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return GroupExpense.fromJson(payload);
   }
 
   Future<http.Response> _request({

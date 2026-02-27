@@ -13,5 +13,9 @@ var (
 type Store interface {
 	Create(ctx context.Context, group Group) (Group, error)
 	ListByMember(ctx context.Context, uid string) ([]Group, error)
+	GetByID(ctx context.Context, id string) (Group, error)
+	AddMember(ctx context.Context, groupID, memberUID string) (Group, error)
 	Leave(ctx context.Context, groupID, uid string) (deleted bool, err error)
+	CreateExpense(ctx context.Context, expense GroupExpense) (GroupExpense, error)
+	ListExpenses(ctx context.Context, groupID string) ([]GroupExpense, error)
 }

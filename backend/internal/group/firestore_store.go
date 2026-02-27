@@ -5,15 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const groupsCollection = "groups"
+const groupExpensesSubcollection = "expenses"
 
 type FirestoreStore struct {
 	client *firestore.Client
@@ -77,6 +81,45 @@ func (s *FirestoreStore) ListByMember(ctx context.Context, uid string) ([]Group,
 	return out, nil
 }
 
+func (s *FirestoreStore) GetByID(ctx context.Context, id string) (Group, error) {
+	doc, err := s.client.Collection(groupsCollection).Doc(id).Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return Group{}, ErrGroupNotFound
+		}
+		return Group{}, fmt.Errorf("get group: %w", err)
+	}
+	return fromFirestoreGroup(doc)
+}
+
+func (s *FirestoreStore) AddMember(ctx context.Context, groupID, memberUID string) (Group, error) {
+	doc := s.client.Collection(groupsCollection).Doc(groupID)
+	if err := s.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		snap, err := tx.Get(doc)
+		if err != nil {
+			return ErrGroupNotFound
+		}
+		group, err := fromFirestoreGroup(snap)
+		if err != nil {
+			return err
+		}
+		if slices.Contains(group.MemberUIDs, memberUID) {
+			return nil
+		}
+		nextMembers := append([]string{}, group.MemberUIDs...)
+		nextMembers = append(nextMembers, memberUID)
+		sort.Strings(nextMembers)
+		return tx.Set(doc, map[string]any{
+			"member_uids":  nextMembers,
+			"member_count": len(nextMembers),
+			"updated_at":   time.Now().UTC(),
+		}, firestore.MergeAll)
+	}); err != nil {
+		return Group{}, err
+	}
+	return s.GetByID(ctx, groupID)
+}
+
 func (s *FirestoreStore) Leave(ctx context.Context, groupID, uid string) (bool, error) {
 	doc := s.client.Collection(groupsCollection).Doc(groupID)
 	deleted := false
@@ -113,6 +156,68 @@ func (s *FirestoreStore) Leave(ctx context.Context, groupID, uid string) (bool, 
 		return false, err
 	}
 	return deleted, nil
+}
+
+func (s *FirestoreStore) CreateExpense(ctx context.Context, expense GroupExpense) (GroupExpense, error) {
+	groupDoc := s.client.Collection(groupsCollection).Doc(expense.GroupID)
+	if _, err := groupDoc.Get(ctx); err != nil {
+		return GroupExpense{}, ErrGroupNotFound
+	}
+
+	doc := groupDoc.Collection(groupExpensesSubcollection).NewDoc()
+	expense.ID = doc.ID
+	if expense.CreatedAt.IsZero() {
+		expense.CreatedAt = time.Now().UTC()
+	}
+	if _, err := doc.Set(ctx, map[string]any{
+		"group_id":    expense.GroupID,
+		"created_by":  expense.CreatedBy,
+		"amount":      expense.Amount,
+		"description": expense.Description,
+		"date":        expense.Date.UTC(),
+		"created_at":  expense.CreatedAt.UTC(),
+	}); err != nil {
+		return GroupExpense{}, fmt.Errorf("create group expense: %w", err)
+	}
+	return expense, nil
+}
+
+func (s *FirestoreStore) ListExpenses(ctx context.Context, groupID string) ([]GroupExpense, error) {
+	groupDoc := s.client.Collection(groupsCollection).Doc(groupID)
+	if _, err := groupDoc.Get(ctx); err != nil {
+		return nil, ErrGroupNotFound
+	}
+	docs, err := groupDoc.Collection(groupExpensesSubcollection).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("list group expenses: %w", err)
+	}
+	out := make([]GroupExpense, 0, len(docs))
+	for _, doc := range docs {
+		data := doc.Data()
+		amount, _ := data["amount"].(float64)
+		if amount == 0 {
+			if n, ok := data["amount"].(int64); ok {
+				amount = float64(n)
+			}
+		}
+		description, _ := data["description"].(string)
+		createdBy, _ := data["created_by"].(string)
+		date, _ := data["date"].(time.Time)
+		createdAt, _ := data["created_at"].(time.Time)
+		out = append(out, GroupExpense{
+			ID:          doc.Ref.ID,
+			GroupID:     groupID,
+			CreatedBy:   createdBy,
+			Amount:      amount,
+			Description: description,
+			Date:        date.UTC(),
+			CreatedAt:   createdAt.UTC(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Date.After(out[j].Date)
+	})
+	return out, nil
 }
 
 type firestoreGroup struct {
