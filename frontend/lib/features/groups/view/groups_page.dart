@@ -387,12 +387,16 @@ class _GroupDetailsPage extends StatefulWidget {
 class _GroupDetailsPageState extends State<_GroupDetailsPage> {
   List<GroupExpense> _expenses = const [];
   bool _loading = true;
-  bool _busy = false;
+  _GroupBusyAction _busyAction = _GroupBusyAction.none;
+  late int _memberCount;
   String? _error;
+
+  bool get _busy => _busyAction != _GroupBusyAction.none;
 
   @override
   void initState() {
     super.initState();
+    _memberCount = widget.group.memberCount;
     _loadExpenses();
   }
 
@@ -435,7 +439,7 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      setState(() => _busy = true);
+      setState(() => _busyAction = _GroupBusyAction.leavingGroup);
       final result = await widget.repository.leaveGroup(widget.group.id);
       if (!mounted) return;
       final deleted = result['deleted'] == true;
@@ -454,7 +458,7 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
-      setState(() => _busy = false);
+      setState(() => _busyAction = _GroupBusyAction.none);
     }
   }
 
@@ -485,23 +489,26 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
       ),
     );
     if (contact == null || contact.isEmpty || !mounted) return;
-    setState(() => _busy = true);
+    setState(() => _busyAction = _GroupBusyAction.addingMember);
     try {
-      await widget.repository.addMember(
+      final updated = await widget.repository.addMember(
         groupId: widget.group.id,
         emailOrPhone: contact,
       );
       if (!mounted) return;
+      setState(() {
+        _memberCount = updated.memberCount;
+        _busyAction = _GroupBusyAction.none;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Member added.')));
-      Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
-      setState(() => _busy = false);
+      setState(() => _busyAction = _GroupBusyAction.none);
     }
   }
 
@@ -556,7 +563,7 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
       );
       return;
     }
-    setState(() => _busy = true);
+    setState(() => _busyAction = _GroupBusyAction.addingExpense);
     try {
       await widget.repository.addExpense(
         groupId: widget.group.id,
@@ -567,13 +574,13 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
       if (!mounted) return;
       await _loadExpenses();
       if (!mounted) return;
-      setState(() => _busy = false);
+      setState(() => _busyAction = _GroupBusyAction.none);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Group expense added.')));
     } catch (error) {
       if (!mounted) return;
-      setState(() => _busy = false);
+      setState(() => _busyAction = _GroupBusyAction.none);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(error.toString())));
@@ -583,6 +590,12 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
   @override
   Widget build(BuildContext context) {
     final total = _expenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final busyMessage = switch (_busyAction) {
+      _GroupBusyAction.addingMember => 'Adding member...',
+      _GroupBusyAction.addingExpense => 'Saving expense...',
+      _GroupBusyAction.leavingGroup => 'Leaving group...',
+      _GroupBusyAction.none => '',
+    };
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.group.name),
@@ -606,58 +619,95 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            Card(
-              child: ListTile(
-                title: Text(
-                  widget.group.groupType == GroupType.family
-                      ? 'Family monthly spend'
-                      : 'Group total spend',
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: ListView(
+              children: [
+                Card(
+                  child: ListTile(
+                    title: Text(
+                      widget.group.groupType == GroupType.family
+                          ? 'Family monthly spend'
+                          : 'Group total spend',
+                    ),
+                    subtitle: Text('$_memberCount member(s)'),
+                    trailing: Text(
+                      'INR ${total.toStringAsFixed(2)}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
                 ),
-                subtitle: Text('${widget.group.memberCount} member(s)'),
-                trailing: Text(
-                  'INR ${total.toStringAsFixed(2)}',
-                  style: Theme.of(context).textTheme.titleMedium,
+                const SizedBox(height: 12),
+                if (_loading)
+                  const Card(
+                    child: ListTile(title: Text('Loading group expenses...')),
+                  )
+                else if (_error != null)
+                  SelectableErrorMessage(_error!)
+                else if (_expenses.isEmpty)
+                  const Card(
+                    child: ListTile(
+                      title: Text('No group expenses yet'),
+                      subtitle: Text(
+                        'Use the receipt icon in top-right to add the first group expense.',
+                      ),
+                    ),
+                  )
+                else
+                  ..._expenses.map(
+                    (expense) => Card(
+                      child: ListTile(
+                        title: Text(expense.description),
+                        subtitle: Text(
+                          expense.date.toLocal().toString().split('.').first,
+                        ),
+                        trailing: Text(
+                          'INR ${expense.amount.toStringAsFixed(2)}',
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (_busy)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Material(
+                elevation: 1,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    LinearProgressIndicator(
+                      minHeight: 3,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        busyMessage,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            if (_loading)
-              const Card(
-                child: ListTile(title: Text('Loading group expenses...')),
-              )
-            else if (_error != null)
-              SelectableErrorMessage(_error!)
-            else if (_expenses.isEmpty)
-              const Card(
-                child: ListTile(
-                  title: Text('No group expenses yet'),
-                  subtitle: Text(
-                    'Use the receipt icon in top-right to add the first group expense.',
-                  ),
-                ),
-              )
-            else
-              ..._expenses.map(
-                (expense) => Card(
-                  child: ListTile(
-                    title: Text(expense.description),
-                    subtitle: Text(
-                      expense.date.toLocal().toString().split('.').first,
-                    ),
-                    trailing: Text('INR ${expense.amount.toStringAsFixed(2)}'),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        ],
       ),
     );
   }
 }
+
+enum _GroupBusyAction { none, addingMember, addingExpense, leavingGroup }
 
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
