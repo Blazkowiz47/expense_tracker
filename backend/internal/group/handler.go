@@ -2,6 +2,7 @@ package group
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"strings"
@@ -34,6 +35,46 @@ func (h *Handler) GroupsCollection(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
 	}
+}
+
+func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/groups/")
+	if path == "" {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group path required")
+		return
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[1] != "leave" || parts[0] == "" {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+		return
+	}
+	groupID := parts[0]
+	if r.Method != http.MethodPost {
+		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+		return
+	}
+	uid, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || uid == "" {
+		httpapi.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user missing from context")
+		return
+	}
+
+	deleted, err := h.store.Leave(r.Context(), groupID, uid)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrGroupNotFound):
+			httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		case errors.Is(err, ErrNotMember):
+			httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		default:
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to leave group")
+		}
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{
+		"left":    true,
+		"deleted": deleted,
+	})
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {

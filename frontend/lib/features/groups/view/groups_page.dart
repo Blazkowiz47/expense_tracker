@@ -86,10 +86,16 @@ class _GroupsPageState extends State<GroupsPage> {
     }
   }
 
-  void _openGroupDetails(GroupSummary group) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => _GroupDetailsPage(group: group)),
+  Future<void> _openGroupDetails(GroupSummary group) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) =>
+            _GroupDetailsPage(group: group, repository: _repository),
+      ),
     );
+    if (changed == true && mounted) {
+      await _loadGroups();
+    }
   }
 
   @override
@@ -248,14 +254,67 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
 }
 
 class _GroupDetailsPage extends StatelessWidget {
-  const _GroupDetailsPage({required this.group});
+  const _GroupDetailsPage({required this.group, required this.repository});
 
   final GroupSummary group;
+  final ApiGroupsRepository repository;
+
+  Future<void> _leaveGroup(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave group'),
+        content: Text('Leave "${group.name}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      final result = await repository.leaveGroup(group.id);
+      if (!context.mounted) return;
+      final deleted = result['deleted'] == true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            deleted
+                ? 'You left the group. Group was deleted.'
+                : 'You left the group.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(group.name)),
+      appBar: AppBar(
+        title: Text(group.name),
+        actions: [
+          TextButton(
+            onPressed: () => _leaveGroup(context),
+            child: Text(
+              'Leave group',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: group.groupType == GroupType.family

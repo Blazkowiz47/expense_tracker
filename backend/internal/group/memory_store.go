@@ -41,3 +41,35 @@ func (s *InMemoryStore) ListByMember(_ context.Context, uid string) ([]Group, er
 	})
 	return out, nil
 }
+
+func (s *InMemoryStore) Leave(_ context.Context, groupID, uid string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	group, ok := s.groups[groupID]
+	if !ok {
+		return false, ErrGroupNotFound
+	}
+
+	nextMembers := make([]string, 0, len(group.MemberUIDs))
+	wasMember := false
+	for _, memberUID := range group.MemberUIDs {
+		if memberUID == uid {
+			wasMember = true
+			continue
+		}
+		nextMembers = append(nextMembers, memberUID)
+	}
+	if !wasMember {
+		return false, ErrNotMember
+	}
+	if len(nextMembers) == 0 {
+		delete(s.groups, groupID)
+		return true, nil
+	}
+
+	group.MemberUIDs = nextMembers
+	group.MemberCount = len(nextMembers)
+	s.groups[groupID] = group
+	return false, nil
+}

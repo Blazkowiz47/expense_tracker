@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -74,6 +75,44 @@ func (s *FirestoreStore) ListByMember(ctx context.Context, uid string) ([]Group,
 	}
 
 	return out, nil
+}
+
+func (s *FirestoreStore) Leave(ctx context.Context, groupID, uid string) (bool, error) {
+	doc := s.client.Collection(groupsCollection).Doc(groupID)
+	deleted := false
+	err := s.client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		snap, err := tx.Get(doc)
+		if err != nil {
+			return ErrGroupNotFound
+		}
+		group, err := fromFirestoreGroup(snap)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(group.MemberUIDs, uid) {
+			return ErrNotMember
+		}
+
+		nextMembers := make([]string, 0, len(group.MemberUIDs))
+		for _, memberUID := range group.MemberUIDs {
+			if memberUID != uid {
+				nextMembers = append(nextMembers, memberUID)
+			}
+		}
+		if len(nextMembers) == 0 {
+			deleted = true
+			return tx.Delete(doc)
+		}
+		return tx.Set(doc, map[string]any{
+			"member_uids":  nextMembers,
+			"member_count": len(nextMembers),
+			"updated_at":   time.Now().UTC(),
+		}, firestore.MergeAll)
+	})
+	if err != nil {
+		return false, err
+	}
+	return deleted, nil
 }
 
 type firestoreGroup struct {

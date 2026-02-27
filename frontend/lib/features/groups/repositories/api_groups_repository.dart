@@ -43,6 +43,14 @@ class ApiGroupsRepository {
     return GroupSummary.fromJson(payload);
   }
 
+  Future<Map<String, dynamic>> leaveGroup(String groupId) async {
+    final response = await _request(
+      method: 'POST',
+      path: '/api/v1/groups/$groupId/leave',
+    );
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<http.Response> _request({
     required String method,
     required String path,

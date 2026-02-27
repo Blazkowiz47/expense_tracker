@@ -61,6 +61,7 @@ func NewRouter(
 	mux.Handle("/api/v1/friends/add", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Add)))
 	mux.Handle("/api/v1/friends/remove", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Remove)))
 	mux.Handle("/api/v1/groups", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupsCollection)))
+	mux.Handle("/api/v1/groups/", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupByID)))
 
 	return middleware.CORS(mux)
 }
