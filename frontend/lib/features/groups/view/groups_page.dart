@@ -1,5 +1,6 @@
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:flutter/material.dart';
@@ -100,47 +101,79 @@ class _GroupsPageState extends State<GroupsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _SummaryCard(
-              title: 'Your groups',
-              amount: '${_groups.length}',
-              amountColor: const Color(0xFF1B8C67),
-            ),
-            const SizedBox(height: 16),
-            _GroupsHeader(
-              onCreateGroup: _creating ? null : _openCreateGroupDialog,
-            ),
-            if (_loading)
-              const Card(child: ListTile(title: Text('Loading groups...')))
-            else if (_error != null)
-              SelectableErrorMessage(_error!)
-            else if (_groups.isEmpty)
-              const _GroupTile(
-                group: GroupSummary(
-                  id: '',
-                  name: 'No groups yet',
-                  groupType: GroupType.split,
-                  memberCount: 1,
+    return Stack(
+      children: [
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _SummaryCard(
+                  title: 'Your groups',
+                  amount: '${_groups.length}',
+                  amountColor: const Color(0xFF1B8C67),
                 ),
-                subtitle: 'Create a split or family group to get started.',
-                amountText: '',
-              )
-            else
-              ..._groups.map(
-                (group) => _GroupTile(
-                  group: group,
-                  onTap: () => _openGroupDetails(group),
+                const SizedBox(height: 16),
+                _GroupsHeader(
+                  onCreateGroup: _creating ? null : _openCreateGroupDialog,
+                ),
+                if (_loading)
+                  const Card(child: ListTile(title: Text('Loading groups...')))
+                else if (_error != null)
+                  SelectableErrorMessage(_error!)
+                else if (_groups.isEmpty)
+                  const _GroupTile(
+                    group: GroupSummary(
+                      id: '',
+                      name: 'No groups yet',
+                      groupType: GroupType.split,
+                      memberCount: 1,
+                    ),
+                    subtitle: 'Create a split or family group to get started.',
+                    amountText: '',
+                  )
+                else
+                  ..._groups.map(
+                    (group) => _GroupTile(
+                      group: group,
+                      onTap: () => _openGroupDetails(group),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (_creating)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black26,
+              child: Center(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 16,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.4),
+                        ),
+                        SizedBox(width: 12),
+                        Text('Creating group...'),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -177,25 +210,83 @@ class _CreateGroupDialog extends StatefulWidget {
 
 class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   final _nameController = TextEditingController();
-  final _membersController = TextEditingController();
+  final _memberInputController = TextEditingController();
+  late final http.Client _client;
+  late final ApiFriendsRepository _friendsRepository;
+  final List<_DialogMember> _members = <_DialogMember>[];
+  String? _memberError;
+  bool _resolvingMember = false;
   GroupType _type = GroupType.split;
+
+  @override
+  void initState() {
+    super.initState();
+    _client = http.Client();
+    _friendsRepository = ApiFriendsRepository(client: _client);
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _membersController.dispose();
+    _memberInputController.dispose();
+    _client.close();
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _addMemberFromInput() async {
+    if (_resolvingMember) return;
+    final input = _memberInputController.text.trim();
+    if (input.isEmpty) return;
+    if (_members.any((m) => m.contact.toLowerCase() == input.toLowerCase())) {
+      setState(() {
+        _memberError = 'Member already added.';
+        _memberInputController.clear();
+      });
+      return;
+    }
+    setState(() {
+      _resolvingMember = true;
+      _memberError = null;
+    });
+    try {
+      final resolved = await _friendsRepository.resolveFriend(input);
+      if (!mounted) return;
+      if (!resolved.exists) {
+        setState(() => _memberError = 'No user found for "$input".');
+        return;
+      }
+      setState(() {
+        _members.add(_DialogMember(contact: input, label: resolved.label));
+        _memberInputController.clear();
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _memberError = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _resolvingMember = false);
+      }
+    }
+  }
+
+  void _removeMember(_DialogMember member) {
+    setState(() {
+      _members.remove(member);
+      _memberError = null;
+    });
+  }
+
+  Future<void> _submit() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
-    final members = _membersController.text
-        .split(RegExp(r'[\n,]'))
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
-        .toSet()
-        .toList(growable: false);
+
+    if (_memberInputController.text.trim().isNotEmpty) {
+      await _addMemberFromInput();
+      if (!mounted) return;
+      if (_memberError != null) return;
+    }
+
+    final members = _members.map((m) => m.contact).toList(growable: false);
     final input = _CreateGroupInput(name: name, type: _type, members: members);
     Navigator.of(context).pop(input);
   }
@@ -213,14 +304,43 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: _membersController,
-            minLines: 2,
-            maxLines: 4,
-            decoration: const InputDecoration(
+            controller: _memberInputController,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _addMemberFromInput(),
+            decoration: InputDecoration(
               labelText: 'Add members (email or phone)',
               hintText: 'alice@example.com, +15551234567',
+              errorText: _memberError,
+              suffixIcon: _resolvingMember
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : IconButton(
+                      onPressed: _addMemberFromInput,
+                      icon: const Icon(Icons.add),
+                    ),
             ),
           ),
+          if (_members.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _members
+                  .map(
+                    (member) => InputChip(
+                      label: Text(member.label),
+                      onDeleted: () => _removeMember(member),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ],
           const SizedBox(height: 12),
           DropdownButtonFormField<GroupType>(
             initialValue: _type,
@@ -492,4 +612,11 @@ class _CreateGroupInput {
   final String name;
   final GroupType type;
   final List<String> members;
+}
+
+class _DialogMember {
+  const _DialogMember({required this.contact, required this.label});
+
+  final String contact;
+  final String label;
 }

@@ -40,10 +40,19 @@ class FriendContact extends Equatable {
 }
 
 class FriendResolveResult extends Equatable {
-  const FriendResolveResult({required this.exists, this.uid});
+  const FriendResolveResult({
+    required this.exists,
+    this.uid,
+    this.displayName,
+    this.email,
+    this.phone,
+  });
 
   final bool exists;
   final String? uid;
+  final String? displayName;
+  final String? email;
+  final String? phone;
 
   factory FriendResolveResult.fromJson(Map<String, dynamic> json) {
     return FriendResolveResult(
@@ -51,9 +60,28 @@ class FriendResolveResult extends Equatable {
       uid: (json['uid'] as String?)?.trim().isEmpty == true
           ? null
           : json['uid'] as String?,
+      displayName: (json['displayName'] as String?)?.trim().isEmpty == true
+          ? null
+          : json['displayName'] as String?,
+      email: (json['email'] as String?)?.trim().isEmpty == true
+          ? null
+          : json['email'] as String?,
+      phone: (json['phone'] as String?)?.trim().isEmpty == true
+          ? null
+          : json['phone'] as String?,
     );
   }
 
+  String get label {
+    final name = displayName?.trim() ?? '';
+    if (name.isNotEmpty) return name;
+    final em = email?.trim() ?? '';
+    if (em.isNotEmpty) return em;
+    final ph = phone?.trim() ?? '';
+    if (ph.isNotEmpty) return ph;
+    return uid ?? '';
+  }
+
   @override
-  List<Object?> get props => [exists, uid];
+  List<Object?> get props => [exists, uid, displayName, email, phone];
 }

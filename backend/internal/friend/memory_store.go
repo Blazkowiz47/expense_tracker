@@ -29,12 +29,26 @@ func (s *InMemoryStore) ResolveByEmailOrPhone(_ context.Context, query string) (
 	}
 	if strings.Contains(normalized, "@") {
 		if uid, ok := s.byEmail[normalized]; ok {
-			return ResolveResult{Exists: true, UID: uid}, nil
+			friend := s.usersByUID[uid]
+			return ResolveResult{
+				Exists:      true,
+				UID:         uid,
+				DisplayName: strings.TrimSpace(friend.DisplayName),
+				Email:       strings.TrimSpace(friend.Email),
+				Phone:       strings.TrimSpace(friend.Phone),
+			}, nil
 		}
 		return ResolveResult{Exists: false}, nil
 	}
 	if uid, ok := s.byPhone[normalized]; ok {
-		return ResolveResult{Exists: true, UID: uid}, nil
+		friend := s.usersByUID[uid]
+		return ResolveResult{
+			Exists:      true,
+			UID:         uid,
+			DisplayName: strings.TrimSpace(friend.DisplayName),
+			Email:       strings.TrimSpace(friend.Email),
+			Phone:       strings.TrimSpace(friend.Phone),
+		}, nil
 	}
 	return ResolveResult{Exists: false}, nil
 }

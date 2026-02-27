@@ -8,6 +8,9 @@ type Friend struct {
 }
 
 type ResolveResult struct {
-	Exists bool   `json:"exists"`
-	UID    string `json:"uid,omitempty"`
+	Exists      bool   `json:"exists"`
+	UID         string `json:"uid,omitempty"`
+	DisplayName string `json:"displayName,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Phone       string `json:"phone,omitempty"`
 }

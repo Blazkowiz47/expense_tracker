@@ -55,7 +55,7 @@ func (s *FirestoreStore) ResolveByEmailOrPhone(ctx context.Context, query string
 		if uid, ok, err := s.lookupSingle(ctx, usersCollection, "email", normalized); err != nil {
 			return ResolveResult{}, err
 		} else if ok {
-			return ResolveResult{Exists: true, UID: uid}, nil
+			return s.resolveResultForUID(ctx, uid)
 		}
 		return ResolveResult{Exists: false}, nil
 	}
@@ -65,16 +65,35 @@ func (s *FirestoreStore) ResolveByEmailOrPhone(ctx context.Context, query string
 		if uid, ok, err := s.lookupSingle(ctx, usersCollection, field, normalized); err != nil {
 			return ResolveResult{}, err
 		} else if ok {
-			return ResolveResult{Exists: true, UID: uid}, nil
+			return s.resolveResultForUID(ctx, uid)
 		}
 	}
 	if uid, ok, err := s.lookupArray(ctx, usersCollection, "phones", normalized); err != nil {
 		return ResolveResult{}, err
 	} else if ok {
-		return ResolveResult{Exists: true, UID: uid}, nil
+		return s.resolveResultForUID(ctx, uid)
 	}
 
 	return ResolveResult{Exists: false}, nil
+}
+
+func (s *FirestoreStore) resolveResultForUID(ctx context.Context, uid string) (ResolveResult, error) {
+	doc, err := s.client.Collection(usersCollection).Doc(uid).Get(ctx)
+	if err != nil {
+		return ResolveResult{}, fmt.Errorf("lookup user %s: %w", uid, err)
+	}
+	data := doc.Data()
+	return ResolveResult{
+		Exists:      true,
+		UID:         uid,
+		DisplayName: stringFrom(data["display_name"]),
+		Email:       stringFrom(data["email"]),
+		Phone: firstNonEmptyString(
+			stringFrom(data["phone"]),
+			stringFrom(data["phone_e164"]),
+			stringFrom(data["primary_phone"]),
+		),
+	}, nil
 }
 
 func (s *FirestoreStore) AddFriendship(ctx context.Context, uid, friendUID string) error {
