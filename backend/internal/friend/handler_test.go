@@ -11,6 +11,7 @@ import (
 	"expense_tracker_backend/internal/auth"
 	"expense_tracker_backend/internal/expense"
 	"expense_tracker_backend/internal/friend"
+	"expense_tracker_backend/internal/group"
 	"expense_tracker_backend/internal/server"
 )
 
@@ -41,8 +42,10 @@ func setupTestServer(store friend.Store) http.Handler {
 	expenseHandler := expense.NewHandler(expenseSvc)
 
 	friendHandler := friend.NewHandler(store)
+	groupStore := group.NewInMemoryStore()
+	groupHandler := group.NewHandler(groupStore)
 	verifier := auth.NewStaticVerifier(map[string]string{"dev-token": "uid-1"})
-	return server.NewRouter(verifier, expenseHandler, friendHandler)
+	return server.NewRouter(verifier, expenseHandler, friendHandler, groupHandler)
 }
 
 func TestResolveFound(t *testing.T) {

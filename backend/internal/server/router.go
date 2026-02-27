@@ -6,11 +6,17 @@ import (
 	"expense_tracker_backend/internal/auth"
 	"expense_tracker_backend/internal/expense"
 	"expense_tracker_backend/internal/friend"
+	"expense_tracker_backend/internal/group"
 	"expense_tracker_backend/internal/httpapi"
 	"expense_tracker_backend/internal/middleware"
 )
 
-func NewRouter(verifier auth.Verifier, expenseHandler *expense.Handler, friendHandler *friend.Handler) http.Handler {
+func NewRouter(
+	verifier auth.Verifier,
+	expenseHandler *expense.Handler,
+	friendHandler *friend.Handler,
+	groupHandler *group.Handler,
+) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -54,6 +60,7 @@ func NewRouter(verifier auth.Verifier, expenseHandler *expense.Handler, friendHa
 	mux.Handle("/api/v1/friends/resolve", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Resolve)))
 	mux.Handle("/api/v1/friends/add", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Add)))
 	mux.Handle("/api/v1/friends/remove", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Remove)))
+	mux.Handle("/api/v1/groups", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupsCollection)))
 
 	return middleware.CORS(mux)
 }
