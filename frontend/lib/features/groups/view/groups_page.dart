@@ -515,44 +515,155 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
   Future<void> _addExpense() async {
     final descriptionController = TextEditingController();
     final amountController = TextEditingController();
+    final participants = List<String>.generate(
+      _memberCount,
+      (index) => index == 0 ? 'You' : 'Member ${index + 1}',
+    );
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add group expense'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: descriptionController,
-              decoration: const InputDecoration(labelText: 'Description'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: amountController,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+      builder: (context) {
+        var paidBy = participants.first;
+        var splitMode = 'equally';
+        var splitWithAll = true;
+        final selected = participants.toSet();
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Add group expense'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Amount',
+                      prefixText: 'INR ',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      const Text('Paid by'),
+                      DropdownButton<String>(
+                        value: paidBy,
+                        items: participants
+                            .map(
+                              (p) => DropdownMenuItem<String>(
+                                value: p,
+                                child: Text(p),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => paidBy = value);
+                        },
+                      ),
+                      const Text('and split'),
+                      DropdownButton<String>(
+                        value: splitMode,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'equally',
+                            child: Text('equally'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'custom',
+                            child: Text('custom'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setDialogState(() => splitMode = value);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Text('Split with'),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('All members'),
+                        selected: splitWithAll,
+                        onSelected: (_) {
+                          setDialogState(() {
+                            splitWithAll = true;
+                            selected
+                              ..clear()
+                              ..addAll(participants);
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Selected'),
+                        selected: !splitWithAll,
+                        onSelected: (_) {
+                          setDialogState(() => splitWithAll = false);
+                        },
+                      ),
+                    ],
+                  ),
+                  if (!splitWithAll) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: participants
+                          .map(
+                            (p) => FilterChip(
+                              label: Text(p),
+                              selected: selected.contains(p),
+                              onSelected: (enabled) {
+                                setDialogState(() {
+                                  if (enabled) {
+                                    selected.add(p);
+                                  } else if (selected.length > 1) {
+                                    selected.remove(p);
+                                  }
+                                });
+                              },
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ],
+                ],
               ),
-              decoration: const InputDecoration(
-                labelText: 'Amount',
-                prefixText: 'INR ',
-              ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop({
+                  'description': descriptionController.text.trim(),
+                  'amount': double.tryParse(amountController.text.trim()),
+                  'paidBy': paidBy,
+                  'splitMode': splitMode,
+                  'splitWith': selected.toList(growable: false),
+                }),
+                child: const Text('Save'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop({
-              'description': descriptionController.text.trim(),
-              'amount': double.tryParse(amountController.text.trim()),
-            }),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+        );
+      },
     );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
