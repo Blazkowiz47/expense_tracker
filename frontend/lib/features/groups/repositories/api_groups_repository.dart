@@ -4,6 +4,7 @@ import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
+import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:http/http.dart' as http;
 
@@ -74,6 +75,17 @@ class ApiGroupsRepository {
     final rawExpenses = (payload['expenses'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>();
     return rawExpenses.map(GroupExpense.fromJson).toList(growable: false);
+  }
+
+  Future<List<GroupMember>> fetchMembers(String groupId) async {
+    final response = await _request(
+      method: 'GET',
+      path: '/api/v1/groups/$groupId/members',
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawMembers = (payload['members'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    return rawMembers.map(GroupMember.fromJson).toList(growable: false);
   }
 
   Future<GroupExpense> addExpense({

@@ -29,3 +29,10 @@ type GroupExpense struct {
 	Date        time.Time `json:"date"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
+
+type GroupMember struct {
+	UID         string `json:"uid"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+}

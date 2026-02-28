@@ -18,6 +18,7 @@ import (
 
 const groupsCollection = "groups"
 const groupExpensesSubcollection = "expenses"
+const usersCollection = "users"
 
 type FirestoreStore struct {
 	client *firestore.Client
@@ -78,6 +79,40 @@ func (s *FirestoreStore) ListByMember(ctx context.Context, uid string) ([]Group,
 		out = append(out, group)
 	}
 
+	return out, nil
+}
+
+func (s *FirestoreStore) ListMembers(ctx context.Context, groupID string) ([]GroupMember, error) {
+	group, err := s.GetByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]GroupMember, 0, len(group.MemberUIDs))
+	for _, uid := range group.MemberUIDs {
+		doc, err := s.client.Collection(usersCollection).Doc(uid).Get(ctx)
+		if err != nil {
+			out = append(out, GroupMember{UID: uid, DisplayName: uid})
+			continue
+		}
+		data := doc.Data()
+		displayName, _ := data["display_name"].(string)
+		email, _ := data["email"].(string)
+		phone := firstNonEmptyString(
+			stringFrom(data["phone"]),
+			stringFrom(data["phone_e164"]),
+			stringFrom(data["primary_phone"]),
+		)
+		if strings.TrimSpace(displayName) == "" {
+			displayName = firstNonEmptyString(email, phone, uid)
+		}
+		out = append(out, GroupMember{
+			UID:         uid,
+			DisplayName: strings.TrimSpace(displayName),
+			Email:       strings.TrimSpace(email),
+			Phone:       phone,
+		})
+	}
 	return out, nil
 }
 
@@ -257,4 +292,18 @@ func fromFirestoreGroup(doc *firestore.DocumentSnapshot) (Group, error) {
 		CreatedAt:   raw.CreatedAt.UTC(),
 		UpdatedAt:   raw.UpdatedAt.UTC(),
 	}, nil
+}
+
+func stringFrom(value any) string {
+	v, _ := value.(string)
+	return strings.TrimSpace(v)
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

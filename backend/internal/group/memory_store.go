@@ -59,6 +59,23 @@ func (s *InMemoryStore) GetByID(_ context.Context, id string) (Group, error) {
 	return group, nil
 }
 
+func (s *InMemoryStore) ListMembers(_ context.Context, groupID string) ([]GroupMember, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	group, ok := s.groups[groupID]
+	if !ok {
+		return nil, ErrGroupNotFound
+	}
+	out := make([]GroupMember, 0, len(group.MemberUIDs))
+	for _, uid := range group.MemberUIDs {
+		out = append(out, GroupMember{
+			UID:         uid,
+			DisplayName: uid,
+		})
+	}
+	return out, nil
+}
+
 func (s *InMemoryStore) AddMember(_ context.Context, groupID, memberUID string) (Group, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

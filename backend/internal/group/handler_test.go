@@ -237,6 +237,31 @@ func TestCreateAndListGroupExpenses(t *testing.T) {
 	}
 }
 
+func TestListGroupMembers(t *testing.T) {
+	router := setupTestServer(&fakeFriendStore{})
+	createPayload := map[string]any{"name": "Trip", "groupType": "split"}
+	b, _ := json.Marshal(createPayload)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", bytes.NewReader(b))
+	createReq.Header.Set("Authorization", "Bearer test-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createRR.Code, createRR.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(createRR.Body.Bytes(), &created)
+	groupID, _ := created["id"].(string)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+groupID+"/members", nil)
+	listReq.Header.Set("Authorization", "Bearer test-token")
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+}
+
 type fakeFriendStore struct {
 	resolvedByContact map[string]friend.ResolveResult
 	addedPairs        [][2]string

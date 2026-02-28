@@ -2,6 +2,7 @@ import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
+import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:flutter/material.dart';
@@ -386,6 +387,7 @@ class _GroupDetailsPage extends StatefulWidget {
 
 class _GroupDetailsPageState extends State<_GroupDetailsPage> {
   List<GroupExpense> _expenses = const [];
+  List<GroupMember> _members = const [];
   bool _loading = true;
   _GroupBusyAction _busyAction = _GroupBusyAction.none;
   late int _memberCount;
@@ -415,7 +417,22 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
   void initState() {
     super.initState();
     _memberCount = widget.group.memberCount;
-    _loadExpenses();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await Future.wait([_loadMembers(), _loadExpenses()]);
+  }
+
+  Future<void> _loadMembers() async {
+    try {
+      final items = await widget.repository.fetchMembers(widget.group.id);
+      if (!mounted) return;
+      setState(() {
+        _members = items;
+        _memberCount = items.length;
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadExpenses() async {
@@ -518,6 +535,8 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
         _memberCount = updated.memberCount;
         _busyAction = _GroupBusyAction.none;
       });
+      await _loadMembers();
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Member added.')));
@@ -533,10 +552,12 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
   Future<void> _addExpense() async {
     final descriptionController = TextEditingController();
     final amountController = TextEditingController();
-    final participants = List<String>.generate(
-      _memberCount,
-      (index) => index == 0 ? 'You' : 'Member ${index + 1}',
-    );
+    final participants = _members.isNotEmpty
+        ? _members.map((m) => m.label).toList(growable: false)
+        : List<String>.generate(
+            _memberCount,
+            (index) => index == 0 ? 'You' : 'Member ${index + 1}',
+          );
     final payload = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
@@ -574,19 +595,20 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
                     runSpacing: 6,
                     children: [
                       const Text('Paid by'),
-                      DropdownButton<String>(
-                        value: paidBy,
-                        items: participants
-                            .map(
-                              (p) => DropdownMenuItem<String>(
-                                value: p,
-                                child: Text(p),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => paidBy = value);
+                      ActionChip(
+                        label: Text(paidBy),
+                        onPressed: () async {
+                          final chosen = await Navigator.of(context)
+                              .push<String>(
+                                MaterialPageRoute<String>(
+                                  builder: (_) => _ChoosePayerPage(
+                                    participants: participants,
+                                    currentPayer: paidBy,
+                                  ),
+                                ),
+                              );
+                          if (chosen == null) return;
+                          setDialogState(() => paidBy = chosen);
                         },
                       ),
                       const Text('and split'),
@@ -1251,6 +1273,62 @@ class _SplitMascot extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: Icon(icon, color: Colors.white),
+    );
+  }
+}
+
+class _ChoosePayerPage extends StatelessWidget {
+  const _ChoosePayerPage({
+    required this.participants,
+    required this.currentPayer,
+  });
+
+  final List<String> participants;
+  final String currentPayer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        leadingWidth: 80,
+        title: const Text('Choose payer'),
+      ),
+      body: ListView(
+        children: [
+          ...participants.map(
+            (name) => ListTile(
+              leading: CircleAvatar(
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              title: Text(name),
+              trailing: name == currentPayer
+                  ? Icon(
+                      Icons.check,
+                      color: Theme.of(context).colorScheme.primary,
+                    )
+                  : null,
+              onTap: () => Navigator.of(context).pop(name),
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            title: const Text('Multiple people'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {},
+          ),
+        ],
+      ),
     );
   }
 }

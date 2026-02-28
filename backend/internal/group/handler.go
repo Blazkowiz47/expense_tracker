@@ -73,6 +73,14 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		h.handleAddMember(w, r, groupID, uid)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "members" {
+		if r.Method != http.MethodGet {
+			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+			return
+		}
+		h.handleListMembers(w, r, groupID, uid)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "expenses" {
 		switch r.Method {
 		case http.MethodGet:
@@ -85,6 +93,24 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+}
+
+func (h *Handler) handleListMembers(w http.ResponseWriter, r *http.Request, groupID, uid string) {
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+	members, err := h.store.ListMembers(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to list members")
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"members": members})
 }
 
 func (h *Handler) handleLeave(w http.ResponseWriter, r *http.Request, groupID, uid string) {
