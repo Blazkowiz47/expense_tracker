@@ -456,6 +456,31 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return (owed: 0, owe: share);
   }
 
+  String _resolvePayerLabel(String rawPaidBy, List<String> participants) {
+    final normalized = rawPaidBy.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return participants.first;
+    }
+    for (final member in _members) {
+      final candidates = <String>{
+        member.uid.trim().toLowerCase(),
+        member.displayName.trim().toLowerCase(),
+        member.email.trim().toLowerCase(),
+        member.phone.trim().toLowerCase(),
+        member.label.trim().toLowerCase(),
+      }..removeWhere((v) => v.isEmpty);
+      if (candidates.contains(normalized)) {
+        return member.label;
+      }
+    }
+    for (final participant in participants) {
+      if (participant.trim().toLowerCase() == normalized) {
+        return participant;
+      }
+    }
+    return participants.first;
+  }
+
   Future<_SplitSelectionResult?> _openSplitOptionsPage({
     required List<String> participants,
     required Set<String> selectedMembers,
@@ -939,9 +964,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       participants: participants,
       initialDescription: expense.description,
       initialAmount: expense.amount,
-      initialPaidBy: expense.paidBy.isNotEmpty
-          ? expense.paidBy
-          : participants.first,
+      initialPaidBy: _resolvePayerLabel(expense.paidBy, participants),
       initialSplitMode: expense.splitMode.isNotEmpty
           ? expense.splitMode
           : 'equally',
