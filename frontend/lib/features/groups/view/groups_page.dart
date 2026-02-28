@@ -903,13 +903,7 @@ class _SplitOptionsPage extends StatefulWidget {
 class _SplitOptionsPageState extends State<_SplitOptionsPage> {
   late String _mode;
   late Set<String> _selected;
-  static const _modeTabs = <String>[
-    'equally',
-    'exact',
-    'percent',
-    'shares',
-    'adjustment',
-  ];
+  String? _lastEditedExactMember;
   final Map<String, TextEditingController> _exactControllers = {};
   final Map<String, TextEditingController> _percentControllers = {};
   final Map<String, TextEditingController> _sharesControllers = {};
@@ -918,9 +912,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
   @override
   void initState() {
     super.initState();
-    _mode = _modeTabs.contains(widget.currentMode)
-        ? widget.currentMode
-        : 'equally';
+    _mode = 'equally';
     _selected = {...widget.selectedMembers};
     if (_selected.isEmpty && widget.participants.isNotEmpty) {
       _selected = {widget.participants.first};
@@ -962,6 +954,26 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
 
   String _formatCurrency(double value) {
     return value.toStringAsFixed(2).replaceAll('.', ',');
+  }
+
+  double _parseLocalizedDouble(String raw) {
+    final normalized = raw.trim().replaceAll(' ', '').replaceAll(',', '.');
+    return double.tryParse(normalized) ?? 0;
+  }
+
+  double _exactEnteredTotal() {
+    var sum = 0.0;
+    for (final member in widget.participants) {
+      sum += _parseLocalizedDouble(_exactControllers[member]?.text ?? '');
+    }
+    return sum;
+  }
+
+  bool _isExactTotalMismatch() {
+    if (_mode != 'exact' || widget.totalAmount <= 0) {
+      return false;
+    }
+    return (_exactEnteredTotal() - widget.totalAmount).abs() > 0.005;
   }
 
   String _titleForMode() {
@@ -1043,12 +1055,6 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
 
   Widget _buildParticipantRow(BuildContext context, String member, int index) {
     final selected = _selected.contains(member);
-    final baseShare = (_selected.isEmpty || widget.totalAmount <= 0)
-        ? 0.0
-        : widget.totalAmount / _selected.length;
-    final subtitle = widget.totalAmount > 0
-        ? '₹ ${_formatCurrency(baseShare)}'
-        : null;
     final colorChoices = <Color>[
       const Color(0xFF6EC8AA),
       const Color(0xFF4DA58E),
@@ -1060,21 +1066,56 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     Widget trailing;
     switch (_mode) {
       case 'exact':
+        final mismatch = _isExactTotalMismatch();
+        final editedMember = _lastEditedExactMember;
+        final showErrorForThisMember =
+            mismatch &&
+            editedMember != null &&
+            member != editedMember &&
+            widget.participants.length > 1;
+        final errorColor = Theme.of(context).colorScheme.error;
         trailing = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('₹ ', style: TextStyle(color: Colors.grey)),
+            Text(
+              '₹ ',
+              style: TextStyle(
+                color: showErrorForThisMember ? errorColor : Colors.grey,
+              ),
+            ),
             SizedBox(
               width: 78,
               child: TextField(
                 controller: _exactControllers[member],
+                onChanged: (_) {
+                  setState(() {
+                    _lastEditedExactMember = member;
+                  });
+                },
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 textAlign: TextAlign.right,
-                decoration: const InputDecoration(
+                style: TextStyle(
+                  color: showErrorForThisMember ? errorColor : null,
+                ),
+                decoration: InputDecoration(
                   isDense: true,
-                  border: UnderlineInputBorder(),
+                  border: const UnderlineInputBorder(),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: showErrorForThisMember
+                          ? errorColor
+                          : Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: showErrorForThisMember
+                          ? errorColor
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1187,17 +1228,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(member, style: const TextStyle(fontSize: 16)),
-                  if (subtitle != null)
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
-                    ),
-                ],
+                children: [Text(member, style: const TextStyle(fontSize: 16))],
               ),
             ),
             trailing,
