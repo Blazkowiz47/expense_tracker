@@ -857,19 +857,22 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text('$_memberCount member(s)'),
-                        const SizedBox(height: 4),
-                        Text(
-                          'You are owed INR ${balance.lent.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
+                        if (balance.lent > 0.005 || balance.borrowed > 0.005)
+                          const SizedBox(height: 4),
+                        if (balance.lent > 0.005)
+                          Text(
+                            'You are owed INR ${balance.lent.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
-                        ),
-                        Text(
-                          'You owe INR ${balance.borrowed.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+                        if (balance.borrowed > 0.005)
+                          Text(
+                            'You owe INR ${balance.borrowed.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                     trailing: Text(
