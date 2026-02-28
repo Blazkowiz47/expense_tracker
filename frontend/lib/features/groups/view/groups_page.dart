@@ -1001,6 +1001,13 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     return (_exactEnteredTotal() - widget.totalAmount).abs() > 0.005;
   }
 
+  bool _isExactOverAllocated() {
+    if (_mode != 'exact' || widget.totalAmount <= 0) {
+      return false;
+    }
+    return _exactEnteredTotal() - widget.totalAmount > 0.005;
+  }
+
   String _titleForMode() {
     switch (_mode) {
       case 'exact':
@@ -1092,12 +1099,15 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     switch (_mode) {
       case 'exact':
         final mismatch = _isExactTotalMismatch();
+        final overAllocated = _isExactOverAllocated();
         final editedMember = _lastEditedExactMember;
         final showErrorForThisMember =
             mismatch &&
             editedMember != null &&
             member != editedMember &&
             widget.participants.length > 1;
+        final showInlineOverflowError =
+            overAllocated && editedMember != null && member == editedMember;
         final errorColor = Theme.of(context).colorScheme.error;
         trailing = Row(
           mainAxisSize: MainAxisSize.min,
@@ -1136,11 +1146,12 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                   ),
                   focusedBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
-                      color: showErrorForThisMember
+                      color: showErrorForThisMember || showInlineOverflowError
                           ? errorColor
                           : Theme.of(context).colorScheme.primary,
                     ),
                   ),
+                  errorText: showInlineOverflowError ? 'Exceeds total' : null,
                 ),
               ),
             ),
@@ -1284,8 +1295,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
       case 'exact':
         footerTitle =
             '₹ ${_formatCurrency(enteredExact)} of ₹ ${_formatCurrency(widget.totalAmount)}';
-        footerSubtitle = '₹ ${_formatCurrency(exactRemaining)} left';
-        footerError = exactRemaining.abs() > 0.005;
+        footerSubtitle = exactRemaining < 0
+            ? '₹ 0,00 left'
+            : '₹ ${_formatCurrency(exactRemaining)} left';
+        footerError = exactRemaining.abs() > 0.005 && exactRemaining >= 0;
         break;
       case 'percent':
         footerTitle = '${enteredPercent.toStringAsFixed(0)}% of 100%';
