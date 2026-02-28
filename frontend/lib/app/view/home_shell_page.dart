@@ -11,7 +11,7 @@ import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit
 import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
-import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
+import 'package:expense_tracker/features/expenses/view/add_expense_selector_page.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/overview/view/overview_page.dart';
@@ -107,7 +107,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
       platformPageRoute(
         builder: (context) => BlocProvider.value(
           value: expensesBloc,
-          child: const AddExpensePage(),
+          child: const AddExpenseSelectorPage(),
         ),
       ),
     );
