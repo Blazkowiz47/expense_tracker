@@ -209,6 +209,7 @@ func (s *FirestoreStore) CreateExpense(ctx context.Context, expense GroupExpense
 		"created_by":  expense.CreatedBy,
 		"amount":      expense.Amount,
 		"description": expense.Description,
+		"attachments": expense.Attachments,
 		"date":        expense.Date.UTC(),
 		"created_at":  expense.CreatedAt.UTC(),
 	}); err != nil {
@@ -236,6 +237,7 @@ func (s *FirestoreStore) ListExpenses(ctx context.Context, groupID string) ([]Gr
 			}
 		}
 		description, _ := data["description"].(string)
+		attachments := stringSliceFrom(data["attachments"])
 		createdBy, _ := data["created_by"].(string)
 		date, _ := data["date"].(time.Time)
 		createdAt, _ := data["created_at"].(time.Time)
@@ -245,6 +247,7 @@ func (s *FirestoreStore) ListExpenses(ctx context.Context, groupID string) ([]Gr
 			CreatedBy:   createdBy,
 			Amount:      amount,
 			Description: description,
+			Attachments: attachments,
 			Date:        date.UTC(),
 			CreatedAt:   createdAt.UTC(),
 		})
@@ -282,6 +285,7 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 		"created_by":  createdBy,
 		"amount":      expense.Amount,
 		"description": expense.Description,
+		"attachments": expense.Attachments,
 		"date":        expense.Date.UTC(),
 		"created_at":  createdAt.UTC(),
 	}, firestore.MergeAll); err != nil {
@@ -293,9 +297,30 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 		CreatedBy:   createdBy,
 		Amount:      expense.Amount,
 		Description: expense.Description,
+		Attachments: append([]string{}, expense.Attachments...),
 		Date:        expense.Date.UTC(),
 		CreatedAt:   createdAt.UTC(),
 	}, nil
+}
+
+func stringSliceFrom(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		if direct, ok := value.([]string); ok {
+			return append([]string{}, direct...)
+		}
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+			out = append(out, strings.TrimSpace(text))
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 type firestoreGroup struct {

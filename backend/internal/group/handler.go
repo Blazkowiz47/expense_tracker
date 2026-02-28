@@ -190,9 +190,10 @@ func (h *Handler) handleAddMember(w http.ResponseWriter, r *http.Request, groupI
 }
 
 type groupExpensePayload struct {
-	Amount      float64 `json:"amount"`
-	Description string  `json:"description"`
-	Date        string  `json:"date"`
+	Amount      float64  `json:"amount"`
+	Description string   `json:"description"`
+	Attachments []string `json:"attachments"`
+	Date        string   `json:"date"`
 }
 
 func (h *Handler) handleListExpenses(w http.ResponseWriter, r *http.Request, groupID, uid string) {
@@ -248,6 +249,7 @@ func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request, gr
 		CreatedBy:   uid,
 		Amount:      payload.Amount,
 		Description: description,
+		Attachments: sanitizeAttachments(payload.Attachments),
 		Date:        date,
 		CreatedAt:   time.Now().UTC(),
 	}
@@ -298,6 +300,7 @@ func (h *Handler) handleUpdateExpense(
 		CreatedBy:   uid,
 		Amount:      payload.Amount,
 		Description: description,
+		Attachments: sanitizeAttachments(payload.Attachments),
 		Date:        date,
 	})
 	if err != nil {
@@ -310,6 +313,29 @@ func (h *Handler) handleUpdateExpense(
 		return
 	}
 	httpapi.WriteJSON(w, http.StatusOK, updated)
+}
+
+func sanitizeAttachments(raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {

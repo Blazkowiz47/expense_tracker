@@ -92,6 +92,7 @@ class ApiGroupsRepository {
     required String groupId,
     required String description,
     required double amount,
+    List<String> attachments = const [],
     required DateTime date,
   }) async {
     final response = await _request(
@@ -100,6 +101,7 @@ class ApiGroupsRepository {
       body: <String, dynamic>{
         'description': description,
         'amount': amount,
+        'attachments': attachments,
         'date': date.toUtc().toIso8601String(),
       },
     );
@@ -112,6 +114,7 @@ class ApiGroupsRepository {
     required String expenseId,
     required String description,
     required double amount,
+    List<String> attachments = const [],
     required DateTime date,
   }) async {
     final response = await _request(
@@ -120,6 +123,7 @@ class ApiGroupsRepository {
       body: <String, dynamic>{
         'description': description,
         'amount': amount,
+        'attachments': attachments,
         'date': date.toUtc().toIso8601String(),
       },
     );

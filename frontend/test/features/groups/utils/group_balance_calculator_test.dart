@@ -15,6 +15,7 @@ void main() {
       createdBy: createdBy,
       amount: amount,
       description: id,
+      attachments: const [],
       date: now,
       createdAt: now,
     );

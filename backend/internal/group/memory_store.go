@@ -140,6 +140,7 @@ func (s *InMemoryStore) CreateExpense(_ context.Context, expense GroupExpense) (
 	if expense.CreatedAt.IsZero() {
 		expense.CreatedAt = time.Now().UTC()
 	}
+	expense.Attachments = append([]string{}, expense.Attachments...)
 	group.UpdatedAt = time.Now().UTC()
 	s.groups[group.ID] = group
 	s.groupExpenses[group.ID] = append(s.groupExpenses[group.ID], expense)
@@ -158,6 +159,7 @@ func (s *InMemoryStore) UpdateExpense(_ context.Context, expense GroupExpense) (
 		if items[i].ID == expense.ID {
 			expense.CreatedBy = items[i].CreatedBy
 			expense.CreatedAt = items[i].CreatedAt
+			expense.Attachments = append([]string{}, expense.Attachments...)
 			items[i] = expense
 			s.groupExpenses[expense.GroupID] = items
 			group.UpdatedAt = time.Now().UTC()

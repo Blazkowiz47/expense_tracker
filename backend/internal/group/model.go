@@ -26,6 +26,7 @@ type GroupExpense struct {
 	CreatedBy   string    `json:"createdBy"`
 	Amount      float64   `json:"amount"`
 	Description string    `json:"description"`
+	Attachments []string  `json:"attachments"`
 	Date        time.Time `json:"date"`
 	CreatedAt   time.Time `json:"createdAt"`
 }

@@ -594,30 +594,62 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
   }
 
-  Future<void> _addExpense() async {
-    if (_members.isEmpty && _memberCount > 0) {
-      await _loadMembers();
-      if (!mounted) return;
-    }
-    final descriptionController = TextEditingController();
-    final amountController = TextEditingController();
-    final participants = _members.isNotEmpty
-        ? _members.map((m) => m.label).toList(growable: false)
-        : List<String>.generate(
-            _memberCount,
-            (index) => index == 0 ? 'You' : 'Member ${index + 1}',
-          );
-    final payload = await showDialog<Map<String, dynamic>>(
+  Future<String?> _promptAttachmentUrl() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Attach bill photo'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Image URL',
+            hintText: 'https://...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _showExpenseForm({
+    required String title,
+    required List<String> participants,
+    String? initialDescription,
+    double? initialAmount,
+    String? initialPaidBy,
+    String initialSplitMode = 'equally',
+    Set<String>? initialSplitWith,
+    List<String>? initialAttachments,
+  }) {
+    final descriptionController = TextEditingController(
+      text: initialDescription ?? '',
+    );
+    final amountController = TextEditingController(
+      text: initialAmount == null ? '' : initialAmount.toStringAsFixed(2),
+    );
+    return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
-        var paidBy = participants.first;
-        var splitMode = 'equally';
-        var splitWithAll = true;
-        final selected = participants.toSet();
+        var paidBy = initialPaidBy ?? participants.first;
+        var splitMode = initialSplitMode;
+        final selected = {...(initialSplitWith ?? participants)};
+        var splitWithAll = selected.length == participants.length;
+        final attachments = [...?initialAttachments];
 
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Add group expense'),
+            title: Text(title),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -737,6 +769,40 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           .toList(growable: false),
                     ),
                   ],
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Attachments',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ...attachments.asMap().entries.map(
+                        (entry) => Chip(
+                          label: Text('Bill ${entry.key + 1}'),
+                          onDeleted: () {
+                            setDialogState(
+                              () => attachments.removeAt(entry.key),
+                            );
+                          },
+                        ),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.attach_file, size: 16),
+                        label: const Text('Add URL'),
+                        onPressed: () async {
+                          final url = await _promptAttachmentUrl();
+                          if (url == null || url.isEmpty) return;
+                          setDialogState(() => attachments.add(url));
+                        },
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -752,6 +818,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   'paidBy': paidBy,
                   'splitMode': splitMode,
                   'splitWith': selected.toList(growable: false),
+                  'attachments': attachments,
                 }),
                 child: const Text('Save'),
               ),
@@ -760,9 +827,31 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         );
       },
     );
+  }
+
+  Future<void> _addExpense() async {
+    if (_members.isEmpty && _memberCount > 0) {
+      await _loadMembers();
+      if (!mounted) return;
+    }
+    final participants = _members.isNotEmpty
+        ? _members.map((m) => m.label).toList(growable: false)
+        : List<String>.generate(
+            _memberCount,
+            (index) => index == 0 ? 'You' : 'Member ${index + 1}',
+          );
+
+    final payload = await _showExpenseForm(
+      title: 'Add group expense',
+      participants: participants,
+      initialSplitWith: participants.toSet(),
+    );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
     final amount = payload['amount'] as double?;
+    final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
+        .whereType<String>()
+        .toList(growable: false);
     if (description.isEmpty || amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid description and amount.')),
@@ -775,6 +864,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         groupId: widget.group.id,
         description: description,
         amount: amount,
+        attachments: attachments,
         date: DateTime.now(),
       );
       if (!mounted) return;
@@ -794,57 +884,31 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   }
 
   Future<void> _editExpense(GroupExpense expense) async {
-    final descriptionController = TextEditingController(
-      text: expense.description,
-    );
-    final amountController = TextEditingController(
-      text: expense.amount.toStringAsFixed(2),
-    );
-    final payload = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit group expense'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: descriptionController,
-                decoration: const InputDecoration(labelText: 'Description'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: amountController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'Amount',
-                  prefixText: 'INR ',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop({
-              'description': descriptionController.text.trim(),
-              'amount': double.tryParse(amountController.text.trim()),
-            }),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    if (_members.isEmpty && _memberCount > 0) {
+      await _loadMembers();
+      if (!mounted) return;
+    }
+    final participants = _members.isNotEmpty
+        ? _members.map((m) => m.label).toList(growable: false)
+        : List<String>.generate(
+            _memberCount,
+            (index) => index == 0 ? 'You' : 'Member ${index + 1}',
+          );
+    final payload = await _showExpenseForm(
+      title: 'Edit group expense',
+      participants: participants,
+      initialDescription: expense.description,
+      initialAmount: expense.amount,
+      initialSplitWith: participants.toSet(),
+      initialAttachments: expense.attachments,
     );
 
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
     final amount = payload['amount'] as double?;
+    final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
+        .whereType<String>()
+        .toList(growable: false);
     if (description.isEmpty || amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid description and amount.')),
@@ -859,6 +923,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         expenseId: expense.id,
         description: description,
         amount: amount,
+        attachments: attachments,
         date: expense.date,
       );
       if (!mounted) return;
@@ -987,8 +1052,86 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       child: ListTile(
                         onTap: _busy ? null : () => _editExpense(expense),
                         title: Text(expense.description),
-                        subtitle: Text(
-                          expense.date.toLocal().toString().split('.').first,
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              expense.date
+                                  .toLocal()
+                                  .toString()
+                                  .split('.')
+                                  .first,
+                            ),
+                            if (expense.attachments.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 52,
+                                child: ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: expense.attachments.length,
+                                  itemBuilder: (context, index) {
+                                    final url = expense.attachments[index];
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          url,
+                                          width: 52,
+                                          height: 52,
+                                          fit: BoxFit.cover,
+                                          loadingBuilder:
+                                              (
+                                                context,
+                                                child,
+                                                loadingProgress,
+                                              ) {
+                                                if (loadingProgress == null) {
+                                                  return child;
+                                                }
+                                                return Container(
+                                                  width: 52,
+                                                  height: 52,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerHighest,
+                                                  child: const Center(
+                                                    child: SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                          errorBuilder:
+                                              (
+                                                context,
+                                                _,
+                                                errorDetails,
+                                              ) => Container(
+                                                width: 52,
+                                                height: 52,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .surfaceContainerHighest,
+                                                child: const Icon(
+                                                  Icons.broken_image_outlined,
+                                                  size: 18,
+                                                ),
+                                              ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         trailing: Text(
                           'INR ${expense.amount.toStringAsFixed(2)}',
