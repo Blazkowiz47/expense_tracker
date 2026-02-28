@@ -397,6 +397,7 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
     required List<String> participants,
     required Set<String> selectedMembers,
     required String currentMode,
+    required double totalAmount,
   }) {
     return Navigator.of(context).push<_SplitSelectionResult>(
       MaterialPageRoute<_SplitSelectionResult>(
@@ -404,6 +405,7 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
           participants: participants,
           selectedMembers: selectedMembers,
           currentMode: currentMode,
+          totalAmount: totalAmount,
         ),
       ),
     );
@@ -595,6 +597,9 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
                             participants: participants,
                             selectedMembers: selected,
                             currentMode: splitMode,
+                            totalAmount:
+                                double.tryParse(amountController.text.trim()) ??
+                                0,
                           );
                           if (result == null) return;
                           setDialogState(() {
@@ -854,11 +859,13 @@ class _SplitOptionsPage extends StatefulWidget {
     required this.participants,
     required this.selectedMembers,
     required this.currentMode,
+    required this.totalAmount,
   });
 
   final List<String> participants;
   final Set<String> selectedMembers;
   final String currentMode;
+  final double totalAmount;
 
   @override
   State<_SplitOptionsPage> createState() => _SplitOptionsPageState();
@@ -867,11 +874,20 @@ class _SplitOptionsPage extends StatefulWidget {
 class _SplitOptionsPageState extends State<_SplitOptionsPage> {
   late String _mode;
   late Set<String> _selected;
+  static const _modeTabs = <String>[
+    'equally',
+    'exact',
+    'percent',
+    'shares',
+    'adjustment',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _mode = widget.currentMode;
+    _mode = _modeTabs.contains(widget.currentMode)
+        ? widget.currentMode
+        : 'equally';
     _selected = {...widget.selectedMembers};
     if (_selected.isEmpty && widget.participants.isNotEmpty) {
       _selected = {widget.participants.first};
@@ -888,8 +904,200 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     });
   }
 
+  String _formatCurrency(double value) {
+    return value.toStringAsFixed(2).replaceAll('.', ',');
+  }
+
+  String _titleForMode() {
+    switch (_mode) {
+      case 'exact':
+        return 'Split by exact amounts';
+      case 'percent':
+        return 'Split by percentages';
+      case 'shares':
+        return 'Split by shares';
+      case 'adjustment':
+        return 'Split by adjustment';
+      case 'equally':
+      default:
+        return 'Split equally';
+    }
+  }
+
+  String _subtitleForMode() {
+    switch (_mode) {
+      case 'exact':
+        return 'Specify exactly how much each person owes.';
+      case 'percent':
+        return 'Enter the percentage split that is fair for your situation.';
+      case 'shares':
+        return 'Great for time-based splitting and family ratios.';
+      case 'adjustment':
+        return 'Adjust who owes extra; remainder is split equally.';
+      case 'equally':
+      default:
+        return 'Select which people owe an equal share.';
+    }
+  }
+
+  Widget _buildModeTab(
+    BuildContext context,
+    String mode,
+    String label,
+    IconData icon,
+  ) {
+    final selected = _mode == mode;
+    return InkWell(
+      onTap: () => setState(() => _mode = mode),
+      child: Container(
+        width: 58,
+        height: 34,
+        decoration: BoxDecoration(
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(2),
+          border: Border.all(
+            color: selected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: label.isEmpty
+            ? Icon(
+                icon,
+                size: 18,
+                color: selected
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              )
+            : Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: selected
+                      ? Theme.of(context).colorScheme.onPrimary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildParticipantRow(BuildContext context, String member, int index) {
+    final selected = _selected.contains(member);
+    final baseShare = (_selected.isEmpty || widget.totalAmount <= 0)
+        ? 0.0
+        : widget.totalAmount / _selected.length;
+    final subtitle = widget.totalAmount > 0
+        ? '₹ ${_formatCurrency(baseShare)}'
+        : null;
+    final colorChoices = <Color>[
+      const Color(0xFF6EC8AA),
+      const Color(0xFF4DA58E),
+      const Color(0xFFE39A6B),
+      const Color(0xFF4F7AA2),
+    ];
+    final avatarColor = colorChoices[index % colorChoices.length];
+
+    Widget trailing;
+    switch (_mode) {
+      case 'exact':
+        trailing = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('₹ ', style: TextStyle(color: Colors.grey)),
+            Text(
+              '0,00',
+              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            ),
+          ],
+        );
+        break;
+      case 'percent':
+        trailing = Text(
+          '0 %',
+          style: TextStyle(color: Theme.of(context).colorScheme.outline),
+        );
+        break;
+      case 'shares':
+        trailing = const Text('1 share(s)');
+        break;
+      case 'adjustment':
+        trailing = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('+ ', style: TextStyle(color: Colors.grey)),
+            Text(
+              '0,00',
+              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            ),
+          ],
+        );
+        break;
+      case 'equally':
+      default:
+        trailing = Icon(
+          Icons.check_circle,
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.outline,
+          size: 20,
+        );
+    }
+
+    return InkWell(
+      onTap: () => _toggleMember(member, !selected),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Theme.of(context).dividerColor),
+          ),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: avatarColor,
+              child: Text(
+                member.isNotEmpty ? member[0].toUpperCase() : '?',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(member, style: const TextStyle(fontSize: 16)),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final perPerson = (_selected.isEmpty || widget.totalAmount <= 0)
+        ? 0.0
+        : widget.totalAmount / _selected.length;
     return Scaffold(
       appBar: AppBar(
         leading: TextButton(
@@ -910,44 +1118,139 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              ChoiceChip(
-                label: const Text('Split equally'),
-                selected: _mode == 'equally',
-                onSelected: (_) => setState(() => _mode = 'equally'),
-              ),
-              ChoiceChip(
-                label: const Text('Custom split'),
-                selected: _mode == 'custom',
-                onSelected: (_) => setState(() => _mode = 'custom'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            _mode == 'equally'
-                ? 'Select which people owe an equal share.'
-                : 'Select people included in custom split.',
-            style: Theme.of(context).textTheme.bodyMedium,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: const [
+                _SplitMascot(
+                  color: Color(0xFF9BDDD0),
+                  icon: Icons.icecream_outlined,
+                ),
+                _SplitMascot(
+                  color: Color(0xFF6CA6D9),
+                  icon: Icons.pets_outlined,
+                ),
+                _SplitMascot(
+                  color: Color(0xFFD96D8A),
+                  icon: Icons.pets_outlined,
+                ),
+                _SplitMascot(
+                  color: Color(0xFF9E80D9),
+                  icon: Icons.pets_outlined,
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
-          ...widget.participants.map(
-            (member) => Card(
-              child: CheckboxListTile(
-                title: Text(member),
-                value: _selected.contains(member),
-                onChanged: (value) => _toggleMember(member, value ?? false),
-                controlAffinity: ListTileControlAffinity.trailing,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              _titleForMode(),
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Text(
+              _subtitleForMode(),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildModeTab(context, 'equally', '=', Icons.drag_handle),
+                _buildModeTab(context, 'exact', '1.23', Icons.tag),
+                _buildModeTab(context, 'percent', '%', Icons.percent),
+                _buildModeTab(context, 'shares', '', Icons.bar_chart),
+                _buildModeTab(context, 'adjustment', '+/-', Icons.tune),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...widget.participants.asMap().entries.map(
+            (entry) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: _buildParticipantRow(context, entry.value, entry.key),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border(
+                top: BorderSide(color: Theme.of(context).dividerColor),
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '₹ ${_formatCurrency(perPerson)}/person',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      '(${_selected.length} people)',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Text('All'),
+                    const SizedBox(width: 6),
+                    Icon(
+                      _selected.length == widget.participants.length
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 18,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SplitMascot extends StatelessWidget {
+  const _SplitMascot({required this.color, required this.icon});
+
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Icon(icon, color: Colors.white),
     );
   }
 }
