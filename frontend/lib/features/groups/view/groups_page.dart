@@ -969,6 +969,31 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     return sum;
   }
 
+  double _percentEnteredTotal() {
+    var sum = 0.0;
+    for (final member in widget.participants) {
+      sum += _parseLocalizedDouble(_percentControllers[member]?.text ?? '');
+    }
+    return sum;
+  }
+
+  int _sharesEnteredTotal() {
+    var sum = 0;
+    for (final member in widget.participants) {
+      final raw = _sharesControllers[member]?.text.trim() ?? '';
+      sum += int.tryParse(raw) ?? 0;
+    }
+    return sum;
+  }
+
+  double _adjustmentEnteredTotal() {
+    var sum = 0.0;
+    for (final member in widget.participants) {
+      sum += _parseLocalizedDouble(_adjustmentControllers[member]?.text ?? '');
+    }
+    return sum;
+  }
+
   bool _isExactTotalMismatch() {
     if (_mode != 'exact' || widget.totalAmount <= 0) {
       return false;
@@ -1243,6 +1268,48 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     final perPerson = (_selected.isEmpty || widget.totalAmount <= 0)
         ? 0.0
         : widget.totalAmount / _selected.length;
+    final enteredExact = _exactEnteredTotal();
+    final enteredPercent = _percentEnteredTotal();
+    final enteredShares = _sharesEnteredTotal();
+    final enteredAdjustment = _adjustmentEnteredTotal();
+    final exactRemaining = widget.totalAmount - enteredExact;
+    final percentRemaining = 100 - enteredPercent;
+    final sharesRemaining = widget.participants.length - enteredShares;
+    final adjustmentRemaining = widget.totalAmount - enteredAdjustment;
+
+    String footerTitle;
+    String footerSubtitle;
+    bool footerError;
+    switch (_mode) {
+      case 'exact':
+        footerTitle =
+            '₹ ${_formatCurrency(enteredExact)} of ₹ ${_formatCurrency(widget.totalAmount)}';
+        footerSubtitle = '₹ ${_formatCurrency(exactRemaining)} left';
+        footerError = exactRemaining.abs() > 0.005;
+        break;
+      case 'percent':
+        footerTitle = '${enteredPercent.toStringAsFixed(0)}% of 100%';
+        footerSubtitle = '${percentRemaining.toStringAsFixed(0)}% left';
+        footerError = percentRemaining.abs() > 0.05;
+        break;
+      case 'shares':
+        footerTitle = '$enteredShares total shares';
+        footerSubtitle = '$sharesRemaining share(s) remaining';
+        footerError = sharesRemaining != 0;
+        break;
+      case 'adjustment':
+        footerTitle =
+            '₹ ${_formatCurrency(enteredAdjustment)} of ₹ ${_formatCurrency(widget.totalAmount)}';
+        footerSubtitle = '₹ ${_formatCurrency(adjustmentRemaining)} left';
+        footerError = adjustmentRemaining.abs() > 0.005;
+        break;
+      case 'equally':
+      default:
+        footerTitle = '₹ ${_formatCurrency(perPerson)}/person';
+        footerSubtitle = '(${_selected.length} people)';
+        footerError = false;
+    }
+
     return Scaffold(
       appBar: AppBar(
         leading: TextButton(
@@ -1347,13 +1414,15 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '₹ ${_formatCurrency(perPerson)}/person',
+                      footerTitle,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Text(
-                      '(${_selected.length} people)',
+                      footerSubtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
+                        color: footerError
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.outline,
                       ),
                     ),
                   ],
