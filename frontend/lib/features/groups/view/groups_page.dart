@@ -457,6 +457,22 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return (owed: 0, owe: share);
   }
 
+  Future<void> _openSettings() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => _GroupSettingsPage(
+          groupName: widget.group.name,
+          members: _members,
+          expenses: _expenses,
+          simplifyBalances: _simplifyBalances,
+          memberCountFallback: _memberCount,
+        ),
+      ),
+    );
+    if (!mounted || result == null) return;
+    setState(() => _simplifyBalances = result);
+  }
+
   String _resolvePayerLabel(String rawPaidBy, List<String> participants) {
     final normalized = rawPaidBy.trim().toLowerCase();
     if (normalized.isEmpty) {
@@ -1053,6 +1069,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         title: Text(widget.group.name),
         actions: [
           IconButton(
+            onPressed: _busy ? null : _openSettings,
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Group settings',
+          ),
+          IconButton(
             onPressed: _busy ? null : _addMember,
             icon: const Icon(Icons.person_add_alt_1_outlined),
             tooltip: 'Add member',
@@ -1089,14 +1110,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text('$_memberCount member(s)'),
-                        const SizedBox(height: 4),
-                        FilterChip(
-                          label: const Text('Simplify balances'),
-                          selected: _simplifyBalances,
-                          onSelected: (value) {
-                            setState(() => _simplifyBalances = value);
-                          },
-                        ),
                         if (_simplifyBalances) ...[
                           const SizedBox(height: 4),
                           Builder(
@@ -1323,6 +1336,167 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupSettingsPage extends StatefulWidget {
+  const _GroupSettingsPage({
+    required this.groupName,
+    required this.members,
+    required this.expenses,
+    required this.simplifyBalances,
+    required this.memberCountFallback,
+  });
+
+  final String groupName;
+  final List<GroupMember> members;
+  final List<GroupExpense> expenses;
+  final bool simplifyBalances;
+  final int memberCountFallback;
+
+  @override
+  State<_GroupSettingsPage> createState() => _GroupSettingsPageState();
+}
+
+class _GroupSettingsPageState extends State<_GroupSettingsPage> {
+  late bool _simplify;
+
+  @override
+  void initState() {
+    super.initState();
+    _simplify = widget.simplifyBalances;
+  }
+
+  Map<String, double> _memberNetByUid() {
+    final memberCount = widget.members.isNotEmpty
+        ? widget.members.length
+        : widget.memberCountFallback;
+    if (memberCount <= 0) {
+      return const {};
+    }
+
+    final netByUid = <String, double>{};
+    for (final member in widget.members) {
+      netByUid[member.uid] = 0;
+    }
+
+    for (final expense in widget.expenses) {
+      if (expense.amount <= 0) continue;
+      final payerKey = expense.paidBy.isNotEmpty
+          ? expense.paidBy
+          : expense.createdBy;
+      final share = expense.amount / memberCount;
+
+      String? payerUid;
+      for (final member in widget.members) {
+        final candidates = <String>{
+          member.uid.trim().toLowerCase(),
+          member.displayName.trim().toLowerCase(),
+          member.email.trim().toLowerCase(),
+          member.phone.trim().toLowerCase(),
+          member.label.trim().toLowerCase(),
+        }..removeWhere((v) => v.isEmpty);
+        if (candidates.contains(payerKey.trim().toLowerCase())) {
+          payerUid = member.uid;
+          break;
+        }
+      }
+
+      for (final member in widget.members) {
+        netByUid[member.uid] = (netByUid[member.uid] ?? 0) - share;
+      }
+      if (payerUid != null) {
+        netByUid[payerUid] = (netByUid[payerUid] ?? 0) + expense.amount;
+      }
+    }
+    return netByUid;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final netByUid = _memberNetByUid();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Group settings')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: ListTile(
+              title: Text(widget.groupName),
+              subtitle: Text('${widget.members.length} member(s)'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Group members',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          ...widget.members.map((member) {
+            final net = netByUid[member.uid] ?? 0;
+            final status = net.abs() <= 0.005
+                ? 'settled up'
+                : net > 0
+                ? 'gets back INR ${net.toStringAsFixed(2)}'
+                : 'owes INR ${(-net).toStringAsFixed(2)}';
+            final statusColor = net.abs() <= 0.005
+                ? Theme.of(context).colorScheme.outline
+                : net > 0
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.error;
+            return Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  child: Text(
+                    member.label.isNotEmpty
+                        ? member.label.substring(0, 1).toUpperCase()
+                        : '?',
+                  ),
+                ),
+                title: Text(member.label),
+                subtitle: member.email.isNotEmpty
+                    ? Text(member.email)
+                    : (member.phone.isNotEmpty ? Text(member.phone) : null),
+                trailing: Text(
+                  status,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+          Text(
+            'Advanced settings',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: SwitchListTile(
+              title: const Text('Simplify group debts'),
+              subtitle: const Text(
+                'Automatically show only net owed/owe values in this group.',
+              ),
+              value: _simplify,
+              onChanged: (value) {
+                setState(() => _simplify = value);
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(_simplify),
+            child: const Text('Done'),
+          ),
         ],
       ),
     );
