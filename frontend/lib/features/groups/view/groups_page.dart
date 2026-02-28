@@ -393,6 +393,22 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
 
   bool get _busy => _busyAction != _GroupBusyAction.none;
 
+  Future<_SplitSelectionResult?> _openSplitOptionsPage({
+    required List<String> participants,
+    required Set<String> selectedMembers,
+    required String currentMode,
+  }) {
+    return Navigator.of(context).push<_SplitSelectionResult>(
+      MaterialPageRoute<_SplitSelectionResult>(
+        builder: (_) => _SplitOptionsPage(
+          participants: participants,
+          selectedMembers: selectedMembers,
+          currentMode: currentMode,
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -572,30 +588,34 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
                         },
                       ),
                       const Text('and split'),
-                      DropdownButton<String>(
-                        value: splitMode,
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'equally',
-                            child: Text('equally'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'custom',
-                            child: Text('custom'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setDialogState(() => splitMode = value);
+                      ActionChip(
+                        label: Text(splitMode),
+                        onPressed: () async {
+                          final result = await _openSplitOptionsPage(
+                            participants: participants,
+                            selectedMembers: selected,
+                            currentMode: splitMode,
+                          );
+                          if (result == null) return;
+                          setDialogState(() {
+                            splitMode = result.mode;
+                            selected
+                              ..clear()
+                              ..addAll(result.selectedMembers);
+                            splitWithAll =
+                                selected.length == participants.length;
+                          });
                         },
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       const Text('Split with'),
-                      const SizedBox(width: 8),
                       ChoiceChip(
                         label: const Text('All members'),
                         selected: splitWithAll,
@@ -608,7 +628,6 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
                           });
                         },
                       ),
-                      const SizedBox(width: 8),
                       ChoiceChip(
                         label: const Text('Selected'),
                         selected: !splitWithAll,
@@ -819,6 +838,119 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
 }
 
 enum _GroupBusyAction { none, addingMember, addingExpense, leavingGroup }
+
+class _SplitSelectionResult {
+  const _SplitSelectionResult({
+    required this.mode,
+    required this.selectedMembers,
+  });
+
+  final String mode;
+  final Set<String> selectedMembers;
+}
+
+class _SplitOptionsPage extends StatefulWidget {
+  const _SplitOptionsPage({
+    required this.participants,
+    required this.selectedMembers,
+    required this.currentMode,
+  });
+
+  final List<String> participants;
+  final Set<String> selectedMembers;
+  final String currentMode;
+
+  @override
+  State<_SplitOptionsPage> createState() => _SplitOptionsPageState();
+}
+
+class _SplitOptionsPageState extends State<_SplitOptionsPage> {
+  late String _mode;
+  late Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.currentMode;
+    _selected = {...widget.selectedMembers};
+    if (_selected.isEmpty && widget.participants.isNotEmpty) {
+      _selected = {widget.participants.first};
+    }
+  }
+
+  void _toggleMember(String member, bool selected) {
+    setState(() {
+      if (selected) {
+        _selected.add(member);
+      } else if (_selected.length > 1) {
+        _selected.remove(member);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        leadingWidth: 80,
+        title: const Text('Split options'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(
+                _SplitSelectionResult(mode: _mode, selectedMembers: _selected),
+              );
+            },
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Split equally'),
+                selected: _mode == 'equally',
+                onSelected: (_) => setState(() => _mode = 'equally'),
+              ),
+              ChoiceChip(
+                label: const Text('Custom split'),
+                selected: _mode == 'custom',
+                onSelected: (_) => setState(() => _mode = 'custom'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            _mode == 'equally'
+                ? 'Select which people owe an equal share.'
+                : 'Select people included in custom split.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 12),
+          ...widget.participants.map(
+            (member) => Card(
+              child: CheckboxListTile(
+                title: Text(member),
+                value: _selected.contains(member),
+                onChanged: (value) => _toggleMember(member, value ?? false),
+                controlAffinity: ListTileControlAffinity.trailing,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
