@@ -923,10 +923,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
       _selected = {widget.participants.first};
     }
     for (final member in widget.participants) {
-      _exactControllers[member] = TextEditingController(text: '0,00');
-      _percentControllers[member] = TextEditingController(text: '0');
-      _sharesControllers[member] = TextEditingController(text: '1');
-      _adjustmentControllers[member] = TextEditingController(text: '0,00');
+      _exactControllers[member] = TextEditingController();
+      _percentControllers[member] = TextEditingController();
+      _sharesControllers[member] = TextEditingController();
+      _adjustmentControllers[member] = TextEditingController();
     }
   }
 
@@ -1155,6 +1155,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                 ),
                 decoration: InputDecoration(
                   isDense: true,
+                  hintText: '0,00',
                   border: const UnderlineInputBorder(),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
@@ -1205,6 +1206,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                 ),
                 decoration: InputDecoration(
                   isDense: true,
+                  hintText: '0',
                   border: const UnderlineInputBorder(),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
@@ -1245,6 +1247,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                 textAlign: TextAlign.right,
                 decoration: const InputDecoration(
                   isDense: true,
+                  hintText: '0',
                   border: UnderlineInputBorder(),
                 ),
               ),
@@ -1288,6 +1291,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                 ),
                 decoration: InputDecoration(
                   isDense: true,
+                  hintText: '0,00',
                   border: const UnderlineInputBorder(),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
