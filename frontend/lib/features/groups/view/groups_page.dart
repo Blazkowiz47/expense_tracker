@@ -605,11 +605,6 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
             icon: const Icon(Icons.person_add_alt_1_outlined),
             tooltip: 'Add member',
           ),
-          IconButton(
-            onPressed: _busy ? null : _addExpense,
-            icon: const Icon(Icons.receipt_long_outlined),
-            tooltip: 'Add expense',
-          ),
           TextButton(
             onPressed: _busy ? null : _leaveGroup,
             child: Text(
@@ -618,6 +613,11 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _busy ? null : _addExpense,
+        icon: const Icon(Icons.receipt_long_outlined),
+        label: const Text('Add expense'),
       ),
       body: Stack(
         children: [
