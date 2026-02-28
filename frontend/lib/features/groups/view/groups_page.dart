@@ -6,6 +6,7 @@ import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
+import 'package:expense_tracker/features/groups/utils/group_balance_calculator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
@@ -400,13 +401,23 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   bool get _busy => _busyAction != _GroupBusyAction.none;
 
-  ({double lent, double borrowed}) _calculateLentBorrowed(String uid) {
-    final splitCount = _members.isNotEmpty ? _members.length : _memberCount;
-    if (splitCount <= 0) {
-      return (lent: 0, borrowed: 0);
+  Set<String> _currentUserIdentifiers({
+    required String uid,
+    String? email,
+    String? displayName,
+    String? phone,
+  }) {
+    final identifiers = <String>{uid.trim().toLowerCase()};
+    if (email != null && email.trim().isNotEmpty) {
+      identifiers.add(email.trim().toLowerCase());
+    }
+    if (displayName != null && displayName.trim().isNotEmpty) {
+      identifiers.add(displayName.trim().toLowerCase());
+    }
+    if (phone != null && phone.trim().isNotEmpty) {
+      identifiers.add(phone.trim().toLowerCase());
     }
 
-    final identifiers = <String>{uid.toLowerCase()};
     for (final member in _members) {
       if (member.uid == uid) {
         if (member.uid.trim().isNotEmpty) {
@@ -423,20 +434,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         }
       }
     }
-
-    var lent = 0.0;
-    var borrowed = 0.0;
-    for (final expense in _expenses) {
-      if (expense.amount <= 0) continue;
-      final share = expense.amount / splitCount;
-      final createdBy = expense.createdBy.trim().toLowerCase();
-      if (identifiers.contains(createdBy)) {
-        lent += (expense.amount - share);
-      } else {
-        borrowed += share;
-      }
-    }
-    return (lent: lent, borrowed: borrowed);
+    return identifiers;
   }
 
   Future<_SplitSelectionResult?> _openSplitOptionsPage({
@@ -797,13 +795,21 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUid = context.select(
-      (AuthCubit cubit) => cubit.state.user?.uid,
-    );
+    final authUser = context.select((AuthCubit cubit) => cubit.state.user);
     final total = _expenses.fold<double>(0, (sum, e) => sum + e.amount);
-    final balance = currentUid == null
+    final memberCount = _members.isNotEmpty ? _members.length : _memberCount;
+    final balance = authUser == null
         ? (lent: 0.0, borrowed: 0.0)
-        : _calculateLentBorrowed(currentUid);
+        : calculateGroupLentBorrowed(
+            expenses: _expenses,
+            memberCount: memberCount,
+            userIdentifiers: _currentUserIdentifiers(
+              uid: authUser.uid,
+              email: authUser.email,
+              displayName: authUser.displayName,
+              phone: authUser.phoneNumber,
+            ),
+          );
     final busyMessage = switch (_busyAction) {
       _GroupBusyAction.addingMember => 'Adding member...',
       _GroupBusyAction.addingExpense => 'Saving expense...',
