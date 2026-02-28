@@ -445,9 +445,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     if (memberCount <= 0 || userIdentifiers.isEmpty || expense.amount <= 0) {
       return (owed: 0, owe: 0);
     }
-    final createdBy = expense.createdBy.trim().toLowerCase();
+    final paidBy =
+        (expense.paidBy.isNotEmpty ? expense.paidBy : expense.createdBy)
+            .trim()
+            .toLowerCase();
     final share = expense.amount / memberCount;
-    if (userIdentifiers.contains(createdBy)) {
+    if (userIdentifiers.contains(paidBy)) {
       return (owed: expense.amount - share, owe: 0);
     }
     return (owed: 0, owe: share);
@@ -877,6 +880,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
+    final paidBy = (payload['paidBy'] as String?) ?? participants.first;
+    final splitMode = (payload['splitMode'] as String?) ?? 'equally';
+    final splitWith = (payload['splitWith'] as List<dynamic>? ?? participants)
+        .whereType<String>()
+        .toList(growable: false);
     final amount = payload['amount'] as double?;
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
@@ -892,6 +900,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       await widget.repository.addExpense(
         groupId: widget.group.id,
         description: description,
+        paidBy: paidBy,
+        splitMode: splitMode,
+        splitWith: splitWith,
         amount: amount,
         attachments: attachments,
         date: DateTime.now(),
@@ -928,12 +939,25 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       participants: participants,
       initialDescription: expense.description,
       initialAmount: expense.amount,
-      initialSplitWith: participants.toSet(),
+      initialPaidBy: expense.paidBy.isNotEmpty
+          ? expense.paidBy
+          : participants.first,
+      initialSplitMode: expense.splitMode.isNotEmpty
+          ? expense.splitMode
+          : 'equally',
+      initialSplitWith: expense.splitWith.isNotEmpty
+          ? expense.splitWith.toSet()
+          : participants.toSet(),
       initialAttachments: expense.attachments,
     );
 
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
+    final paidBy = (payload['paidBy'] as String?) ?? participants.first;
+    final splitMode = (payload['splitMode'] as String?) ?? 'equally';
+    final splitWith = (payload['splitWith'] as List<dynamic>? ?? participants)
+        .whereType<String>()
+        .toList(growable: false);
     final amount = payload['amount'] as double?;
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
@@ -951,6 +975,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         groupId: widget.group.id,
         expenseId: expense.id,
         description: description,
+        paidBy: paidBy,
+        splitMode: splitMode,
+        splitWith: splitWith,
         amount: amount,
         attachments: attachments,
         date: expense.date,

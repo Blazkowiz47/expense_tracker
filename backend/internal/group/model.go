@@ -24,6 +24,9 @@ type GroupExpense struct {
 	ID          string    `json:"id"`
 	GroupID     string    `json:"groupId"`
 	CreatedBy   string    `json:"createdBy"`
+	PaidBy      string    `json:"paidBy"`
+	SplitMode   string    `json:"splitMode"`
+	SplitWith   []string  `json:"splitWith"`
 	Amount      float64   `json:"amount"`
 	Description string    `json:"description"`
 	Attachments []string  `json:"attachments"`

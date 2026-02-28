@@ -218,7 +218,7 @@ func TestCreateAndListGroupExpenses(t *testing.T) {
 	_ = json.Unmarshal(createRR.Body.Bytes(), &created)
 	groupID, _ := created["id"].(string)
 
-	expensePayload := []byte(`{"amount":1200.5,"description":"Groceries","date":"2026-02-27T10:00:00Z"}`)
+	expensePayload := []byte(`{"amount":1200.5,"description":"Groceries","paidBy":"user-1","splitMode":"equally","splitWith":["user-1"],"date":"2026-02-27T10:00:00Z"}`)
 	createExpenseReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/expenses", bytes.NewReader(expensePayload))
 	createExpenseReq.Header.Set("Authorization", "Bearer test-token")
 	createExpenseReq.Header.Set("Content-Type", "application/json")
@@ -266,7 +266,7 @@ func TestUpdateGroupExpense(t *testing.T) {
 	_ = json.Unmarshal(createExpenseRR.Body.Bytes(), &createdExpense)
 	expenseID, _ := createdExpense["id"].(string)
 
-	updatePayload := []byte(`{"amount":999.0,"description":"Groceries updated","date":"2026-02-28T10:00:00Z"}`)
+	updatePayload := []byte(`{"amount":999.0,"description":"Groceries updated","paidBy":"user-2","splitMode":"exact","splitWith":["user-1","user-2"],"date":"2026-02-28T10:00:00Z"}`)
 	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/groups/"+groupID+"/expenses/"+expenseID, bytes.NewReader(updatePayload))
 	updateReq.Header.Set("Authorization", "Bearer test-token")
 	updateReq.Header.Set("Content-Type", "application/json")
@@ -274,6 +274,14 @@ func TestUpdateGroupExpense(t *testing.T) {
 	router.ServeHTTP(updateRR, updateReq)
 	if updateRR.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", updateRR.Code, updateRR.Body.String())
+	}
+	var updated map[string]any
+	_ = json.Unmarshal(updateRR.Body.Bytes(), &updated)
+	if updated["paidBy"] != "user-2" {
+		t.Fatalf("expected paidBy=user-2 got %#v", updated["paidBy"])
+	}
+	if updated["splitMode"] != "exact" {
+		t.Fatalf("expected splitMode=exact got %#v", updated["splitMode"])
 	}
 }
 

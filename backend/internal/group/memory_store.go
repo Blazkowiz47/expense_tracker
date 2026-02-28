@@ -140,6 +140,13 @@ func (s *InMemoryStore) CreateExpense(_ context.Context, expense GroupExpense) (
 	if expense.CreatedAt.IsZero() {
 		expense.CreatedAt = time.Now().UTC()
 	}
+	if strings.TrimSpace(expense.PaidBy) == "" {
+		expense.PaidBy = expense.CreatedBy
+	}
+	if strings.TrimSpace(expense.SplitMode) == "" {
+		expense.SplitMode = "equally"
+	}
+	expense.SplitWith = append([]string{}, expense.SplitWith...)
 	expense.Attachments = append([]string{}, expense.Attachments...)
 	group.UpdatedAt = time.Now().UTC()
 	s.groups[group.ID] = group
@@ -159,6 +166,16 @@ func (s *InMemoryStore) UpdateExpense(_ context.Context, expense GroupExpense) (
 		if items[i].ID == expense.ID {
 			expense.CreatedBy = items[i].CreatedBy
 			expense.CreatedAt = items[i].CreatedAt
+			if strings.TrimSpace(expense.PaidBy) == "" {
+				expense.PaidBy = items[i].PaidBy
+			}
+			if strings.TrimSpace(expense.SplitMode) == "" {
+				expense.SplitMode = items[i].SplitMode
+			}
+			if len(expense.SplitWith) == 0 {
+				expense.SplitWith = items[i].SplitWith
+			}
+			expense.SplitWith = append([]string{}, expense.SplitWith...)
 			expense.Attachments = append([]string{}, expense.Attachments...)
 			items[i] = expense
 			s.groupExpenses[expense.GroupID] = items

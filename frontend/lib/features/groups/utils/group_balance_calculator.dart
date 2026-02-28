@@ -24,8 +24,11 @@ GroupLentBorrowed calculateGroupLentBorrowed({
   for (final expense in expenses) {
     if (expense.amount <= 0) continue;
     final splitShare = expense.amount / memberCount;
-    final createdBy = expense.createdBy.trim().toLowerCase();
-    if (normalizedIds.contains(createdBy)) {
+    final paidBy =
+        (expense.paidBy.isNotEmpty ? expense.paidBy : expense.createdBy)
+            .trim()
+            .toLowerCase();
+    if (normalizedIds.contains(paidBy)) {
       lent += (expense.amount - splitShare);
     } else {
       borrowed += splitShare;

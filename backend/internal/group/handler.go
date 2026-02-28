@@ -192,6 +192,9 @@ func (h *Handler) handleAddMember(w http.ResponseWriter, r *http.Request, groupI
 type groupExpensePayload struct {
 	Amount      float64  `json:"amount"`
 	Description string   `json:"description"`
+	PaidBy      string   `json:"paidBy"`
+	SplitMode   string   `json:"splitMode"`
+	SplitWith   []string `json:"splitWith"`
 	Attachments []string `json:"attachments"`
 	Date        string   `json:"date"`
 }
@@ -247,11 +250,17 @@ func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request, gr
 		ID:          strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
 		GroupID:     groupID,
 		CreatedBy:   uid,
+		PaidBy:      strings.TrimSpace(payload.PaidBy),
+		SplitMode:   sanitizeSplitMode(payload.SplitMode),
+		SplitWith:   sanitizeSplitWith(payload.SplitWith),
 		Amount:      payload.Amount,
 		Description: description,
 		Attachments: sanitizeAttachments(payload.Attachments),
 		Date:        date,
 		CreatedAt:   time.Now().UTC(),
+	}
+	if expense.PaidBy == "" {
+		expense.PaidBy = uid
 	}
 	created, err := h.store.CreateExpense(r.Context(), expense)
 	if err != nil {
@@ -298,6 +307,9 @@ func (h *Handler) handleUpdateExpense(
 		ID:          strings.TrimSpace(expenseID),
 		GroupID:     groupID,
 		CreatedBy:   uid,
+		PaidBy:      strings.TrimSpace(payload.PaidBy),
+		SplitMode:   sanitizeSplitMode(payload.SplitMode),
+		SplitWith:   sanitizeSplitWith(payload.SplitWith),
 		Amount:      payload.Amount,
 		Description: description,
 		Attachments: sanitizeAttachments(payload.Attachments),
@@ -316,6 +328,39 @@ func (h *Handler) handleUpdateExpense(
 }
 
 func sanitizeAttachments(raw []string) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, item := range raw {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sanitizeSplitMode(raw string) string {
+	normalized := strings.TrimSpace(strings.ToLower(raw))
+	switch normalized {
+	case "equally", "exact", "percent", "shares", "adjustment":
+		return normalized
+	default:
+		return "equally"
+	}
+}
+
+func sanitizeSplitWith(raw []string) []string {
 	if len(raw) == 0 {
 		return nil
 	}
