@@ -904,6 +904,8 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
   late String _mode;
   late Set<String> _selected;
   String? _lastEditedExactMember;
+  String? _lastEditedPercentMember;
+  String? _lastEditedAdjustmentMember;
   final Map<String, TextEditingController> _exactControllers = {};
   final Map<String, TextEditingController> _percentControllers = {};
   final Map<String, TextEditingController> _sharesControllers = {};
@@ -1006,6 +1008,20 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
       return false;
     }
     return _exactEnteredTotal() - widget.totalAmount > 0.005;
+  }
+
+  bool _isPercentOverAllocated() {
+    if (_mode != 'percent') {
+      return false;
+    }
+    return _percentEnteredTotal() - 100 > 0.05;
+  }
+
+  bool _isAdjustmentOverAllocated() {
+    if (_mode != 'adjustment' || widget.totalAmount <= 0) {
+      return false;
+    }
+    return _adjustmentEnteredTotal() - widget.totalAmount > 0.005;
   }
 
   String _titleForMode() {
@@ -1159,6 +1175,12 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         );
         break;
       case 'percent':
+        final overAllocated = _isPercentOverAllocated();
+        final showInlineOverflowError =
+            overAllocated &&
+            _lastEditedPercentMember != null &&
+            member == _lastEditedPercentMember;
+        final errorColor = Theme.of(context).colorScheme.error;
         trailing = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1166,13 +1188,36 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
               width: 68,
               child: TextField(
                 controller: _percentControllers[member],
+                onChanged: (_) {
+                  setState(() {
+                    _lastEditedPercentMember = member;
+                  });
+                },
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 textAlign: TextAlign.right,
-                decoration: const InputDecoration(
+                style: TextStyle(
+                  color: showInlineOverflowError ? errorColor : null,
+                ),
+                decoration: InputDecoration(
                   isDense: true,
-                  border: UnderlineInputBorder(),
+                  border: const UnderlineInputBorder(),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: showInlineOverflowError
+                          ? errorColor
+                          : Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: showInlineOverflowError
+                          ? errorColor
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  errorText: showInlineOverflowError ? 'Exceeds 100%' : null,
                 ),
               ),
             ),
@@ -1192,6 +1237,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
               width: 54,
               child: TextField(
                 controller: _sharesControllers[member],
+                onChanged: (_) => setState(() {}),
                 keyboardType: TextInputType.number,
                 textAlign: TextAlign.right,
                 decoration: const InputDecoration(
@@ -1206,21 +1252,55 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         );
         break;
       case 'adjustment':
+        final overAllocated = _isAdjustmentOverAllocated();
+        final showInlineOverflowError =
+            overAllocated &&
+            _lastEditedAdjustmentMember != null &&
+            member == _lastEditedAdjustmentMember;
+        final errorColor = Theme.of(context).colorScheme.error;
         trailing = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('+ ', style: TextStyle(color: Colors.grey)),
+            Text(
+              '+ ',
+              style: TextStyle(
+                color: showInlineOverflowError ? errorColor : Colors.grey,
+              ),
+            ),
             SizedBox(
               width: 78,
               child: TextField(
                 controller: _adjustmentControllers[member],
+                onChanged: (_) {
+                  setState(() {
+                    _lastEditedAdjustmentMember = member;
+                  });
+                },
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 textAlign: TextAlign.right,
-                decoration: const InputDecoration(
+                style: TextStyle(
+                  color: showInlineOverflowError ? errorColor : null,
+                ),
+                decoration: InputDecoration(
                   isDense: true,
-                  border: UnderlineInputBorder(),
+                  border: const UnderlineInputBorder(),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: showInlineOverflowError
+                          ? errorColor
+                          : Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(
+                      color: showInlineOverflowError
+                          ? errorColor
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  errorText: showInlineOverflowError ? 'Exceeds total' : null,
                 ),
               ),
             ),
@@ -1302,8 +1382,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         break;
       case 'percent':
         footerTitle = '${enteredPercent.toStringAsFixed(0)}% of 100%';
-        footerSubtitle = '${percentRemaining.toStringAsFixed(0)}% left';
-        footerError = percentRemaining.abs() > 0.05;
+        footerSubtitle = percentRemaining < 0
+            ? '0% left'
+            : '${percentRemaining.toStringAsFixed(0)}% left';
+        footerError = percentRemaining.abs() > 0.05 && percentRemaining >= 0;
         break;
       case 'shares':
         footerTitle = '$enteredShares total shares';
@@ -1313,8 +1395,11 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
       case 'adjustment':
         footerTitle =
             '₹ ${_formatCurrency(enteredAdjustment)} of ₹ ${_formatCurrency(widget.totalAmount)}';
-        footerSubtitle = '₹ ${_formatCurrency(adjustmentRemaining)} left';
-        footerError = adjustmentRemaining.abs() > 0.005;
+        footerSubtitle = adjustmentRemaining < 0
+            ? '₹ 0,00 left'
+            : '₹ ${_formatCurrency(adjustmentRemaining)} left';
+        footerError =
+            adjustmentRemaining.abs() > 0.005 && adjustmentRemaining >= 0;
         break;
       case 'equally':
       default:
