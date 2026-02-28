@@ -395,6 +395,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   List<GroupExpense> _expenses = const [];
   List<GroupMember> _members = const [];
   bool _loading = true;
+  bool _simplifyBalances = true;
   _GroupBusyAction _busyAction = _GroupBusyAction.none;
   late int _memberCount;
   String? _error;
@@ -1088,22 +1089,65 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text('$_memberCount member(s)'),
-                        if (balance.lent > 0.005 || balance.borrowed > 0.005)
+                        const SizedBox(height: 4),
+                        FilterChip(
+                          label: const Text('Simplify balances'),
+                          selected: _simplifyBalances,
+                          onSelected: (value) {
+                            setState(() => _simplifyBalances = value);
+                          },
+                        ),
+                        if (_simplifyBalances) ...[
                           const SizedBox(height: 4),
-                        if (balance.lent > 0.005)
-                          Text(
-                            'You are owed INR ${balance.lent.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
+                          Builder(
+                            builder: (context) {
+                              final net = balance.lent - balance.borrowed;
+                              if (net.abs() <= 0.005) {
+                                return Text(
+                                  'You are all settled up',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outline,
+                                  ),
+                                );
+                              }
+                              if (net > 0) {
+                                return Text(
+                                  'You are owed INR ${net.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                );
+                              }
+                              return Text(
+                                'You owe INR ${(-net).toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              );
+                            },
                           ),
-                        if (balance.borrowed > 0.005)
-                          Text(
-                            'You owe INR ${balance.borrowed.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
+                        ] else ...[
+                          if (balance.lent > 0.005 || balance.borrowed > 0.005)
+                            const SizedBox(height: 4),
+                          if (balance.lent > 0.005)
+                            Text(
+                              'You are owed INR ${balance.lent.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
                             ),
-                          ),
+                          if (balance.borrowed > 0.005)
+                            Text(
+                              'You owe INR ${balance.borrowed.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                        ],
                       ],
                     ),
                     trailing: Text(
