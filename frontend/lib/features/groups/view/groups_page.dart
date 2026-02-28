@@ -437,6 +437,22 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return identifiers;
   }
 
+  ({double owed, double owe}) _balanceForExpense({
+    required GroupExpense expense,
+    required Set<String> userIdentifiers,
+    required int memberCount,
+  }) {
+    if (memberCount <= 0 || userIdentifiers.isEmpty || expense.amount <= 0) {
+      return (owed: 0, owe: 0);
+    }
+    final createdBy = expense.createdBy.trim().toLowerCase();
+    final share = expense.amount / memberCount;
+    if (userIdentifiers.contains(createdBy)) {
+      return (owed: expense.amount - share, owe: 0);
+    }
+    return (owed: 0, owe: share);
+  }
+
   Future<_SplitSelectionResult?> _openSplitOptionsPage({
     required List<String> participants,
     required Set<String> selectedMembers,
@@ -641,6 +657,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final dialogWidth = (screenWidth * 0.72).clamp(360.0, 920.0);
         var paidBy = initialPaidBy ?? participants.first;
         var splitMode = initialSplitMode;
         final selected = {...(initialSplitWith ?? participants)};
@@ -649,161 +667,172 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 24,
+            ),
             title: Text(title),
             content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: descriptionController,
-                    decoration: const InputDecoration(labelText: 'Description'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+              child: SizedBox(
+                width: dialogWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Amount',
-                      prefixText: 'INR ',
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: amountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Amount',
+                        prefixText: 'INR ',
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      const Text('Paid by'),
-                      ActionChip(
-                        label: Text(paidBy),
-                        onPressed: () async {
-                          final chosen = await Navigator.of(context)
-                              .push<String>(
-                                MaterialPageRoute<String>(
-                                  builder: (_) => _ChoosePayerPage(
-                                    participants: participants,
-                                    currentPayer: paidBy,
-                                  ),
-                                ),
-                              );
-                          if (chosen == null) return;
-                          setDialogState(() => paidBy = chosen);
-                        },
-                      ),
-                      const Text('and split'),
-                      ActionChip(
-                        label: Text(splitMode),
-                        onPressed: () async {
-                          final result = await _openSplitOptionsPage(
-                            participants: participants,
-                            selectedMembers: selected,
-                            currentMode: splitMode,
-                            totalAmount:
-                                double.tryParse(amountController.text.trim()) ??
-                                0,
-                          );
-                          if (result == null) return;
-                          setDialogState(() {
-                            splitMode = result.mode;
-                            selected
-                              ..clear()
-                              ..addAll(result.selectedMembers);
-                            splitWithAll =
-                                selected.length == participants.length;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      const Text('Split with'),
-                      ChoiceChip(
-                        label: const Text('All members'),
-                        selected: splitWithAll,
-                        onSelected: (_) {
-                          setDialogState(() {
-                            splitWithAll = true;
-                            selected
-                              ..clear()
-                              ..addAll(participants);
-                          });
-                        },
-                      ),
-                      ChoiceChip(
-                        label: const Text('Selected'),
-                        selected: !splitWithAll,
-                        onSelected: (_) {
-                          setDialogState(() => splitWithAll = false);
-                        },
-                      ),
-                    ],
-                  ),
-                  if (!splitWithAll) ...[
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 14),
                     Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 6,
                       runSpacing: 6,
-                      children: participants
-                          .map(
-                            (p) => FilterChip(
-                              label: Text(p),
-                              selected: selected.contains(p),
-                              onSelected: (enabled) {
-                                setDialogState(() {
-                                  if (enabled) {
-                                    selected.add(p);
-                                  } else if (selected.length > 1) {
-                                    selected.remove(p);
-                                  }
-                                });
-                              },
-                            ),
-                          )
-                          .toList(growable: false),
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Attachments',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ...attachments.asMap().entries.map(
-                        (entry) => Chip(
-                          label: Text('Bill ${entry.key + 1}'),
-                          onDeleted: () {
-                            setDialogState(
-                              () => attachments.removeAt(entry.key),
-                            );
+                      children: [
+                        const Text('Paid by'),
+                        ActionChip(
+                          label: Text(paidBy),
+                          onPressed: () async {
+                            final chosen = await Navigator.of(context)
+                                .push<String>(
+                                  MaterialPageRoute<String>(
+                                    builder: (_) => _ChoosePayerPage(
+                                      participants: participants,
+                                      currentPayer: paidBy,
+                                    ),
+                                  ),
+                                );
+                            if (chosen == null) return;
+                            setDialogState(() => paidBy = chosen);
                           },
                         ),
-                      ),
-                      ActionChip(
-                        avatar: const Icon(Icons.attach_file, size: 16),
-                        label: const Text('Add URL'),
-                        onPressed: () async {
-                          final url = await _promptAttachmentUrl();
-                          if (url == null || url.isEmpty) return;
-                          setDialogState(() => attachments.add(url));
-                        },
+                        const Text('and split'),
+                        ActionChip(
+                          label: Text(splitMode),
+                          onPressed: () async {
+                            final result = await _openSplitOptionsPage(
+                              participants: participants,
+                              selectedMembers: selected,
+                              currentMode: splitMode,
+                              totalAmount:
+                                  double.tryParse(
+                                    amountController.text.trim(),
+                                  ) ??
+                                  0,
+                            );
+                            if (result == null) return;
+                            setDialogState(() {
+                              splitMode = result.mode;
+                              selected
+                                ..clear()
+                                ..addAll(result.selectedMembers);
+                              splitWithAll =
+                                  selected.length == participants.length;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        const Text('Split with'),
+                        ChoiceChip(
+                          label: const Text('All members'),
+                          selected: splitWithAll,
+                          onSelected: (_) {
+                            setDialogState(() {
+                              splitWithAll = true;
+                              selected
+                                ..clear()
+                                ..addAll(participants);
+                            });
+                          },
+                        ),
+                        ChoiceChip(
+                          label: const Text('Selected'),
+                          selected: !splitWithAll,
+                          onSelected: (_) {
+                            setDialogState(() => splitWithAll = false);
+                          },
+                        ),
+                      ],
+                    ),
+                    if (!splitWithAll) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: participants
+                            .map(
+                              (p) => FilterChip(
+                                label: Text(p),
+                                selected: selected.contains(p),
+                                onSelected: (enabled) {
+                                  setDialogState(() {
+                                    if (enabled) {
+                                      selected.add(p);
+                                    } else if (selected.length > 1) {
+                                      selected.remove(p);
+                                    }
+                                  });
+                                },
+                              ),
+                            )
+                            .toList(growable: false),
                       ),
                     ],
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Attachments',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ...attachments.asMap().entries.map(
+                          (entry) => Chip(
+                            label: Text('Bill ${entry.key + 1}'),
+                            onDeleted: () {
+                              setDialogState(
+                                () => attachments.removeAt(entry.key),
+                              );
+                            },
+                          ),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.attach_file, size: 16),
+                          label: const Text('Add URL'),
+                          onPressed: () async {
+                            final url = await _promptAttachmentUrl();
+                            if (url == null || url.isEmpty) return;
+                            setDialogState(() => attachments.add(url));
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -947,17 +976,20 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final authUser = context.select((AuthCubit cubit) => cubit.state.user);
     final total = _expenses.fold<double>(0, (sum, e) => sum + e.amount);
     final memberCount = _members.isNotEmpty ? _members.length : _memberCount;
+    final userIdentifiers = authUser == null
+        ? <String>{}
+        : _currentUserIdentifiers(
+            uid: authUser.uid,
+            email: authUser.email,
+            displayName: authUser.displayName,
+            phone: authUser.phoneNumber,
+          );
     final balance = authUser == null
         ? (lent: 0.0, borrowed: 0.0)
         : calculateGroupLentBorrowed(
             expenses: _expenses,
             memberCount: memberCount,
-            userIdentifiers: _currentUserIdentifiers(
-              uid: authUser.uid,
-              email: authUser.email,
-              displayName: authUser.displayName,
-              phone: authUser.phoneNumber,
-            ),
+            userIdentifiers: userIdentifiers,
           );
     final busyMessage = switch (_busyAction) {
       _GroupBusyAction.addingMember => 'Adding member...',
@@ -1047,8 +1079,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                     ),
                   )
                 else
-                  ..._expenses.map(
-                    (expense) => Card(
+                  ..._expenses.map((expense) {
+                    final expenseBalance = _balanceForExpense(
+                      expense: expense,
+                      userIdentifiers: userIdentifiers,
+                      memberCount: memberCount,
+                    );
+                    return Card(
                       child: ListTile(
                         onTap: _busy ? null : () => _editExpense(expense),
                         title: Text(expense.description),
@@ -1133,12 +1170,33 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             ],
                           ],
                         ),
-                        trailing: Text(
-                          'INR ${expense.amount.toStringAsFixed(2)}',
+                        trailing: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('INR ${expense.amount.toStringAsFixed(2)}'),
+                            if (expenseBalance.owed > 0.005)
+                              Text(
+                                'owed ${expenseBalance.owed.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            if (expenseBalance.owe > 0.005)
+                              Text(
+                                'owe ${expenseBalance.owe.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
               ],
             ),
           ),
