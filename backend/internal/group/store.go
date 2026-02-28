@@ -18,5 +18,6 @@ type Store interface {
 	AddMember(ctx context.Context, groupID, memberUID string) (Group, error)
 	Leave(ctx context.Context, groupID, uid string) (deleted bool, err error)
 	CreateExpense(ctx context.Context, expense GroupExpense) (GroupExpense, error)
+	UpdateExpense(ctx context.Context, expense GroupExpense) (GroupExpense, error)
 	ListExpenses(ctx context.Context, groupID string) ([]GroupExpense, error)
 }

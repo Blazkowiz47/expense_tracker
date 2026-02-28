@@ -255,6 +255,49 @@ func (s *FirestoreStore) ListExpenses(ctx context.Context, groupID string) ([]Gr
 	return out, nil
 }
 
+func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense) (GroupExpense, error) {
+	groupDoc := s.client.Collection(groupsCollection).Doc(expense.GroupID)
+	if _, err := groupDoc.Get(ctx); err != nil {
+		return GroupExpense{}, ErrGroupNotFound
+	}
+	expenseDoc := groupDoc.Collection(groupExpensesSubcollection).Doc(expense.ID)
+	snap, err := expenseDoc.Get(ctx)
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return GroupExpense{}, ErrGroupNotFound
+		}
+		return GroupExpense{}, fmt.Errorf("get group expense: %w", err)
+	}
+	data := snap.Data()
+	createdBy, _ := data["created_by"].(string)
+	createdAt, _ := data["created_at"].(time.Time)
+	if createdBy == "" {
+		createdBy = expense.CreatedBy
+	}
+	if createdAt.IsZero() {
+		createdAt = expense.CreatedAt
+	}
+	if _, err := expenseDoc.Set(ctx, map[string]any{
+		"group_id":    expense.GroupID,
+		"created_by":  createdBy,
+		"amount":      expense.Amount,
+		"description": expense.Description,
+		"date":        expense.Date.UTC(),
+		"created_at":  createdAt.UTC(),
+	}, firestore.MergeAll); err != nil {
+		return GroupExpense{}, fmt.Errorf("update group expense: %w", err)
+	}
+	return GroupExpense{
+		ID:          expense.ID,
+		GroupID:     expense.GroupID,
+		CreatedBy:   createdBy,
+		Amount:      expense.Amount,
+		Description: expense.Description,
+		Date:        expense.Date.UTC(),
+		CreatedAt:   createdAt.UTC(),
+	}, nil
+}
+
 type firestoreGroup struct {
 	Name        string    `firestore:"name"`
 	GroupType   string    `firestore:"group_type"`

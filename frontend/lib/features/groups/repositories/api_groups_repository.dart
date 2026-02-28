@@ -107,6 +107,26 @@ class ApiGroupsRepository {
     return GroupExpense.fromJson(payload);
   }
 
+  Future<GroupExpense> updateExpense({
+    required String groupId,
+    required String expenseId,
+    required String description,
+    required double amount,
+    required DateTime date,
+  }) async {
+    final response = await _request(
+      method: 'PUT',
+      path: '/api/v1/groups/$groupId/expenses/$expenseId',
+      body: <String, dynamic>{
+        'description': description,
+        'amount': amount,
+        'date': date.toUtc().toIso8601String(),
+      },
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return GroupExpense.fromJson(payload);
+  }
+
   Future<http.Response> _request({
     required String method,
     required String path,
@@ -125,6 +145,11 @@ class ApiGroupsRepository {
     final request = switch (method) {
       'GET' => _client.get(uri, headers: headers),
       'POST' => _client.post(
+        uri,
+        headers: headers,
+        body: body == null ? null : jsonEncode(body),
+      ),
+      'PUT' => _client.put(
         uri,
         headers: headers,
         body: body == null ? null : jsonEncode(body),

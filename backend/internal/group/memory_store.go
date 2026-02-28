@@ -146,6 +146,28 @@ func (s *InMemoryStore) CreateExpense(_ context.Context, expense GroupExpense) (
 	return expense, nil
 }
 
+func (s *InMemoryStore) UpdateExpense(_ context.Context, expense GroupExpense) (GroupExpense, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	group, ok := s.groups[expense.GroupID]
+	if !ok {
+		return GroupExpense{}, ErrGroupNotFound
+	}
+	items := s.groupExpenses[expense.GroupID]
+	for i := range items {
+		if items[i].ID == expense.ID {
+			expense.CreatedBy = items[i].CreatedBy
+			expense.CreatedAt = items[i].CreatedAt
+			items[i] = expense
+			s.groupExpenses[expense.GroupID] = items
+			group.UpdatedAt = time.Now().UTC()
+			s.groups[group.ID] = group
+			return expense, nil
+		}
+	}
+	return GroupExpense{}, ErrGroupNotFound
+}
+
 func (s *InMemoryStore) ListExpenses(_ context.Context, groupID string) ([]GroupExpense, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

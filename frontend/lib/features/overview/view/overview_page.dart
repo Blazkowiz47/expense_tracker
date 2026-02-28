@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
+import 'package:expense_tracker/data/models/expense.dart';
+import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +10,106 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 class OverviewPage extends StatelessWidget {
   const OverviewPage({super.key});
+
+  Future<void> _editPersonalExpense(
+    BuildContext context,
+    Expense expense,
+  ) async {
+    final descriptionController = TextEditingController(text: expense.title);
+    final amountController = TextEditingController(
+      text: expense.amount.toStringAsFixed(2),
+    );
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit personal expense'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: 'INR ',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop({
+              'description': descriptionController.text.trim(),
+              'amount': double.tryParse(amountController.text.trim()),
+            }),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (payload == null || !context.mounted) return;
+
+    final description = (payload['description'] as String?) ?? '';
+    final amount = payload['amount'] as double?;
+    if (description.isEmpty || amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid description and amount.')),
+      );
+      return;
+    }
+
+    final updated = expense.copyWith(
+      core: ExpenseCore(
+        id: expense.id,
+        title: description,
+        amount: amount,
+        currency: expense.currency,
+        category: expense.category,
+        createdAt: expense.createdAt,
+      ),
+      description: description,
+      updatedAt: DateTime.now(),
+      isSynced: false,
+    );
+
+    final bloc = context.read<ExpensesBloc>();
+    bloc.add(UpdateExpense(expense: updated));
+    try {
+      final resultState = await bloc.stream
+          .firstWhere(
+            (state) => state is ExpensesLoaded || state is ExpensesError,
+          )
+          .timeout(const Duration(seconds: 20));
+      if (!context.mounted) return;
+      if (resultState is ExpensesError) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(resultState.message)));
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Expense updated.')));
+    } on TimeoutException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Updating expense timed out.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +244,10 @@ class OverviewPage extends StatelessWidget {
                                   .map(
                                     (expense) => ListTile(
                                       contentPadding: EdgeInsets.zero,
+                                      onTap: () => _editPersonalExpense(
+                                        context,
+                                        expense,
+                                      ),
                                       title: Text(expense.title),
                                       subtitle: Text(
                                         expense.createdAt

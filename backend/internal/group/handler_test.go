@@ -237,6 +237,46 @@ func TestCreateAndListGroupExpenses(t *testing.T) {
 	}
 }
 
+func TestUpdateGroupExpense(t *testing.T) {
+	router := setupTestServer(&fakeFriendStore{})
+	createPayload := map[string]any{"name": "Trip", "groupType": "split"}
+	b, _ := json.Marshal(createPayload)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", bytes.NewReader(b))
+	createReq.Header.Set("Authorization", "Bearer test-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createRR.Code, createRR.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(createRR.Body.Bytes(), &created)
+	groupID, _ := created["id"].(string)
+
+	expensePayload := []byte(`{"amount":1200.5,"description":"Groceries","date":"2026-02-27T10:00:00Z"}`)
+	createExpenseReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/expenses", bytes.NewReader(expensePayload))
+	createExpenseReq.Header.Set("Authorization", "Bearer test-token")
+	createExpenseReq.Header.Set("Content-Type", "application/json")
+	createExpenseRR := httptest.NewRecorder()
+	router.ServeHTTP(createExpenseRR, createExpenseReq)
+	if createExpenseRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createExpenseRR.Code, createExpenseRR.Body.String())
+	}
+	var createdExpense map[string]any
+	_ = json.Unmarshal(createExpenseRR.Body.Bytes(), &createdExpense)
+	expenseID, _ := createdExpense["id"].(string)
+
+	updatePayload := []byte(`{"amount":999.0,"description":"Groceries updated","date":"2026-02-28T10:00:00Z"}`)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/groups/"+groupID+"/expenses/"+expenseID, bytes.NewReader(updatePayload))
+	updateReq.Header.Set("Authorization", "Bearer test-token")
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRR := httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+	if updateRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", updateRR.Code, updateRR.Body.String())
+	}
+}
+
 func TestListGroupMembers(t *testing.T) {
 	router := setupTestServer(&fakeFriendStore{})
 	createPayload := map[string]any{"name": "Trip", "groupType": "split"}

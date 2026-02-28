@@ -793,6 +793,90 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
   }
 
+  Future<void> _editExpense(GroupExpense expense) async {
+    final descriptionController = TextEditingController(
+      text: expense.description,
+    );
+    final amountController = TextEditingController(
+      text: expense.amount.toStringAsFixed(2),
+    );
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit group expense'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: descriptionController,
+                decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: 'INR ',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop({
+              'description': descriptionController.text.trim(),
+              'amount': double.tryParse(amountController.text.trim()),
+            }),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || payload == null) return;
+    final description = (payload['description'] as String?) ?? '';
+    final amount = payload['amount'] as double?;
+    if (description.isEmpty || amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a valid description and amount.')),
+      );
+      return;
+    }
+
+    setState(() => _busyAction = _GroupBusyAction.addingExpense);
+    try {
+      await widget.repository.updateExpense(
+        groupId: widget.group.id,
+        expenseId: expense.id,
+        description: description,
+        amount: amount,
+        date: expense.date,
+      );
+      if (!mounted) return;
+      await _loadExpenses();
+      if (!mounted) return;
+      setState(() => _busyAction = _GroupBusyAction.none);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Group expense updated.')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _busyAction = _GroupBusyAction.none);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authUser = context.select((AuthCubit cubit) => cubit.state.user);
@@ -901,6 +985,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   ..._expenses.map(
                     (expense) => Card(
                       child: ListTile(
+                        onTap: _busy ? null : () => _editExpense(expense),
                         title: Text(expense.description),
                         subtitle: Text(
                           expense.date.toLocal().toString().split('.').first,

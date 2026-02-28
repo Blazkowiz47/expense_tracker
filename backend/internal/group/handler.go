@@ -92,6 +92,16 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) == 3 && parts[1] == "expenses" {
+		expenseID := parts[2]
+		switch r.Method {
+		case http.MethodPut:
+			h.handleUpdateExpense(w, r, groupID, expenseID, uid)
+		default:
+			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+		}
+		return
+	}
 	httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
 }
 
@@ -247,6 +257,59 @@ func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request, gr
 		return
 	}
 	httpapi.WriteJSON(w, http.StatusCreated, created)
+}
+
+func (h *Handler) handleUpdateExpense(
+	w http.ResponseWriter,
+	r *http.Request,
+	groupID, expenseID, uid string,
+) {
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+	var payload groupExpensePayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid payload")
+		return
+	}
+	description := strings.TrimSpace(payload.Description)
+	if description == "" || payload.Amount <= 0 {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "description and positive amount required")
+		return
+	}
+	date := time.Now().UTC()
+	if strings.TrimSpace(payload.Date) != "" {
+		parsed, err := time.Parse(time.RFC3339, payload.Date)
+		if err != nil {
+			httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "date must be RFC3339")
+			return
+		}
+		date = parsed.UTC()
+	}
+	updated, err := h.store.UpdateExpense(r.Context(), GroupExpense{
+		ID:          strings.TrimSpace(expenseID),
+		GroupID:     groupID,
+		CreatedBy:   uid,
+		Amount:      payload.Amount,
+		Description: description,
+		Date:        date,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrGroupNotFound):
+			httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group or expense not found")
+		default:
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", fmt.Sprintf("failed to update group expense: %v", err))
+		}
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, updated)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
