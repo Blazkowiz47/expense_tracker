@@ -1,11 +1,13 @@
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
 
 class GroupsPage extends StatefulWidget {
@@ -398,6 +400,45 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   bool get _busy => _busyAction != _GroupBusyAction.none;
 
+  ({double lent, double borrowed}) _calculateLentBorrowed(String uid) {
+    final splitCount = _members.isNotEmpty ? _members.length : _memberCount;
+    if (splitCount <= 0) {
+      return (lent: 0, borrowed: 0);
+    }
+
+    final identifiers = <String>{uid.toLowerCase()};
+    for (final member in _members) {
+      if (member.uid == uid) {
+        if (member.uid.trim().isNotEmpty) {
+          identifiers.add(member.uid.trim().toLowerCase());
+        }
+        if (member.displayName.trim().isNotEmpty) {
+          identifiers.add(member.displayName.trim().toLowerCase());
+        }
+        if (member.email.trim().isNotEmpty) {
+          identifiers.add(member.email.trim().toLowerCase());
+        }
+        if (member.phone.trim().isNotEmpty) {
+          identifiers.add(member.phone.trim().toLowerCase());
+        }
+      }
+    }
+
+    var lent = 0.0;
+    var borrowed = 0.0;
+    for (final expense in _expenses) {
+      if (expense.amount <= 0) continue;
+      final share = expense.amount / splitCount;
+      final createdBy = expense.createdBy.trim().toLowerCase();
+      if (identifiers.contains(createdBy)) {
+        lent += (expense.amount - share);
+      } else {
+        borrowed += share;
+      }
+    }
+    return (lent: lent, borrowed: borrowed);
+  }
+
   Future<_SplitSelectionResult?> _openSplitOptionsPage({
     required List<String> participants,
     required Set<String> selectedMembers,
@@ -756,7 +797,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final currentUid = context.select(
+      (AuthCubit cubit) => cubit.state.user?.uid,
+    );
     final total = _expenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final balance = currentUid == null
+        ? (lent: 0.0, borrowed: 0.0)
+        : _calculateLentBorrowed(currentUid);
     final busyMessage = switch (_busyAction) {
       _GroupBusyAction.addingMember => 'Adding member...',
       _GroupBusyAction.addingExpense => 'Saving expense...',
@@ -799,7 +846,26 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           ? 'Family monthly spend'
                           : 'Group total spend',
                     ),
-                    subtitle: Text('$_memberCount member(s)'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('$_memberCount member(s)'),
+                        const SizedBox(height: 4),
+                        Text(
+                          'You are owed INR ${balance.lent.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        Text(
+                          'You owe INR ${balance.borrowed.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ),
                     trailing: Text(
                       'INR ${total.toStringAsFixed(2)}',
                       style: Theme.of(context).textTheme.titleMedium,
