@@ -92,8 +92,7 @@ class _GroupsPageState extends State<GroupsPage> {
   Future<void> _openGroupDetails(GroupSummary group) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) =>
-            _GroupDetailsPage(group: group, repository: _repository),
+        builder: (_) => GroupDetailsPage(group: group, repository: _repository),
       ),
     );
     if (changed == true && mounted) {
@@ -375,17 +374,21 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   }
 }
 
-class _GroupDetailsPage extends StatefulWidget {
-  const _GroupDetailsPage({required this.group, required this.repository});
+class GroupDetailsPage extends StatefulWidget {
+  const GroupDetailsPage({
+    required this.group,
+    required this.repository,
+    super.key,
+  });
 
   final GroupSummary group;
   final ApiGroupsRepository repository;
 
   @override
-  State<_GroupDetailsPage> createState() => _GroupDetailsPageState();
+  State<GroupDetailsPage> createState() => _GroupDetailsPageState();
 }
 
-class _GroupDetailsPageState extends State<_GroupDetailsPage> {
+class _GroupDetailsPageState extends State<GroupDetailsPage> {
   List<GroupExpense> _expenses = const [];
   List<GroupMember> _members = const [];
   bool _loading = true;

@@ -6,6 +6,7 @@ import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
+import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -77,16 +78,12 @@ class _AddExpenseSelectorPageState extends State<AddExpenseSelectorPage> {
   }
 
   Future<void> _openGroupExpense(GroupSummary group) async {
-    final created = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<void>(
       platformPageRoute(
         builder: (_) =>
-            AddGroupExpensePage(group: group, repository: _groupsRepository),
+            GroupDetailsPage(group: group, repository: _groupsRepository),
       ),
     );
-    if (!mounted) return;
-    if (created == true) {
-      Navigator.of(context).pop(true);
-    }
   }
 
   IconData _iconForGroupType(GroupType type) {
@@ -171,173 +168,6 @@ class _AddExpenseSelectorPageState extends State<AddExpenseSelectorPage> {
         child: Material(
           color: Colors.transparent,
           child: _buildGroupList(context),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PlatformWidget(
-      ios: _buildCupertino(context),
-      android: _buildMaterial(context),
-      web: _buildMaterial(context),
-    );
-  }
-}
-
-class AddGroupExpensePage extends StatefulWidget {
-  const AddGroupExpensePage({
-    required this.group,
-    required this.repository,
-    super.key,
-  });
-
-  final GroupSummary group;
-  final ApiGroupsRepository repository;
-
-  @override
-  State<AddGroupExpensePage> createState() => _AddGroupExpensePageState();
-}
-
-class _AddGroupExpensePageState extends State<AddGroupExpensePage> {
-  final _descriptionController = TextEditingController();
-  final _amountController = TextEditingController();
-  bool _saving = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _descriptionController.dispose();
-    _amountController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final description = _descriptionController.text.trim();
-    final amount = double.tryParse(_amountController.text.trim());
-    if (description.isEmpty) {
-      setState(() => _error = 'Description is required.');
-      return;
-    }
-    if (amount == null || amount <= 0) {
-      setState(() => _error = 'Enter a valid amount greater than 0.');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      await widget.repository.addExpense(
-        groupId: widget.group.id,
-        description: description,
-        amount: amount,
-        date: DateTime.now(),
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = error.toString();
-      });
-    }
-  }
-
-  Widget _form(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.group.name,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    TextField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    TextField(
-                      controller: _amountController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Amount',
-                        prefixText: 'INR ',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: AppSpacing.sm),
-                      Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: const Icon(Icons.check),
-              label: const Text('Save expense'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMaterial(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Add group expense')),
-      body: Stack(
-        children: [
-          _form(context),
-          if (_saving) const LinearProgressIndicator(minHeight: 2),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCupertino(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('Add group expense'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          minimumSize: const Size(30, 30),
-          onPressed: _saving ? null : _save,
-          child: const Text('Save'),
-        ),
-      ),
-      child: SafeArea(
-        child: Stack(
-          children: [
-            Material(color: Colors.transparent, child: _form(context)),
-            if (_saving) const LinearProgressIndicator(minHeight: 2),
-          ],
         ),
       ),
     );
