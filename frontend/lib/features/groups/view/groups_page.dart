@@ -910,6 +910,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     'shares',
     'adjustment',
   ];
+  final Map<String, TextEditingController> _exactControllers = {};
+  final Map<String, TextEditingController> _percentControllers = {};
+  final Map<String, TextEditingController> _sharesControllers = {};
+  final Map<String, TextEditingController> _adjustmentControllers = {};
 
   @override
   void initState() {
@@ -921,6 +925,29 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     if (_selected.isEmpty && widget.participants.isNotEmpty) {
       _selected = {widget.participants.first};
     }
+    for (final member in widget.participants) {
+      _exactControllers[member] = TextEditingController(text: '0,00');
+      _percentControllers[member] = TextEditingController(text: '0');
+      _sharesControllers[member] = TextEditingController(text: '1');
+      _adjustmentControllers[member] = TextEditingController(text: '0,00');
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _exactControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _percentControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _sharesControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _adjustmentControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   void _toggleMember(String member, bool selected) {
@@ -1037,30 +1064,88 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('₹ ', style: TextStyle(color: Colors.grey)),
-            Text(
-              '0,00',
-              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            SizedBox(
+              width: 78,
+              child: TextField(
+                controller: _exactControllers[member],
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                textAlign: TextAlign.right,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: UnderlineInputBorder(),
+                ),
+              ),
             ),
           ],
         );
         break;
       case 'percent':
-        trailing = Text(
-          '0 %',
-          style: TextStyle(color: Theme.of(context).colorScheme.outline),
+        trailing = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 68,
+              child: TextField(
+                controller: _percentControllers[member],
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                textAlign: TextAlign.right,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: UnderlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            Text(
+              '%',
+              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            ),
+          ],
         );
         break;
       case 'shares':
-        trailing = const Text('1 share(s)');
+        trailing = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 54,
+              child: TextField(
+                controller: _sharesControllers[member],
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.right,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: UnderlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text('share(s)'),
+          ],
+        );
         break;
       case 'adjustment':
         trailing = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('+ ', style: TextStyle(color: Colors.grey)),
-            Text(
-              '0,00',
-              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            SizedBox(
+              width: 78,
+              child: TextField(
+                controller: _adjustmentControllers[member],
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                textAlign: TextAlign.right,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: UnderlineInputBorder(),
+                ),
+              ),
             ),
           ],
         );
