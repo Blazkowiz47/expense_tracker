@@ -424,15 +424,18 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
     await Future.wait([_loadMembers(), _loadExpenses()]);
   }
 
-  Future<void> _loadMembers() async {
+  Future<bool> _loadMembers() async {
     try {
       final items = await widget.repository.fetchMembers(widget.group.id);
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _members = items;
         _memberCount = items.length;
       });
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _loadExpenses() async {
@@ -550,6 +553,10 @@ class _GroupDetailsPageState extends State<_GroupDetailsPage> {
   }
 
   Future<void> _addExpense() async {
+    if (_members.isEmpty && _memberCount > 0) {
+      await _loadMembers();
+      if (!mounted) return;
+    }
     final descriptionController = TextEditingController();
     final amountController = TextEditingController();
     final participants = _members.isNotEmpty
@@ -1320,12 +1327,6 @@ class _ChoosePayerPage extends StatelessWidget {
                   : null,
               onTap: () => Navigator.of(context).pop(name),
             ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            title: const Text('Multiple people'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {},
           ),
         ],
       ),
