@@ -404,6 +404,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   bool _loading = true;
   bool _simplifyBalances = true;
   _GroupBusyAction _busyAction = _GroupBusyAction.none;
+  bool _didMutateGroupData = false;
   late int _memberCount;
   String? _error;
 
@@ -568,6 +569,14 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
   }
 
+  void _replaceExpenseInList(GroupExpense updatedExpense) {
+    setState(() {
+      _expenses = _expenses
+          .map((item) => item.id == updatedExpense.id ? updatedExpense : item)
+          .toList(growable: false);
+    });
+  }
+
   Future<void> _leaveGroup() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -648,6 +657,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       setState(() {
         _memberCount = updated.memberCount;
         _busyAction = _GroupBusyAction.none;
+        _didMutateGroupData = true;
       });
       await _loadMembers();
       if (!mounted) return;
@@ -1641,7 +1651,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       if (!mounted) return;
       await _loadExpenses();
       if (!mounted) return;
-      setState(() => _busyAction = _GroupBusyAction.none);
+      setState(() {
+        _busyAction = _GroupBusyAction.none;
+        _didMutateGroupData = true;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1690,7 +1703,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       initialUpdatedBy: _resolvePayerLabel(expense.updatedBy, participants),
     );
 
-    if (!mounted || payload == null) return;
+    if (!mounted) return;
+    if (payload == null) {
+      await _loadExpenses();
+      if (!mounted) return;
+      setState(() => _didMutateGroupData = true);
+      return;
+    }
     final action = (payload['action'] as String?) ?? 'save';
     if (action == 'delete') {
       await _deleteExpense(expense);
@@ -1732,14 +1751,30 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         !setEquals(splitWith.toSet(), originalSplitWith);
     if (!fieldChanged && !requiresExplicitAttachmentSave) {
       if (didInlineAttachmentUpload) {
-        await _loadExpenses();
+        final locallyUpdated = GroupExpense(
+          id: expense.id,
+          groupId: expense.groupId,
+          createdBy: expense.createdBy,
+          updatedBy: expense.updatedBy,
+          paidBy: expense.paidBy,
+          splitMode: expense.splitMode,
+          splitWith: expense.splitWith,
+          amount: expense.amount,
+          description: expense.description,
+          attachments: attachments,
+          date: expense.date,
+          createdAt: expense.createdAt,
+          updatedAt: DateTime.now(),
+        );
+        _replaceExpenseInList(locallyUpdated);
+        _didMutateGroupData = true;
       }
       return;
     }
 
     setState(() => _busyAction = _GroupBusyAction.addingExpense);
     try {
-      await widget.repository.updateExpense(
+      final updatedExpense = await widget.repository.updateExpense(
         groupId: widget.group.id,
         expenseId: expense.id,
         description: description,
@@ -1750,10 +1785,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         attachments: attachments,
         date: expense.date,
       );
+      _replaceExpenseInList(updatedExpense);
       if (!mounted) return;
-      await _loadExpenses();
-      if (!mounted) return;
-      setState(() => _busyAction = _GroupBusyAction.none);
+      setState(() {
+        _busyAction = _GroupBusyAction.none;
+        _didMutateGroupData = true;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Group expense updated.')));
@@ -1797,7 +1834,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       if (!mounted) return;
       await _loadExpenses();
       if (!mounted) return;
-      setState(() => _busyAction = _GroupBusyAction.none);
+      setState(() {
+        _busyAction = _GroupBusyAction.none;
+        _didMutateGroupData = true;
+      });
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Group expense deleted.')));
@@ -1837,218 +1877,232 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       _GroupBusyAction.leavingGroup => 'Leaving group...',
       _GroupBusyAction.none => '',
     };
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.group.name),
-        actions: [
-          IconButton(
-            onPressed: _busy ? null : _openSettings,
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Group settings',
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        Navigator.of(context).pop(_didMutateGroupData);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            onPressed: () => Navigator.of(context).pop(_didMutateGroupData),
+            icon: const Icon(Icons.arrow_back),
           ),
-          IconButton(
-            onPressed: _busy ? null : _addMember,
-            icon: const Icon(Icons.person_add_alt_1_outlined),
-            tooltip: 'Add member',
-          ),
-          TextButton(
-            onPressed: _busy ? null : _leaveGroup,
-            child: Text(
-              'Leave group',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+          title: Text(widget.group.name),
+          actions: [
+            IconButton(
+              onPressed: _busy ? null : _openSettings,
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Group settings',
             ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _busy ? null : _addExpense,
-        icon: const Icon(Icons.receipt_long_outlined),
-        label: const Text('Add expense'),
-      ),
-      body: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: ListView(
-              children: [
-                Card(
-                  child: ListTile(
-                    title: Text(
-                      widget.group.groupType == GroupType.family
-                          ? 'Family monthly spend'
-                          : 'Group total spend',
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('$_memberCount member(s)'),
-                        if (_simplifyBalances) ...[
-                          const SizedBox(height: 4),
-                          Builder(
-                            builder: (context) {
-                              final net = balance.lent - balance.borrowed;
-                              if (net.abs() <= 0.005) {
+            IconButton(
+              onPressed: _busy ? null : _addMember,
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              tooltip: 'Add member',
+            ),
+            TextButton(
+              onPressed: _busy ? null : _leaveGroup,
+              child: Text(
+                'Leave group',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _busy ? null : _addExpense,
+          icon: const Icon(Icons.receipt_long_outlined),
+          label: const Text('Add expense'),
+        ),
+        body: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: ListView(
+                children: [
+                  Card(
+                    child: ListTile(
+                      title: Text(
+                        widget.group.groupType == GroupType.family
+                            ? 'Family monthly spend'
+                            : 'Group total spend',
+                      ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('$_memberCount member(s)'),
+                          if (_simplifyBalances) ...[
+                            const SizedBox(height: 4),
+                            Builder(
+                              builder: (context) {
+                                final net = balance.lent - balance.borrowed;
+                                if (net.abs() <= 0.005) {
+                                  return Text(
+                                    'You are all settled up',
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outline,
+                                    ),
+                                  );
+                                }
+                                if (net > 0) {
+                                  return Text(
+                                    'You are owed INR ${net.toStringAsFixed(2)}',
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                  );
+                                }
                                 return Text(
-                                  'You are all settled up',
+                                  'You owe INR ${(-net).toStringAsFixed(2)}',
                                   style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outline,
+                                    color: Theme.of(context).colorScheme.error,
                                   ),
                                 );
-                              }
-                              if (net > 0) {
-                                return Text(
-                                  'You are owed INR ${net.toStringAsFixed(2)}',
+                              },
+                            ),
+                          ] else ...[
+                            if (balance.lent > 0.005 ||
+                                balance.borrowed > 0.005)
+                              const SizedBox(height: 4),
+                            if (balance.lent > 0.005)
+                              Text(
+                                'You are owed INR ${balance.lent.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            if (balance.borrowed > 0.005)
+                              Text(
+                                'You owe INR ${balance.borrowed.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
+                      trailing: Text(
+                        'INR ${total.toStringAsFixed(2)}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_loading)
+                    const Card(
+                      child: ListTile(title: Text('Loading group expenses...')),
+                    )
+                  else if (_error != null)
+                    SelectableErrorMessage(_error!)
+                  else if (_expenses.isEmpty)
+                    const Card(
+                      child: ListTile(
+                        title: Text('No group expenses yet'),
+                        subtitle: Text(
+                          'Use the receipt icon in top-right to add the first group expense.',
+                        ),
+                      ),
+                    )
+                  else
+                    ..._expenses.map((expense) {
+                      final expenseBalance = _balanceForExpense(
+                        expense: expense,
+                        userIdentifiers: userIdentifiers,
+                        memberCount: memberCount,
+                      );
+                      return Card(
+                        child: ListTile(
+                          onTap: _busy ? null : () => _editExpense(expense),
+                          title: Text(expense.description),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                expense.date
+                                    .toLocal()
+                                    .toString()
+                                    .split('.')
+                                    .first,
+                              ),
+                              if (expense.attachments.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  '${expense.attachments.length} attachment${expense.attachments.length == 1 ? '' : 's'}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ],
+                          ),
+                          trailing: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('INR ${expense.amount.toStringAsFixed(2)}'),
+                              if (expenseBalance.owed > 0.005)
+                                Text(
+                                  'owed ${expenseBalance.owed.toStringAsFixed(2)}',
                                   style: TextStyle(
+                                    fontSize: 12,
                                     color: Theme.of(
                                       context,
                                     ).colorScheme.primary,
                                   ),
-                                );
-                              }
-                              return Text(
-                                'You owe INR ${(-net).toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
                                 ),
-                              );
-                            },
-                          ),
-                        ] else ...[
-                          if (balance.lent > 0.005 || balance.borrowed > 0.005)
-                            const SizedBox(height: 4),
-                          if (balance.lent > 0.005)
-                            Text(
-                              'You are owed INR ${balance.lent.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                          if (balance.borrowed > 0.005)
-                            Text(
-                              'You owe INR ${balance.borrowed.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            ),
-                        ],
-                      ],
-                    ),
-                    trailing: Text(
-                      'INR ${total.toStringAsFixed(2)}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (_loading)
-                  const Card(
-                    child: ListTile(title: Text('Loading group expenses...')),
-                  )
-                else if (_error != null)
-                  SelectableErrorMessage(_error!)
-                else if (_expenses.isEmpty)
-                  const Card(
-                    child: ListTile(
-                      title: Text('No group expenses yet'),
-                      subtitle: Text(
-                        'Use the receipt icon in top-right to add the first group expense.',
-                      ),
-                    ),
-                  )
-                else
-                  ..._expenses.map((expense) {
-                    final expenseBalance = _balanceForExpense(
-                      expense: expense,
-                      userIdentifiers: userIdentifiers,
-                      memberCount: memberCount,
-                    );
-                    return Card(
-                      child: ListTile(
-                        onTap: _busy ? null : () => _editExpense(expense),
-                        title: Text(expense.description),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              expense.date
-                                  .toLocal()
-                                  .toString()
-                                  .split('.')
-                                  .first,
-                            ),
-                            if (expense.attachments.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                '${expense.attachments.length} attachment${expense.attachments.length == 1 ? '' : 's'}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
+                              if (expenseBalance.owe > 0.005)
+                                Text(
+                                  'owe ${expenseBalance.owe.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
                             ],
-                          ],
+                          ),
                         ),
-                        trailing: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text('INR ${expense.amount.toStringAsFixed(2)}'),
-                            if (expenseBalance.owed > 0.005)
-                              Text(
-                                'owed ${expenseBalance.owed.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            if (expenseBalance.owe > 0.005)
-                              Text(
-                                'owe ${expenseBalance.owe.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-              ],
-            ),
-          ),
-          if (_busy)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Material(
-                elevation: 1,
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    LinearProgressIndicator(
-                      minHeight: 3,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      child: Text(
-                        busyMessage,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  ],
-                ),
+                      );
+                    }),
+                ],
               ),
             ),
-        ],
+            if (_busy)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Material(
+                  elevation: 1,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      LinearProgressIndicator(
+                        minHeight: 3,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          busyMessage,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
