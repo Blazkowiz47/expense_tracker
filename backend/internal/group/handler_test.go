@@ -363,6 +363,22 @@ func TestUploadGroupAttachment(t *testing.T) {
 	_ = json.Unmarshal(createRR.Body.Bytes(), &created)
 	groupID, _ := created["id"].(string)
 
+	expensePayload := []byte(`{"amount":1200.5,"description":"Groceries","date":"2026-02-27T10:00:00Z"}`)
+	createExpenseReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/expenses", bytes.NewReader(expensePayload))
+	createExpenseReq.Header.Set("Authorization", "Bearer test-token")
+	createExpenseReq.Header.Set("Content-Type", "application/json")
+	createExpenseRR := httptest.NewRecorder()
+	router.ServeHTTP(createExpenseRR, createExpenseReq)
+	if createExpenseRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createExpenseRR.Code, createExpenseRR.Body.String())
+	}
+	var createdExpense map[string]any
+	_ = json.Unmarshal(createExpenseRR.Body.Bytes(), &createdExpense)
+	expenseID, _ := createdExpense["id"].(string)
+	if expenseID == "" {
+		t.Fatalf("expected expense id to be set")
+	}
+
 	var payload bytes.Buffer
 	writer := multipart.NewWriter(&payload)
 	headers := make(textproto.MIMEHeader)
@@ -370,7 +386,7 @@ func TestUploadGroupAttachment(t *testing.T) {
 	headers.Set("Content-Type", "image/png")
 	part, _ := writer.CreatePart(headers)
 	_, _ = part.Write([]byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a})
-	_ = writer.WriteField("expenseId", "expense-1")
+	_ = writer.WriteField("expenseId", expenseID)
 	_ = writer.Close()
 
 	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/attachments", &payload)
@@ -380,6 +396,30 @@ func TestUploadGroupAttachment(t *testing.T) {
 	router.ServeHTTP(uploadRR, uploadReq)
 	if uploadRR.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", uploadRR.Code, uploadRR.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+groupID+"/expenses", nil)
+	listReq.Header.Set("Authorization", "Bearer test-token")
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var listPayload map[string]any
+	if err := json.Unmarshal(listRR.Body.Bytes(), &listPayload); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	expenses, ok := listPayload["expenses"].([]any)
+	if !ok || len(expenses) == 0 {
+		t.Fatalf("expected at least one expense in list")
+	}
+	first, ok := expenses[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected expense object, got %#v", expenses[0])
+	}
+	attachments, ok := first["attachments"].([]any)
+	if !ok || len(attachments) != 1 {
+		t.Fatalf("expected exactly one attachment, got %#v", first["attachments"])
 	}
 }
 

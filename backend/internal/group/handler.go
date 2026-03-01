@@ -180,6 +180,23 @@ func (h *Handler) handleUploadAttachment(
 		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "expenseId is required")
 		return
 	}
+	expenses, err := h.store.ListExpenses(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to list group expenses")
+		return
+	}
+	var expense *GroupExpense
+	for i := range expenses {
+		if expenses[i].ID == expenseID {
+			copyExpense := expenses[i]
+			expense = &copyExpense
+			break
+		}
+	}
+	if expense == nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "expense not found")
+		return
+	}
 	downloadURL, err := h.uploader.UploadGroupAttachment(r.Context(), AttachmentUploadInput{
 		GroupID:     groupID,
 		ExpenseID:   expenseID,
@@ -190,6 +207,17 @@ func (h *Handler) handleUploadAttachment(
 	})
 	if err != nil {
 		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", fmt.Sprintf("failed to upload attachment: %v", err))
+		return
+	}
+	updatedAttachments := append([]string{}, expense.Attachments...)
+	if !slices.Contains(updatedAttachments, downloadURL) {
+		updatedAttachments = append(updatedAttachments, downloadURL)
+	}
+	expense.Attachments = updatedAttachments
+	expense.UpdatedBy = uid
+	expense.UpdatedAt = time.Now().UTC()
+	if _, err := h.store.UpdateExpense(r.Context(), *expense); err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", fmt.Sprintf("failed to link attachment to expense: %v", err))
 		return
 	}
 	httpapi.WriteJSON(w, http.StatusCreated, map[string]any{"url": downloadURL})
