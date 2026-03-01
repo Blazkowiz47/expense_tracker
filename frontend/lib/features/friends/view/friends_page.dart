@@ -1,5 +1,8 @@
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
+import 'package:expense_tracker/data/models/expense.dart';
+import 'package:expense_tracker/data/models/expense_core.dart';
+import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -13,6 +16,7 @@ class FriendsPage extends StatefulWidget {
 class _FriendsPageState extends State<FriendsPage> {
   late final http.Client _client;
   late final ApiFriendsRepository _repository;
+  late final ExpenseRepository _expenseRepository;
 
   List<FriendContact> _friends = const [];
   bool _loading = true;
@@ -26,6 +30,7 @@ class _FriendsPageState extends State<FriendsPage> {
     super.initState();
     _client = http.Client();
     _repository = ApiFriendsRepository(client: _client);
+    _expenseRepository = ExpenseRepository(client: _client);
     _loadFriends();
   }
 
@@ -141,6 +146,91 @@ class _FriendsPageState extends State<FriendsPage> {
     }
   }
 
+  Future<void> _settleUpFlow(FriendContact friend) async {
+    if (_removingFriendUid != null || _addingFriend) return;
+    final amount = await _openSettleUpDialog(friend);
+    if (amount == null || amount <= 0) return;
+
+    setState(() => _removingFriendUid = friend.uid);
+    try {
+      await _expenseRepository.createExpense(
+        Expense(
+          core: ExpenseCore(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            title: 'Settlement',
+            amount: amount,
+            currency: 'INR',
+            category: 'Settlement',
+            createdAt: DateTime.now(),
+          ),
+          description: 'Settle up with ${friend.label}',
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Settlement of INR ${amount.toStringAsFixed(2)} recorded with ${friend.label}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _removingFriendUid = null);
+      }
+    }
+  }
+
+  Future<double?> _openSettleUpDialog(FriendContact friend) async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    return showDialog<double>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Settle up with ${friend.label}'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Amount',
+              prefixText: 'INR ',
+              hintText: '0.00',
+            ),
+            validator: (value) {
+              final amount = double.tryParse((value ?? '').trim());
+              if (amount == null || amount <= 0) {
+                return 'Enter a valid amount';
+              }
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!(formKey.currentState?.validate() ?? false)) return;
+              final amount = double.parse(controller.text.trim());
+              Navigator.of(context).pop(amount);
+            },
+            child: const Text('Record'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<String?> _openAddFriendDialog() async {
     final controller = TextEditingController();
     return showDialog<String>(
@@ -213,6 +303,7 @@ class _FriendsPageState extends State<FriendsPage> {
                           ? friend.contactHint
                           : 'No email/phone',
                       removing: _removingFriendUid == friend.uid,
+                      onSettleUp: () => _settleUpFlow(friend),
                       onRemove: () => _removeFriendFlow(friend),
                     ),
                   ),
@@ -349,12 +440,14 @@ class _BalanceTile extends StatelessWidget {
     required this.name,
     required this.subtitle,
     this.removing = false,
+    this.onSettleUp,
     this.onRemove,
   });
 
   final String name;
   final String subtitle;
   final bool removing;
+  final VoidCallback? onSettleUp;
   final VoidCallback? onRemove;
 
   @override
@@ -375,10 +468,20 @@ class _BalanceTile extends StatelessWidget {
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2.2),
               )
-            : IconButton(
-                tooltip: 'Remove friend',
-                onPressed: onRemove,
-                icon: const Icon(Icons.person_remove_outlined),
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Settle up',
+                    onPressed: onSettleUp,
+                    icon: const Icon(Icons.handshake_outlined),
+                  ),
+                  IconButton(
+                    tooltip: 'Remove friend',
+                    onPressed: onRemove,
+                    icon: const Icon(Icons.person_remove_outlined),
+                  ),
+                ],
               ),
       ),
     );
