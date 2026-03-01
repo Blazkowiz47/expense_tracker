@@ -806,6 +806,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             ),
           ),
         ];
+        var requiresExplicitAttachmentSave = false;
+        var didInlineAttachmentUpload = false;
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             insetPadding: const EdgeInsets.symmetric(
@@ -1200,11 +1202,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         ),
                                         InkWell(
                                           onTap: () async {
-                                            setDialogState(
-                                              () => attachmentItems.removeAt(
-                                                index,
-                                              ),
-                                            );
+                                            setDialogState(() {
+                                              attachmentItems.removeAt(index);
+                                              if (isEditing) {
+                                                requiresExplicitAttachmentSave =
+                                                    true;
+                                              }
+                                            });
                                           },
                                           child: const Padding(
                                             padding: EdgeInsets.all(4),
@@ -1343,6 +1347,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           localPreviewPath: image.path,
                                           pendingUploadBytes: null,
                                         );
+                                    didInlineAttachmentUpload = true;
                                   }
                                 });
                               } catch (error) {
@@ -1463,6 +1468,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         localPreviewPath: image.path,
                                         pendingUploadBytes: null,
                                       );
+                                  didInlineAttachmentUpload = true;
                                 }
                               });
                             } catch (error) {
@@ -1488,6 +1494,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             final url = await _promptAttachmentUrl();
                             if (url == null || url.isEmpty) return;
                             setDialogState(() {
+                              if (isEditing) {
+                                requiresExplicitAttachmentSave = true;
+                              }
                               attachmentItems.add(
                                 _AttachmentUploadItem(
                                   id: '${DateTime.now().microsecondsSinceEpoch}-url',
@@ -1543,6 +1552,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   'attachmentItems': List<_AttachmentUploadItem>.from(
                     attachmentItems,
                   ),
+                  'requiresExplicitAttachmentSave':
+                      requiresExplicitAttachmentSave,
+                  'didInlineAttachmentUpload': didInlineAttachmentUpload,
                 }),
                 child: Text(isEditing ? 'Done' : 'Save'),
               ),
@@ -1694,10 +1706,34 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
+    final requiresExplicitAttachmentSave =
+        payload['requiresExplicitAttachmentSave'] == true;
+    final didInlineAttachmentUpload =
+        payload['didInlineAttachmentUpload'] == true;
     if (description.isEmpty || amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid description and amount.')),
       );
+      return;
+    }
+
+    final originalPaidBy = _resolvePayerLabel(expense.paidBy, participants);
+    final originalSplitMode = expense.splitMode.isNotEmpty
+        ? expense.splitMode
+        : 'equally';
+    final originalSplitWith = expense.splitWith.isNotEmpty
+        ? expense.splitWith.toSet()
+        : participants.toSet();
+    final fieldChanged =
+        description != expense.description ||
+        (amount - expense.amount).abs() > 0.000001 ||
+        paidBy != originalPaidBy ||
+        splitMode != originalSplitMode ||
+        !setEquals(splitWith.toSet(), originalSplitWith);
+    if (!fieldChanged && !requiresExplicitAttachmentSave) {
+      if (didInlineAttachmentUpload) {
+        await _loadExpenses();
+      }
       return;
     }
 
