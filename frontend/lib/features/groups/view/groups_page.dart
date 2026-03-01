@@ -1509,71 +1509,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   .first,
                             ),
                             if (expense.attachments.isNotEmpty) ...[
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                height: 52,
-                                child: ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: expense.attachments.length,
-                                  itemBuilder: (context, index) {
-                                    final url = expense.attachments[index];
-                                    return Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          url,
-                                          width: 52,
-                                          height: 52,
-                                          fit: BoxFit.cover,
-                                          loadingBuilder:
-                                              (
-                                                context,
-                                                child,
-                                                loadingProgress,
-                                              ) {
-                                                if (loadingProgress == null) {
-                                                  return child;
-                                                }
-                                                return Container(
-                                                  width: 52,
-                                                  height: 52,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .surfaceContainerHighest,
-                                                  child: const Center(
-                                                    child: SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                            strokeWidth: 2,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                          errorBuilder:
-                                              (
-                                                context,
-                                                _,
-                                                errorDetails,
-                                              ) => Container(
-                                                width: 52,
-                                                height: 52,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .surfaceContainerHighest,
-                                                child: const Icon(
-                                                  Icons.broken_image_outlined,
-                                                  size: 18,
-                                                ),
-                                              ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${expense.attachments.length} attachment${expense.attachments.length == 1 ? '' : 's'}',
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
                           ],
