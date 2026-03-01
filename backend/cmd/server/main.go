@@ -10,6 +10,7 @@ import (
 	"expense_tracker_backend/internal/expense"
 	"expense_tracker_backend/internal/friend"
 	"expense_tracker_backend/internal/group"
+	"expense_tracker_backend/internal/recurring"
 	"expense_tracker_backend/internal/server"
 )
 
@@ -88,6 +89,7 @@ func main() {
 		attachmentUploader = firebaseUploader
 	}
 	groupHandler := group.NewHandler(groupStore, friendStore, attachmentUploader)
+	recurringHandler := recurring.NewHandler(recurring.NewInMemoryStore())
 
 	var verifier auth.Verifier
 	switch cfg.AuthMode {
@@ -108,7 +110,7 @@ func main() {
 		log.Fatalf("unsupported AUTH_MODE %q (allowed: dev, firebase)", cfg.AuthMode)
 	}
 
-	router := server.NewRouter(verifier, handler, friendHandler, groupHandler)
+	router := server.NewRouter(verifier, handler, friendHandler, groupHandler, recurringHandler)
 	addr := ":" + cfg.Port
 
 	log.Printf(

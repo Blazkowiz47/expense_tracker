@@ -5,8 +5,11 @@ import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
+import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
+import 'package:expense_tracker/features/recurring/repositories/api_recurring_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:http/http.dart' as http;
 
 class OverviewPage extends StatelessWidget {
   const OverviewPage({super.key});
@@ -267,11 +270,92 @@ class OverviewPage extends StatelessWidget {
                     );
                   },
                 ),
+                const SizedBox(height: 12),
+                const _RecurringOverviewCard(),
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _RecurringOverviewCard extends StatefulWidget {
+  const _RecurringOverviewCard();
+
+  @override
+  State<_RecurringOverviewCard> createState() => _RecurringOverviewCardState();
+}
+
+class _RecurringOverviewCardState extends State<_RecurringOverviewCard> {
+  late final http.Client _client;
+  late final ApiRecurringRepository _repository;
+  List<RecurringTemplate> _templates = const [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _client = http.Client();
+    _repository = ApiRecurringRepository(client: _client);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _client.close();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final templates = await _repository.fetchTemplates();
+      if (!mounted) return;
+      setState(() => _templates = templates.where((t) => t.active).toList());
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    String subtitle = 'Track recurring payments like rent or subscriptions.';
+    if (_loading) {
+      subtitle = 'Loading recurring templates...';
+    } else if (_error != null) {
+      subtitle = 'Could not load recurring templates.';
+    } else if (_templates.isEmpty) {
+      subtitle = 'No recurring templates yet.';
+    } else {
+      final sorted = [..._templates]
+        ..sort((a, b) => a.nextDueDate.compareTo(b.nextDueDate));
+      final next = sorted.first;
+      subtitle =
+          '${_templates.length} active • Next due ${next.nextDueDate.toLocal().toString().split(' ').first}';
+    }
+    return Card(
+      child: ListTile(
+        title: const Text('Recurring payments'),
+        subtitle: Text(subtitle),
+        trailing: _loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : TextButton(onPressed: _load, child: const Text('Refresh')),
+      ),
     );
   }
 }

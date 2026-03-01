@@ -9,6 +9,7 @@ import (
 	"expense_tracker_backend/internal/group"
 	"expense_tracker_backend/internal/httpapi"
 	"expense_tracker_backend/internal/middleware"
+	"expense_tracker_backend/internal/recurring"
 )
 
 func NewRouter(
@@ -16,6 +17,7 @@ func NewRouter(
 	expenseHandler *expense.Handler,
 	friendHandler *friend.Handler,
 	groupHandler *group.Handler,
+	recurringHandler *recurring.Handler,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -62,6 +64,7 @@ func NewRouter(
 	mux.Handle("/api/v1/friends/remove", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.Remove)))
 	mux.Handle("/api/v1/groups", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupsCollection)))
 	mux.Handle("/api/v1/groups/", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupByID)))
+	mux.Handle("/api/v1/recurring/templates", middleware.RequireAuth(verifier, http.HandlerFunc(recurringHandler.TemplatesCollection)))
 
 	return middleware.CORS(mux)
 }

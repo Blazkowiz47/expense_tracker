@@ -7,7 +7,7 @@
 
 ## Roadmap
 1. `[~]` Settle-up flow (first slice)
-2. `[ ]` Recurring expenses
+2. `[~]` Recurring expenses
 3. `[ ]` Notifications
 4. `[ ]` Expense detail completion (delete/download/remove attachment + audit)
 5. `[ ]` Group balances v2 (simplify transfer suggestions)
@@ -22,3 +22,9 @@
 - `[x]` Add settle-up actions from group settings/member cards.
 - `[x]` Add unit tests for settlement parsing and net-balance aggregation.
 - `[x]` Add integration tests for settle-up state transitions.
+
+## Current item: 2) Recurring expenses
+- `[x]` Add backend recurring templates API (`GET/POST /api/v1/recurring/templates`).
+- `[x]` Add overview recurring summary card wired to backend API.
+- `[ ]` Add create recurring template UI (title, amount, frequency, start date).
+- `[ ]` Generate due personal expenses from templates (backend processor).
