@@ -7,6 +7,7 @@ import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/utils/group_balance_calculator.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
@@ -685,6 +686,60 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     );
   }
 
+  Future<void> _openAttachmentPreview({
+    required String title,
+    required String url,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(20),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: InteractiveViewer(
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('Failed to load attachment preview.'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<Map<String, dynamic>?> _showExpenseForm({
     required String title,
     required String expenseId,
@@ -883,7 +938,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           itemBuilder: (context, index) {
                             final item = attachmentItems[index];
                             final percent = (item.progress * 100).clamp(0, 100);
-                            return Container(
+                            final previewable =
+                                item.url != null &&
+                                item.url!.isNotEmpty &&
+                                !item.uploading &&
+                                item.error == null;
+                            final tile = Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
                                 vertical: 8,
@@ -916,6 +976,35 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           CrossAxisAlignment.start,
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
+                                        if (kIsWeb && previewable) ...[
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: Image.network(
+                                              item.url!,
+                                              height: 140,
+                                              width: double.infinity,
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (
+                                                    context,
+                                                    error,
+                                                    stackTrace,
+                                                  ) => Container(
+                                                    height: 140,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .surfaceContainerHighest,
+                                                    alignment: Alignment.center,
+                                                    child: const Text(
+                                                      'Preview unavailable',
+                                                    ),
+                                                  ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                        ],
                                         Text(
                                           item.label,
                                           maxLines: 1,
@@ -964,6 +1053,17 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 ],
                               ),
                             );
+                            if (!kIsWeb && previewable) {
+                              return InkWell(
+                                onTap: () => _openAttachmentPreview(
+                                  title: item.label,
+                                  url: item.url!,
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                                child: tile,
+                              );
+                            }
+                            return tile;
                           },
                         ),
                       ),
