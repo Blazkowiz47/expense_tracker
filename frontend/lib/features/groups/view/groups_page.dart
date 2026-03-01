@@ -734,6 +734,24 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   child: Image.network(
                     url,
                     fit: BoxFit.contain,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) {
+                        return child;
+                      }
+                      final expectedBytes = loadingProgress.expectedTotalBytes;
+                      final loadedBytes = loadingProgress.cumulativeBytesLoaded;
+                      final progress = expectedBytes == null || expectedBytes <= 0
+                          ? null
+                          : loadedBytes / expectedBytes;
+                      return Center(
+                        child: Text(
+                          progress == null
+                              ? 'Loading attachment...'
+                              : 'Loading ${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      );
+                    },
                     errorBuilder: (context, error, stackTrace) => const Center(
                       child: Padding(
                         padding: EdgeInsets.all(16),
@@ -1039,6 +1057,44 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                                               'Bearer $token',
                                                         }
                                                       : null,
+                                                  loadingBuilder: (
+                                                    context,
+                                                    child,
+                                                    loadingProgress,
+                                                  ) {
+                                                    if (loadingProgress ==
+                                                        null) {
+                                                      return child;
+                                                    }
+                                                    final expectedBytes =
+                                                        loadingProgress
+                                                            .expectedTotalBytes;
+                                                    final loadedBytes =
+                                                        loadingProgress
+                                                            .cumulativeBytesLoaded;
+                                                    final progress =
+                                                        expectedBytes == null ||
+                                                            expectedBytes <= 0
+                                                        ? null
+                                                        : loadedBytes /
+                                                              expectedBytes;
+                                                    return Container(
+                                                      height: 140,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .surfaceContainerHighest,
+                                                      alignment:
+                                                          Alignment.center,
+                                                      child: Text(
+                                                        progress == null
+                                                            ? 'Loading preview...'
+                                                            : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.bodySmall,
+                                                      ),
+                                                    );
+                                                  },
                                                   errorBuilder:
                                                       (
                                                         context,
