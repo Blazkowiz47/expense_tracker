@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
@@ -2300,32 +2298,36 @@ class _WebAuthedImagePreviewState extends State<_WebAuthedImagePreview> {
 
   Future<void> _load() async {
     try {
-      final token = await widget.authTokenProvider.getBearerToken();
-      final request = http.Request('GET', Uri.parse(widget.imageUrl))
-        ..headers['Accept'] = 'image/*';
-      if (token.isNotEmpty) {
-        request.headers['Authorization'] = 'Bearer $token';
+      if (mounted) {
+        setState(() => _progress = 0);
       }
-      final streamed = await http.Client().send(request);
+      final token = await widget.authTokenProvider.getBearerToken();
+      final response = await http.get(
+        Uri.parse(widget.imageUrl),
+        headers: <String, String>{
+          'Accept': 'image/*',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+      );
       if (!mounted) return;
-      if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-        setState(() => _error = 'Preview unavailable');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        setState(
+          () => _error = 'Preview unavailable (${response.statusCode})',
+        );
         return;
       }
-
-      final total = streamed.contentLength;
-      final buffer = BytesBuilder(copy: false);
-      var received = 0;
-      await for (final chunk in streamed.stream) {
-        buffer.add(chunk);
-        received += chunk.length;
-        if (mounted && total != null && total > 0) {
-          setState(() => _progress = received / total);
-        }
+      final contentType =
+          response.headers['content-type']?.toLowerCase() ?? '';
+      if (!contentType.startsWith('image/')) {
+        setState(
+          () => _error = contentType.isEmpty
+              ? 'Preview unavailable'
+              : 'Preview unavailable ($contentType)',
+        );
+        return;
       }
-      if (!mounted) return;
       setState(() {
-        _bytes = buffer.takeBytes();
+        _bytes = response.bodyBytes;
         _progress = 1;
       });
     } catch (_) {
