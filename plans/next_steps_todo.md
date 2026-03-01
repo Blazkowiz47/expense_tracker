@@ -19,5 +19,5 @@
 - `[x]` Add a Friends page `Settle up` action with amount input.
 - `[x]` Persist settlement as a backend expense entry (`category=Settlement`).
 - `[x]` Reflect settlement in friend-level owed/owe aggregates.
-- `[ ]` Add settle-up actions from group settings/member cards.
+- `[x]` Add settle-up actions from group settings/member cards.
 - `[ ]` Add integration tests for settle-up state transitions.

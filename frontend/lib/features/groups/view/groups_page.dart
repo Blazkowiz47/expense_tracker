@@ -1,5 +1,8 @@
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/data/models/expense.dart';
+import 'package:expense_tracker/data/models/expense_core.dart';
+import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
@@ -464,6 +467,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => _GroupSettingsPage(
+          groupId: widget.group.id,
           groupName: widget.group.name,
           members: _members,
           expenses: _expenses,
@@ -1684,6 +1688,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
 class _GroupSettingsPage extends StatefulWidget {
   const _GroupSettingsPage({
+    required this.groupId,
     required this.groupName,
     required this.members,
     required this.expenses,
@@ -1691,6 +1696,7 @@ class _GroupSettingsPage extends StatefulWidget {
     required this.memberCountFallback,
   });
 
+  final String groupId;
   final String groupName;
   final List<GroupMember> members;
   final List<GroupExpense> expenses;
@@ -1703,11 +1709,189 @@ class _GroupSettingsPage extends StatefulWidget {
 
 class _GroupSettingsPageState extends State<_GroupSettingsPage> {
   late bool _simplify;
+  late final http.Client _client;
+  late final ExpenseRepository _expenseRepository;
+  bool _settlementLoading = true;
+  String? _settlingMemberUid;
+  Map<String, double> _settlementNetByUid = const {};
 
   @override
   void initState() {
     super.initState();
     _simplify = widget.simplifyBalances;
+    _client = http.Client();
+    _expenseRepository = ExpenseRepository(client: _client);
+    _loadSettlementBalances();
+  }
+
+  @override
+  void dispose() {
+    _expenseRepository.dispose();
+    _client.close();
+    super.dispose();
+  }
+
+  Future<void> _loadSettlementBalances() async {
+    setState(() => _settlementLoading = true);
+    try {
+      await _expenseRepository.refresh();
+      final expenses = _expenseRepository.getExpenses();
+      final netByUid = <String, double>{};
+      for (final member in widget.members) {
+        netByUid[member.uid] = 0;
+      }
+      for (final expense in expenses) {
+        final category = (expense.category ?? '').trim().toLowerCase();
+        if (category != 'settlement') continue;
+        final meta = _parseGroupSettlementMeta(expense.description ?? '');
+        if (meta == null) continue;
+        if (meta.groupId != widget.groupId) continue;
+        if (!netByUid.containsKey(meta.memberUid)) continue;
+        final signedDelta = meta.direction == 'received'
+            ? expense.amount
+            : -expense.amount;
+        netByUid[meta.memberUid] =
+            (netByUid[meta.memberUid] ?? 0) + signedDelta;
+      }
+      if (!mounted) return;
+      setState(() {
+        _settlementNetByUid = netByUid;
+        _settlementLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _settlementLoading = false);
+    }
+  }
+
+  _GroupSettlementMeta? _parseGroupSettlementMeta(String description) {
+    final match = RegExp(
+      r'\[type:groupSettlement\]\[group:([^\]]+)\]\[uid:([^\]]+)\]\[dir:(paid|received)\]',
+    ).firstMatch(description);
+    if (match == null) return null;
+    final groupId = (match.group(1) ?? '').trim();
+    final memberUid = (match.group(2) ?? '').trim();
+    final direction = (match.group(3) ?? '').trim();
+    if (groupId.isEmpty || memberUid.isEmpty) return null;
+    if (direction != 'paid' && direction != 'received') return null;
+    return _GroupSettlementMeta(
+      groupId: groupId,
+      memberUid: memberUid,
+      direction: direction,
+    );
+  }
+
+  Future<_GroupSettleUpInput?> _openSettleUpDialog(GroupMember member) async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    var direction = 'paid';
+    return showDialog<_GroupSettleUpInput>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Settle up with ${member.label}'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(value: 'paid', label: Text('I paid')),
+                    ButtonSegment<String>(
+                      value: 'received',
+                      label: Text('I received'),
+                    ),
+                  ],
+                  selected: {direction},
+                  onSelectionChanged: (selection) {
+                    setDialogState(() => direction = selection.first);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Amount',
+                    prefixText: 'INR ',
+                    hintText: '0.00',
+                  ),
+                  validator: (value) {
+                    final amount = double.tryParse((value ?? '').trim());
+                    if (amount == null || amount <= 0) {
+                      return 'Enter a valid amount';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!(formKey.currentState?.validate() ?? false)) return;
+                final amount = double.parse(controller.text.trim());
+                Navigator.of(context).pop(
+                  _GroupSettleUpInput(amount: amount, direction: direction),
+                );
+              },
+              child: const Text('Record'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _settleUpWithMember(GroupMember member) async {
+    final input = await _openSettleUpDialog(member);
+    if (input == null) return;
+    setState(() => _settlingMemberUid = member.uid);
+    try {
+      final description =
+          'Group settle up with ${member.label} '
+          '[type:groupSettlement][group:${widget.groupId}][uid:${member.uid}][dir:${input.direction}]';
+      await _expenseRepository.createExpense(
+        Expense(
+          core: ExpenseCore(
+            id: DateTime.now().microsecondsSinceEpoch.toString(),
+            title: 'Group settlement',
+            amount: input.amount,
+            currency: 'INR',
+            category: 'Settlement',
+            createdAt: DateTime.now(),
+          ),
+          description: description,
+        ),
+      );
+      await _loadSettlementBalances();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Recorded INR ${input.amount.toStringAsFixed(2)} with ${member.label}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _settlingMemberUid = null);
+      }
+    }
   }
 
   Map<String, double> _memberNetByUid() {
@@ -1752,11 +1936,19 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
         netByUid[payerUid] = (netByUid[payerUid] ?? 0) + expense.amount;
       }
     }
+
+    _settlementNetByUid.forEach((uid, value) {
+      netByUid[uid] = (netByUid[uid] ?? 0) + value;
+    });
+
     return netByUid;
   }
 
   @override
   Widget build(BuildContext context) {
+    final authUid = context.select(
+      (AuthCubit cubit) => cubit.state.user?.uid ?? '',
+    );
     final netByUid = _memberNetByUid();
     return Scaffold(
       appBar: AppBar(title: const Text('Group settings')),
@@ -1777,6 +1969,11 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
+          if (_settlementLoading)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
           ...widget.members.map((member) {
             final net = netByUid[member.uid] ?? 0;
             final status = net.abs() <= 0.005
@@ -1802,12 +1999,31 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
                 subtitle: member.email.isNotEmpty
                     ? Text(member.email)
                     : (member.phone.isNotEmpty ? Text(member.phone) : null),
-                trailing: Text(
-                  status,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontWeight: FontWeight.w600,
-                  ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      status,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (member.uid != authUid) ...[
+                      const SizedBox(width: 8),
+                      _settlingMemberUid == member.uid
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : IconButton(
+                              tooltip: 'Settle up',
+                              onPressed: () => _settleUpWithMember(member),
+                              icon: const Icon(Icons.handshake_outlined),
+                            ),
+                    ],
+                  ],
                 ),
               ),
             );
@@ -1879,6 +2095,25 @@ class _AttachmentUploadItem {
       error: error,
     );
   }
+}
+
+class _GroupSettleUpInput {
+  const _GroupSettleUpInput({required this.amount, required this.direction});
+
+  final double amount;
+  final String direction;
+}
+
+class _GroupSettlementMeta {
+  const _GroupSettlementMeta({
+    required this.groupId,
+    required this.memberUid,
+    required this.direction,
+  });
+
+  final String groupId;
+  final String memberUid;
+  final String direction;
 }
 
 class _SplitSelectionResult {
