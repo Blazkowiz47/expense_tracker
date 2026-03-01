@@ -1,6 +1,4 @@
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
-import 'package:expense_tracker/core/auth/auth_token_provider.dart';
-import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
@@ -401,7 +399,6 @@ class GroupDetailsPage extends StatefulWidget {
 }
 
 class _GroupDetailsPageState extends State<GroupDetailsPage> {
-  final AuthTokenProvider _authTokenProvider = const FirebaseAuthTokenProvider();
   List<GroupExpense> _expenses = const [];
   List<GroupMember> _members = const [];
   bool _loading = true;
@@ -766,16 +763,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     );
   }
 
-  String _buildAttachmentPreviewUrl({
-    required String expenseId,
-    required String sourceUrl,
-  }) {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/api/v1/groups/${widget.group.id}/expenses/$expenseId/attachments/preview',
-    ).replace(queryParameters: {'url': sourceUrl});
-    return uri.toString();
-  }
-
   Future<Map<String, dynamic>?> _showExpenseForm({
     required String title,
     required String expenseId,
@@ -994,12 +981,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 item.url!.isNotEmpty &&
                                 !item.uploading &&
                                 item.error == null;
-                            final previewUrl = previewable && kIsWeb
-                                ? _buildAttachmentPreviewUrl(
-                                    expenseId: expenseId,
-                                    sourceUrl: item.url!,
-                                  )
-                                : item.url;
+                            final previewUrl = item.url;
                             final tile = Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -1042,14 +1024,68 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                               child: ClipRRect(
                                                 borderRadius:
                                                     BorderRadius.circular(8),
-                                                child: _WebAuthedImagePreview(
-                                                  key: ValueKey(previewUrl),
-                                                  imageUrl: previewUrl!,
-                                                  authTokenProvider:
-                                                      _authTokenProvider,
-                                                  width: 110,
-                                                  height: 170,
+                                                child: Image.network(
+                                                  previewUrl!,
+                                                  key: ValueKey(
+                                                    '$previewUrl|attachment-thumb',
+                                                  ),
                                                   fit: BoxFit.cover,
+                                                  webHtmlElementStrategy:
+                                                      WebHtmlElementStrategy
+                                                          .prefer,
+                                                  loadingBuilder: (
+                                                    context,
+                                                    child,
+                                                    loadingProgress,
+                                                  ) {
+                                                    if (loadingProgress ==
+                                                        null) {
+                                                      return child;
+                                                    }
+                                                    final expectedBytes =
+                                                        loadingProgress
+                                                            .expectedTotalBytes;
+                                                    final loadedBytes =
+                                                        loadingProgress
+                                                            .cumulativeBytesLoaded;
+                                                    final progress =
+                                                        expectedBytes == null ||
+                                                            expectedBytes <= 0
+                                                        ? null
+                                                        : loadedBytes /
+                                                              expectedBytes;
+                                                    return Container(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .surfaceContainerHighest,
+                                                      alignment:
+                                                          Alignment.center,
+                                                      child: Text(
+                                                        progress == null
+                                                            ? '0%'
+                                                            : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.bodySmall,
+                                                      ),
+                                                    );
+                                                  },
+                                                  errorBuilder: (
+                                                    context,
+                                                    error,
+                                                    stackTrace,
+                                                  ) {
+                                                    return Container(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .surfaceContainerHighest,
+                                                      alignment:
+                                                          Alignment.center,
+                                                      child: const Text(
+                                                        'Preview unavailable',
+                                                      ),
+                                                    );
+                                                  },
                                                 ),
                                               ),
                                             ),
@@ -2261,118 +2297,6 @@ class _AttachmentUploadItem {
       uploading: uploading ?? this.uploading,
       url: url ?? this.url,
       error: error,
-    );
-  }
-}
-
-class _WebAuthedImagePreview extends StatefulWidget {
-  const _WebAuthedImagePreview({
-    required this.imageUrl,
-    required this.authTokenProvider,
-    required this.width,
-    required this.height,
-    required this.fit,
-    super.key,
-  });
-
-  final String imageUrl;
-  final AuthTokenProvider authTokenProvider;
-  final double width;
-  final double height;
-  final BoxFit fit;
-
-  @override
-  State<_WebAuthedImagePreview> createState() => _WebAuthedImagePreviewState();
-}
-
-class _WebAuthedImagePreviewState extends State<_WebAuthedImagePreview> {
-  Uint8List? _bytes;
-  String? _error;
-  double? _progress;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      if (mounted) {
-        setState(() => _progress = 0);
-      }
-      final token = await widget.authTokenProvider.getBearerToken();
-      final response = await http.get(
-        Uri.parse(widget.imageUrl),
-        headers: <String, String>{
-          'Accept': 'image/*',
-          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
-        },
-      );
-      if (!mounted) return;
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        setState(
-          () => _error = 'Preview unavailable (${response.statusCode})',
-        );
-        return;
-      }
-      final contentType =
-          response.headers['content-type']?.toLowerCase() ?? '';
-      if (!contentType.startsWith('image/')) {
-        setState(
-          () => _error = contentType.isEmpty
-              ? 'Preview unavailable'
-              : 'Preview unavailable ($contentType)',
-        );
-        return;
-      }
-      setState(() {
-        _bytes = response.bodyBytes;
-        _progress = 1;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _error = 'Preview unavailable');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_bytes != null) {
-      return Image.memory(
-        _bytes!,
-        height: widget.height,
-        width: widget.width,
-        fit: widget.fit,
-        errorBuilder: (context, error, stackTrace) => Container(
-          height: widget.height,
-          width: widget.width,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          alignment: Alignment.center,
-          child: const Text('Preview unavailable'),
-        ),
-      );
-    }
-    if (_error != null) {
-      return Container(
-        height: widget.height,
-        width: widget.width,
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        alignment: Alignment.center,
-        child: const Text('Preview unavailable'),
-      );
-    }
-    return Container(
-      height: widget.height,
-      width: widget.width,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      alignment: Alignment.center,
-      child: Text(
-        _progress == null
-            ? '0%'
-            : '${(_progress! * 100).clamp(0, 100).toStringAsFixed(0)}%',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
     );
   }
 }
