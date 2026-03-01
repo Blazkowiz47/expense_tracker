@@ -1,5 +1,6 @@
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
+import 'package:expense_tracker/features/friends/utils/settlement_balance_calculator.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
@@ -67,35 +68,7 @@ class _FriendsPageState extends State<FriendsPage> {
   Future<Map<String, double>> _loadSettlementBalances() async {
     await _expenseRepository.refresh();
     final expenses = _expenseRepository.getExpenses();
-    final netByUid = <String, double>{};
-    for (final expense in expenses) {
-      final category = (expense.category ?? '').trim().toLowerCase();
-      if (category != 'settlement') continue;
-      final meta = _parseSettlementMeta(expense.description ?? '');
-      if (meta == null) continue;
-      final signed = meta.direction == 'received'
-          ? expense.amount
-          : -expense.amount;
-      netByUid.update(
-        meta.uid,
-        (value) => value + signed,
-        ifAbsent: () => signed,
-      );
-    }
-    return netByUid;
-  }
-
-  _SettlementMeta? _parseSettlementMeta(String description) {
-    final match = RegExp(
-      r'\[uid:([^\]]+)\]\[dir:(paid|received)\]',
-    ).firstMatch(description);
-    if (match == null) return null;
-    final uid = (match.group(1) ?? '').trim();
-    final direction = (match.group(2) ?? '').trim();
-    if (uid.isEmpty || (direction != 'paid' && direction != 'received')) {
-      return null;
-    }
-    return _SettlementMeta(uid: uid, direction: direction);
+    return calculateFriendSettlementNetByUid(expenses);
   }
 
   Future<void> _addFriendFlow() async {
@@ -596,12 +569,5 @@ class _SettleUpInput {
   const _SettleUpInput({required this.amount, required this.direction});
 
   final double amount;
-  final String direction;
-}
-
-class _SettlementMeta {
-  const _SettlementMeta({required this.uid, required this.direction});
-
-  final String uid;
   final String direction;
 }
