@@ -784,6 +784,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final amountController = TextEditingController(
       text: initialAmount == null ? '' : initialAmount.toStringAsFixed(2),
     );
+    final previewByteFutures = <String, Future<Uint8List?>>{};
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
@@ -1018,52 +1019,69 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
                                 if (kIsWeb &&
                                     previewable &&
-                                    previewUrl != null) {
+                                    previewUrl != null &&
+                                    expenseId.trim().isNotEmpty) {
+                                  final cacheKey = '${item.id}|$previewUrl';
+                                  final previewFuture = previewByteFutures
+                                      .putIfAbsent(
+                                        cacheKey,
+                                        () => widget.repository
+                                            .fetchAttachmentPreviewBytes(
+                                              groupId: widget.group.id,
+                                              expenseId: expenseId,
+                                              attachmentUrl: previewUrl,
+                                            )
+                                            .then<Uint8List?>((bytes) => bytes)
+                                            .catchError((_) => null),
+                                      );
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      previewUrl,
-                                      key: ValueKey(
-                                        '$previewUrl|attachment-thumb',
-                                      ),
-                                      width: 100,
-                                      height: 140,
-                                      fit: BoxFit.cover,
-                                      loadingBuilder:
-                                          (context, child, loadingProgress) {
-                                            if (loadingProgress == null) {
-                                              return child;
-                                            }
-                                            final expectedBytes =
-                                                loadingProgress
-                                                    .expectedTotalBytes;
-                                            final loadedBytes = loadingProgress
-                                                .cumulativeBytesLoaded;
-                                            final progress =
-                                                expectedBytes == null ||
-                                                    expectedBytes <= 0
-                                                ? null
-                                                : loadedBytes / expectedBytes;
-                                            return Container(
-                                              width: 100,
-                                              height: 140,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .surfaceContainerHighest,
-                                              alignment: Alignment.center,
-                                              child: Text(
-                                                progress == null
-                                                    ? '0%'
-                                                    : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall,
-                                              ),
-                                            );
-                                          },
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              Container(
+                                    child: FutureBuilder<Uint8List?>(
+                                      future: previewFuture,
+                                      builder: (context, snapshot) {
+                                        if (snapshot.connectionState !=
+                                            ConnectionState.done) {
+                                          return Container(
+                                            width: 100,
+                                            height: 140,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              '0%',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
+                                            ),
+                                          );
+                                        }
+                                        final bytes = snapshot.data;
+                                        if (bytes == null || bytes.isEmpty) {
+                                          return Container(
+                                            width: 100,
+                                            height: 140,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                            alignment: Alignment.center,
+                                            child: const Text(
+                                              'Preview unavailable',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          );
+                                        }
+                                        return Image.memory(
+                                          bytes,
+                                          width: 100,
+                                          height: 140,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (
+                                                context,
+                                                error,
+                                                stackTrace,
+                                              ) => Container(
                                                 width: 100,
                                                 height: 140,
                                                 color: Theme.of(context)
@@ -1075,6 +1093,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                                   textAlign: TextAlign.center,
                                                 ),
                                               ),
+                                        );
+                                      },
                                     ),
                                   );
                                 }

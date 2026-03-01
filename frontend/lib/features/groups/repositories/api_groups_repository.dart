@@ -220,6 +220,30 @@ class ApiGroupsRepository {
     return url;
   }
 
+  Future<Uint8List> fetchAttachmentPreviewBytes({
+    required String groupId,
+    required String expenseId,
+    required String attachmentUrl,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/groups/$groupId/expenses/$expenseId/attachments/preview',
+    ).replace(queryParameters: {'url': attachmentUrl});
+    final response = await _client.get(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/octet-stream',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'attachment preview request failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return response.bodyBytes;
+  }
+
   Future<http.Response> _request({
     required String method,
     required String path,
