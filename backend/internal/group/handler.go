@@ -1,6 +1,7 @@
 package group
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,6 +122,14 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) == 5 && parts[1] == "expenses" && parts[3] == "attachments" && parts[4] == "preview" {
+		if r.Method != http.MethodGet {
+			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+			return
+		}
+		h.handleAttachmentPreview(w, r, groupID, parts[2], uid)
+		return
+	}
 	httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
 }
 
@@ -204,6 +213,86 @@ func detectContentType(
 		return http.DetectContentType(sniff[:n])
 	}
 	return "application/octet-stream"
+}
+
+func (h *Handler) handleAttachmentPreview(
+	w http.ResponseWriter,
+	r *http.Request,
+	groupID, expenseID, uid string,
+) {
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+
+	sourceURL := strings.TrimSpace(r.URL.Query().Get("url"))
+	if sourceURL == "" {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "url is required")
+		return
+	}
+	if !(strings.HasPrefix(sourceURL, "http://") || strings.HasPrefix(sourceURL, "https://")) {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "unsupported attachment url")
+		return
+	}
+
+	expenses, err := h.store.ListExpenses(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to list expenses")
+		return
+	}
+	var target *GroupExpense
+	for i := range expenses {
+		if expenses[i].ID == expenseID {
+			target = &expenses[i]
+			break
+		}
+	}
+	if target == nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "expense not found")
+		return
+	}
+	if !slices.Contains(target.Attachments, sourceURL) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "attachment not found for expense")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid attachment url")
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusBadGateway, "BAD_GATEWAY", "failed to fetch attachment")
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		httpapi.WriteError(w, http.StatusBadGateway, "BAD_GATEWAY", "attachment source returned an error")
+		return
+	}
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if contentType := strings.TrimSpace(resp.Header.Get("Content-Type")); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	} else {
+		w.Header().Set("Content-Type", "application/octet-stream")
+	}
+	if cacheControl := strings.TrimSpace(resp.Header.Get("Cache-Control")); cacheControl != "" {
+		w.Header().Set("Cache-Control", cacheControl)
+	}
+	if contentLength := strings.TrimSpace(resp.Header.Get("Content-Length")); contentLength != "" {
+		w.Header().Set("Content-Length", contentLength)
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (h *Handler) handleListMembers(w http.ResponseWriter, r *http.Request, groupID, uid string) {

@@ -1,4 +1,5 @@
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
+import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
@@ -745,6 +746,16 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     );
   }
 
+  String _buildAttachmentPreviewUrl({
+    required String expenseId,
+    required String sourceUrl,
+  }) {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/groups/${widget.group.id}/expenses/$expenseId/attachments/preview',
+    ).replace(queryParameters: {'url': sourceUrl});
+    return uri.toString();
+  }
+
   Future<Map<String, dynamic>?> _showExpenseForm({
     required String title,
     required String expenseId,
@@ -963,6 +974,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 item.url!.isNotEmpty &&
                                 !item.uploading &&
                                 item.error == null;
+                            final previewUrl = previewable && kIsWeb
+                                ? _buildAttachmentPreviewUrl(
+                                    expenseId: expenseId,
+                                    sourceUrl: item.url!,
+                                  )
+                                : item.url;
                             final tile = Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -1002,7 +1019,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                               8,
                                             ),
                                             child: Image.network(
-                                              item.url!,
+                                              previewUrl!,
                                               height: 140,
                                               width: double.infinity,
                                               fit: BoxFit.cover,
