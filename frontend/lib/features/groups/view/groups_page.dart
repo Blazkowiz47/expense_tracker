@@ -775,6 +775,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     String initialSplitMode = 'equally',
     Set<String>? initialSplitWith,
     List<String>? initialAttachments,
+    DateTime? initialDate,
     DateTime? initialUpdatedAt,
     String? initialUpdatedBy,
   }) {
@@ -805,6 +806,52 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             ),
           ),
         ];
+        double? parseAmountInput() {
+          final raw = amountController.text.trim();
+          if (raw.isEmpty) return null;
+          final normalized = raw.replaceAll(RegExp(r'[^0-9\.\-]'), '');
+          return double.tryParse(normalized);
+        }
+
+        Future<bool> persistEditAttachmentChanges() async {
+          if (!isEditing) return true;
+          final messenger = ScaffoldMessenger.maybeOf(context);
+          final description = descriptionController.text.trim();
+          final amount = parseAmountInput();
+          if (expenseId.trim().isEmpty ||
+              description.isEmpty ||
+              amount == null ||
+              amount <= 0) {
+            return false;
+          }
+          final attachments = attachmentItems
+              .where((item) => !item.uploading && item.url != null)
+              .map((item) => item.url!)
+              .toList(growable: false);
+          try {
+            await widget.repository.updateExpense(
+              groupId: widget.group.id,
+              expenseId: expenseId,
+              description: description,
+              paidBy: paidBy,
+              splitMode: splitMode,
+              splitWith: selected.toList(growable: false),
+              amount: amount,
+              attachments: attachments,
+              date: initialDate ?? DateTime.now(),
+            );
+            return true;
+          } catch (error) {
+            messenger?.showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Attachment uploaded but failed to save link: $error',
+                ),
+              ),
+            );
+            return false;
+          }
+        }
 
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -1210,12 +1257,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           ),
                                         ),
                                         InkWell(
-                                          onTap: () {
+                                          onTap: () async {
                                             setDialogState(
                                               () => attachmentItems.removeAt(
                                                 index,
                                               ),
                                             );
+                                            if (isEditing) {
+                                              await persistEditAttachmentChanges();
+                                            }
                                           },
                                           child: const Padding(
                                             padding: EdgeInsets.all(4),
@@ -1362,6 +1412,24 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         );
                                   }
                                 });
+                                if (isEditing) {
+                                  final linked =
+                                      await persistEditAttachmentChanges();
+                                  if (!linked) {
+                                    setDialogState(() {
+                                      final idx = attachmentItems.indexWhere(
+                                        (it) => it.id == itemId,
+                                      );
+                                      if (idx >= 0) {
+                                        attachmentItems[idx] =
+                                            attachmentItems[idx].copyWith(
+                                              error:
+                                                  'Uploaded but not linked yet.',
+                                            );
+                                      }
+                                    });
+                                  }
+                                }
                               } catch (error) {
                                 setDialogState(() {
                                   final idx = attachmentItems.indexWhere(
@@ -1479,6 +1547,24 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       );
                                 }
                               });
+                              if (isEditing) {
+                                final linked =
+                                    await persistEditAttachmentChanges();
+                                if (!linked) {
+                                  setDialogState(() {
+                                    final idx = attachmentItems.indexWhere(
+                                      (it) => it.id == itemId,
+                                    );
+                                    if (idx >= 0) {
+                                      attachmentItems[idx] =
+                                          attachmentItems[idx].copyWith(
+                                            error:
+                                                'Uploaded but not linked yet.',
+                                          );
+                                    }
+                                  });
+                                }
+                              }
                             } catch (error) {
                               setDialogState(() {
                                 final idx = attachmentItems.indexWhere(
@@ -1512,6 +1598,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 ),
                               );
                             });
+                            if (isEditing) {
+                              await persistEditAttachmentChanges();
+                            }
                           },
                         ),
                       ],
@@ -1696,6 +1785,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       isEditing: true,
       initialDescription: expense.description,
       initialAmount: expense.amount,
+      initialDate: expense.date,
       initialPaidBy: _resolvePayerLabel(expense.paidBy, participants),
       initialSplitMode: expense.splitMode.isNotEmpty
           ? expense.splitMode
