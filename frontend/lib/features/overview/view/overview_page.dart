@@ -328,6 +328,111 @@ class _RecurringOverviewCardState extends State<_RecurringOverviewCard> {
     }
   }
 
+  Future<void> _createTemplate() async {
+    final titleController = TextEditingController();
+    final amountController = TextEditingController();
+    final categoryController = TextEditingController(text: 'Utilities');
+    String selectedFrequency = 'monthly';
+    final payload = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add recurring template'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: titleController,
+                  decoration: const InputDecoration(labelText: 'Title'),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Amount',
+                    prefixText: 'INR ',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: categoryController,
+                  decoration: const InputDecoration(labelText: 'Category'),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedFrequency,
+                  decoration: const InputDecoration(labelText: 'Frequency'),
+                  items: const [
+                    DropdownMenuItem(value: 'daily', child: Text('Daily')),
+                    DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
+                    DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() => selectedFrequency = value);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(<String, dynamic>{
+                'title': titleController.text.trim(),
+                'amount': double.tryParse(amountController.text.trim()),
+                'category': categoryController.text.trim(),
+                'frequency': selectedFrequency,
+              }),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (payload == null) return;
+    final title = (payload['title'] as String?) ?? '';
+    final category = (payload['category'] as String?) ?? '';
+    final frequency = (payload['frequency'] as String?) ?? 'monthly';
+    final amount = payload['amount'] as double?;
+    if (title.isEmpty || category.isEmpty || amount == null || amount <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter valid title, category and positive amount.'),
+        ),
+      );
+      return;
+    }
+    try {
+      await _repository.createTemplate(
+        title: title,
+        amount: amount,
+        category: category,
+        frequency: frequency,
+        startDate: DateTime.now(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Recurring template created.')),
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     String subtitle = 'Track recurring payments like rent or subscriptions.';
@@ -354,7 +459,16 @@ class _RecurringOverviewCardState extends State<_RecurringOverviewCard> {
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : TextButton(onPressed: _load, child: const Text('Refresh')),
+            : Wrap(
+                spacing: 8,
+                children: [
+                  TextButton(onPressed: _load, child: const Text('Refresh')),
+                  FilledButton.tonal(
+                    onPressed: _createTemplate,
+                    child: const Text('Add'),
+                  ),
+                ],
+              ),
       ),
     );
   }

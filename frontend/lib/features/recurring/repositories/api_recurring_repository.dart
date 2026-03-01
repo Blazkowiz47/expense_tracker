@@ -38,4 +38,37 @@ class ApiRecurringRepository {
         .toList(growable: false);
     return templates;
   }
+
+  Future<RecurringTemplate> createTemplate({
+    required String title,
+    required double amount,
+    required String category,
+    required String frequency,
+    required DateTime startDate,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/recurring/templates');
+    final response = await _client.post(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(<String, dynamic>{
+        'title': title,
+        'amount': amount,
+        'category': category,
+        'frequency': frequency,
+        'startDate': startDate.toUtc().toIso8601String(),
+      }),
+    );
+    if (response.statusCode != 201) {
+      throw Exception(
+        'create recurring template failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return RecurringTemplate.fromJson(payload);
+  }
 }

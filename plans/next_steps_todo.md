@@ -26,5 +26,5 @@
 ## Current item: 2) Recurring expenses
 - `[x]` Add backend recurring templates API (`GET/POST /api/v1/recurring/templates`).
 - `[x]` Add overview recurring summary card wired to backend API.
-- `[ ]` Add create recurring template UI (title, amount, frequency, start date).
+- `[x]` Add create recurring template UI (title, amount, frequency, start date).
 - `[ ]` Generate due personal expenses from templates (backend processor).
