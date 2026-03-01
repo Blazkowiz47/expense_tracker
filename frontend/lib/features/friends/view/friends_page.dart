@@ -8,14 +8,23 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 class FriendsPage extends StatefulWidget {
-  const FriendsPage({super.key});
+  const FriendsPage({
+    super.key,
+    this.friendsRepository,
+    this.expenseRepository,
+    this.client,
+  });
+
+  final ApiFriendsRepository? friendsRepository;
+  final ExpenseRepository? expenseRepository;
+  final http.Client? client;
 
   @override
   State<FriendsPage> createState() => _FriendsPageState();
 }
 
 class _FriendsPageState extends State<FriendsPage> {
-  late final http.Client _client;
+  http.Client? _ownedClient;
   late final ApiFriendsRepository _repository;
   late final ExpenseRepository _expenseRepository;
 
@@ -30,15 +39,31 @@ class _FriendsPageState extends State<FriendsPage> {
   @override
   void initState() {
     super.initState();
-    _client = http.Client();
-    _repository = ApiFriendsRepository(client: _client);
-    _expenseRepository = ExpenseRepository(client: _client);
+    if (widget.friendsRepository != null && widget.expenseRepository != null) {
+      _repository = widget.friendsRepository!;
+      _expenseRepository = widget.expenseRepository!;
+    } else {
+      final client = widget.client ?? http.Client();
+      if (widget.client == null) {
+        _ownedClient = client;
+      }
+      _repository =
+          widget.friendsRepository ?? ApiFriendsRepository(client: client);
+      _expenseRepository =
+          widget.expenseRepository ?? ExpenseRepository(client: client);
+    }
     _loadFriends();
   }
 
   @override
   void dispose() {
-    _client.close();
+    if (_ownedClient != null) {
+      if (widget.expenseRepository == null) {
+        _expenseRepository.dispose();
+      } else {
+        _ownedClient!.close();
+      }
+    }
     super.dispose();
   }
 

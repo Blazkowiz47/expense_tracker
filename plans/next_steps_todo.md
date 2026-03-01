@@ -21,4 +21,4 @@
 - `[x]` Reflect settlement in friend-level owed/owe aggregates.
 - `[x]` Add settle-up actions from group settings/member cards.
 - `[x]` Add unit tests for settlement parsing and net-balance aggregation.
-- `[ ]` Add integration tests for settle-up state transitions.
+- `[x]` Add integration tests for settle-up state transitions.
