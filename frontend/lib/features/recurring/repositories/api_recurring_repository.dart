@@ -71,4 +71,23 @@ class ApiRecurringRepository {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     return RecurringTemplate.fromJson(payload);
   }
+
+  Future<int> processDueTemplates() async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/recurring/process-due');
+    final response = await _client.post(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'process due recurring templates failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return (payload['created'] as num?)?.toInt() ?? 0;
+  }
 }

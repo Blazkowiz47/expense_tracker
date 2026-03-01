@@ -47,3 +47,18 @@ func (s *InMemoryStore) ListByUser(_ context.Context, uid string) ([]Template, e
 	})
 	return out, nil
 }
+
+func (s *InMemoryStore) Update(_ context.Context, template Template) (Template, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items := s.items[template.UID]
+	for index := range items {
+		if items[index].ID == template.ID {
+			items[index] = template
+			s.items[template.UID] = items
+			return template, nil
+		}
+	}
+	return Template{}, ErrNotFound
+}

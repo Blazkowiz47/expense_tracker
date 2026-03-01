@@ -46,7 +46,7 @@ func setupTestServer(store friend.Store) http.Handler {
 	groupStore := group.NewInMemoryStore()
 	groupHandler := group.NewHandler(groupStore, store, nil)
 	verifier := auth.NewStaticVerifier(map[string]string{"dev-token": "uid-1"})
-	recurringHandler := recurring.NewHandler(recurring.NewInMemoryStore())
+	recurringHandler := recurring.NewHandler(recurring.NewInMemoryStore(), expenseSvc)
 	return server.NewRouter(verifier, expenseHandler, friendHandler, groupHandler, recurringHandler)
 }
 

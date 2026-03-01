@@ -293,6 +293,7 @@ class _RecurringOverviewCardState extends State<_RecurringOverviewCard> {
   late final ApiRecurringRepository _repository;
   List<RecurringTemplate> _templates = const [];
   bool _loading = true;
+  bool _processingDue = false;
   String? _error;
 
   @override
@@ -433,6 +434,28 @@ class _RecurringOverviewCardState extends State<_RecurringOverviewCard> {
     }
   }
 
+  Future<void> _processDue() async {
+    if (_processingDue) return;
+    setState(() => _processingDue = true);
+    try {
+      final created = await _repository.processDueTemplates();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Generated $created due expense(s).')),
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _processingDue = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     String subtitle = 'Track recurring payments like rent or subscriptions.';
@@ -453,7 +476,7 @@ class _RecurringOverviewCardState extends State<_RecurringOverviewCard> {
       child: ListTile(
         title: const Text('Recurring payments'),
         subtitle: Text(subtitle),
-        trailing: _loading
+        trailing: _loading || _processingDue
             ? const SizedBox(
                 width: 18,
                 height: 18,
@@ -463,6 +486,10 @@ class _RecurringOverviewCardState extends State<_RecurringOverviewCard> {
                 spacing: 8,
                 children: [
                   TextButton(onPressed: _load, child: const Text('Refresh')),
+                  OutlinedButton(
+                    onPressed: _processDue,
+                    child: const Text('Process due'),
+                  ),
                   FilledButton.tonal(
                     onPressed: _createTemplate,
                     child: const Text('Add'),

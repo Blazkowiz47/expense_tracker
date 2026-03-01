@@ -89,7 +89,7 @@ func main() {
 		attachmentUploader = firebaseUploader
 	}
 	groupHandler := group.NewHandler(groupStore, friendStore, attachmentUploader)
-	recurringHandler := recurring.NewHandler(recurring.NewInMemoryStore())
+	recurringHandler := recurring.NewHandler(recurring.NewInMemoryStore(), service)
 
 	var verifier auth.Verifier
 	switch cfg.AuthMode {

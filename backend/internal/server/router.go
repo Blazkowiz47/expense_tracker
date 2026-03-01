@@ -65,6 +65,7 @@ func NewRouter(
 	mux.Handle("/api/v1/groups", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupsCollection)))
 	mux.Handle("/api/v1/groups/", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupByID)))
 	mux.Handle("/api/v1/recurring/templates", middleware.RequireAuth(verifier, http.HandlerFunc(recurringHandler.TemplatesCollection)))
+	mux.Handle("/api/v1/recurring/process-due", middleware.RequireAuth(verifier, http.HandlerFunc(recurringHandler.ProcessDue)))
 
 	return middleware.CORS(mux)
 }

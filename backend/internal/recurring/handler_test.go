@@ -17,10 +17,11 @@ import (
 
 func setupRouter() http.Handler {
 	verifier := auth.NewStaticVerifier(map[string]string{"test-token": "user-1"})
-	expenseHandler := expense.NewHandler(expense.NewService(expense.NewInMemoryRepository()))
+	expenseService := expense.NewService(expense.NewInMemoryRepository())
+	expenseHandler := expense.NewHandler(expenseService)
 	friendHandler := friend.NewHandler(friend.NewInMemoryStore())
 	groupHandler := group.NewHandler(group.NewInMemoryStore(), friend.NewInMemoryStore(), nil)
-	recurringHandler := recurring.NewHandler(recurring.NewInMemoryStore())
+	recurringHandler := recurring.NewHandler(recurring.NewInMemoryStore(), expenseService)
 	return server.NewRouter(verifier, expenseHandler, friendHandler, groupHandler, recurringHandler)
 }
 
@@ -32,7 +33,7 @@ func TestCreateAndListTemplates(t *testing.T) {
 		"amount":    499.0,
 		"category":  "Utilities",
 		"frequency": "monthly",
-		"startDate": "2026-03-01T00:00:00Z",
+		"startDate": "2025-01-01T00:00:00Z",
 	}
 	raw, _ := json.Marshal(payload)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/recurring/templates", bytes.NewReader(raw))
@@ -57,5 +58,27 @@ func TestCreateAndListTemplates(t *testing.T) {
 	templates, ok := response["templates"].([]any)
 	if !ok || len(templates) != 1 {
 		t.Fatalf("expected one template got %#v", response["templates"])
+	}
+
+	processReq := httptest.NewRequest(http.MethodPost, "/api/v1/recurring/process-due", nil)
+	processReq.Header.Set("Authorization", "Bearer test-token")
+	processRR := httptest.NewRecorder()
+	router.ServeHTTP(processRR, processReq)
+	if processRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d body=%s", processRR.Code, processRR.Body.String())
+	}
+
+	expenseReq := httptest.NewRequest(http.MethodGet, "/api/v1/expenses?page=1&limit=50", nil)
+	expenseReq.Header.Set("Authorization", "Bearer test-token")
+	expenseRR := httptest.NewRecorder()
+	router.ServeHTTP(expenseRR, expenseReq)
+	if expenseRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d body=%s", expenseRR.Code, expenseRR.Body.String())
+	}
+	var expensePayload map[string]any
+	_ = json.Unmarshal(expenseRR.Body.Bytes(), &expensePayload)
+	expenses, ok := expensePayload["expenses"].([]any)
+	if !ok || len(expenses) != 1 {
+		t.Fatalf("expected one generated expense got %#v", expensePayload["expenses"])
 	}
 }

@@ -1,6 +1,7 @@
 package recurring
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -9,21 +10,28 @@ import (
 	"strings"
 	"time"
 
+	"expense_tracker_backend/internal/expense"
 	"expense_tracker_backend/internal/httpapi"
 	"expense_tracker_backend/internal/middleware"
 )
 
-type Handler struct {
-	store Store
-	now   func() time.Time
-	idGen func() string
+type ExpenseCreator interface {
+	Create(ctx context.Context, uid string, input expense.CreateExpenseInput) (expense.Expense, error)
 }
 
-func NewHandler(store Store) *Handler {
+type Handler struct {
+	store          Store
+	expenseCreator ExpenseCreator
+	now            func() time.Time
+	idGen          func() string
+}
+
+func NewHandler(store Store, expenseCreator ExpenseCreator) *Handler {
 	return &Handler{
-		store: store,
-		now:   func() time.Time { return time.Now().UTC() },
-		idGen: defaultIDGen,
+		store:          store,
+		expenseCreator: expenseCreator,
+		now:            func() time.Time { return time.Now().UTC() },
+		idGen:          defaultIDGen,
 	}
 }
 
@@ -52,6 +60,52 @@ func (h *Handler) TemplatesCollection(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
 	}
+}
+
+func (h *Handler) ProcessDue(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+		return
+	}
+	uid, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || uid == "" {
+		httpapi.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user missing from context")
+		return
+	}
+	if h.expenseCreator == nil {
+		httpapi.WriteError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "expense creator unavailable")
+		return
+	}
+	items, err := h.store.ListByUser(r.Context(), uid)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to list recurring templates")
+		return
+	}
+	now := h.now()
+	createdCount := 0
+	for _, template := range items {
+		if !template.Active || template.NextDueDate.After(now) {
+			continue
+		}
+		_, err := h.expenseCreator.Create(r.Context(), uid, expense.CreateExpenseInput{
+			Amount:      template.Amount,
+			Category:    template.Category,
+			Description: "Recurring: " + template.Title,
+			Date:        template.NextDueDate,
+		})
+		if err != nil {
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to create due recurring expense")
+			return
+		}
+		template.NextDueDate = computeNextDue(template.NextDueDate, template.Frequency)
+		template.UpdatedAt = now
+		if _, err := h.store.Update(r.Context(), template); err != nil {
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to update recurring template")
+			return
+		}
+		createdCount++
+	}
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"created": createdCount})
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
