@@ -43,7 +43,7 @@ func setupTestServer(store friend.Store) http.Handler {
 
 	friendHandler := friend.NewHandler(store)
 	groupStore := group.NewInMemoryStore()
-	groupHandler := group.NewHandler(groupStore, store)
+	groupHandler := group.NewHandler(groupStore, store, nil)
 	verifier := auth.NewStaticVerifier(map[string]string{"dev-token": "uid-1"})
 	return server.NewRouter(verifier, expenseHandler, friendHandler, groupHandler)
 }

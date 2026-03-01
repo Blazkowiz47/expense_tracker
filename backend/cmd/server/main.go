@@ -73,7 +73,21 @@ func main() {
 		groupStore = firestoreGroupStore
 		groupBackend = "firestore"
 	}
-	groupHandler := group.NewHandler(groupStore, friendStore)
+	var attachmentUploader group.AttachmentUploader
+	if cfg.FirebaseProjectID != "" {
+		firebaseUploader, err := group.NewFirebaseAttachmentUploader(
+			context.Background(),
+			cfg.FirebaseProjectID,
+			cfg.FirebaseCredentialsFile,
+			cfg.FirebaseStorageBucket,
+		)
+		if err != nil {
+			log.Fatalf("group firebase storage uploader initialization failed: %v", err)
+		}
+		defer firebaseUploader.Close()
+		attachmentUploader = firebaseUploader
+	}
+	groupHandler := group.NewHandler(groupStore, friendStore, attachmentUploader)
 
 	var verifier auth.Verifier
 	switch cfg.AuthMode {

@@ -10,6 +10,8 @@ import 'package:expense_tracker/features/groups/utils/group_balance_calculator.d
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 
 class GroupsPage extends StatefulWidget {
   const GroupsPage({super.key});
@@ -709,6 +711,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         final selected = {...(initialSplitWith ?? participants)};
         var splitWithAll = selected.length == participants.length;
         final attachments = [...?initialAttachments];
+        var attachmentUploadError = '';
+        var uploadingAttachment = false;
 
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -866,6 +870,98 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           ),
                         ),
                         ActionChip(
+                          avatar: const Icon(
+                            Icons.photo_library_outlined,
+                            size: 16,
+                          ),
+                          label: const Text('Gallery'),
+                          onPressed: uploadingAttachment
+                              ? null
+                              : () async {
+                                  final picker = ImagePicker();
+                                  final picked = await picker.pickImage(
+                                    source: ImageSource.gallery,
+                                    imageQuality: 85,
+                                  );
+                                  if (picked == null) return;
+                                  try {
+                                    setDialogState(() {
+                                      uploadingAttachment = true;
+                                      attachmentUploadError = '';
+                                    });
+                                    final bytes = await picked.readAsBytes();
+                                    final mimeType =
+                                        lookupMimeType(
+                                          picked.name,
+                                          headerBytes: bytes,
+                                        ) ??
+                                        'image/jpeg';
+                                    final url = await widget.repository
+                                        .uploadAttachment(
+                                          groupId: widget.group.id,
+                                          bytes: bytes,
+                                          fileName: picked.name,
+                                          contentType: mimeType,
+                                        );
+                                    setDialogState(() {
+                                      attachments.add(url);
+                                      uploadingAttachment = false;
+                                    });
+                                  } catch (error) {
+                                    setDialogState(() {
+                                      uploadingAttachment = false;
+                                      attachmentUploadError = error.toString();
+                                    });
+                                  }
+                                },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(
+                            Icons.photo_camera_outlined,
+                            size: 16,
+                          ),
+                          label: const Text('Camera'),
+                          onPressed: uploadingAttachment
+                              ? null
+                              : () async {
+                                  final picker = ImagePicker();
+                                  final picked = await picker.pickImage(
+                                    source: ImageSource.camera,
+                                    imageQuality: 85,
+                                  );
+                                  if (picked == null) return;
+                                  try {
+                                    setDialogState(() {
+                                      uploadingAttachment = true;
+                                      attachmentUploadError = '';
+                                    });
+                                    final bytes = await picked.readAsBytes();
+                                    final mimeType =
+                                        lookupMimeType(
+                                          picked.name,
+                                          headerBytes: bytes,
+                                        ) ??
+                                        'image/jpeg';
+                                    final url = await widget.repository
+                                        .uploadAttachment(
+                                          groupId: widget.group.id,
+                                          bytes: bytes,
+                                          fileName: picked.name,
+                                          contentType: mimeType,
+                                        );
+                                    setDialogState(() {
+                                      attachments.add(url);
+                                      uploadingAttachment = false;
+                                    });
+                                  } catch (error) {
+                                    setDialogState(() {
+                                      uploadingAttachment = false;
+                                      attachmentUploadError = error.toString();
+                                    });
+                                  }
+                                },
+                        ),
+                        ActionChip(
                           avatar: const Icon(Icons.attach_file, size: 16),
                           label: const Text('Add URL'),
                           onPressed: () async {
@@ -876,6 +972,20 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         ),
                       ],
                     ),
+                    if (uploadingAttachment) ...[
+                      const SizedBox(height: 8),
+                      const LinearProgressIndicator(minHeight: 2),
+                    ],
+                    if (attachmentUploadError.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        attachmentUploadError,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

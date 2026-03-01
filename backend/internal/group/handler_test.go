@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"testing"
 
 	"expense_tracker_backend/internal/auth"
@@ -15,7 +17,7 @@ import (
 
 func setupTestServer(friendStore friend.Store) http.Handler {
 	verifier := auth.NewStaticVerifier(map[string]string{"test-token": "user-1"})
-	groupHandler := NewHandler(NewInMemoryStore(), friendStore)
+	groupHandler := NewHandler(NewInMemoryStore(), friendStore, &fakeAttachmentUploader{})
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/groups", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupsCollection)))
 	mux.Handle("/api/v1/groups/", middleware.RequireAuth(verifier, http.HandlerFunc(groupHandler.GroupByID)))
@@ -285,6 +287,41 @@ func TestUpdateGroupExpense(t *testing.T) {
 	}
 }
 
+func TestUploadGroupAttachment(t *testing.T) {
+	router := setupTestServer(&fakeFriendStore{})
+	createPayload := map[string]any{"name": "Trip", "groupType": "split"}
+	b, _ := json.Marshal(createPayload)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", bytes.NewReader(b))
+	createReq.Header.Set("Authorization", "Bearer test-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createRR.Code, createRR.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(createRR.Body.Bytes(), &created)
+	groupID, _ := created["id"].(string)
+
+	var payload bytes.Buffer
+	writer := multipart.NewWriter(&payload)
+	headers := make(textproto.MIMEHeader)
+	headers.Set("Content-Disposition", `form-data; name="file"; filename="bill.png"`)
+	headers.Set("Content-Type", "image/png")
+	part, _ := writer.CreatePart(headers)
+	_, _ = part.Write([]byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a})
+	_ = writer.Close()
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/attachments", &payload)
+	uploadReq.Header.Set("Authorization", "Bearer test-token")
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadRR := httptest.NewRecorder()
+	router.ServeHTTP(uploadRR, uploadReq)
+	if uploadRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", uploadRR.Code, uploadRR.Body.String())
+	}
+}
+
 func TestListGroupMembers(t *testing.T) {
 	router := setupTestServer(&fakeFriendStore{})
 	createPayload := map[string]any{"name": "Trip", "groupType": "split"}
@@ -313,6 +350,12 @@ func TestListGroupMembers(t *testing.T) {
 type fakeFriendStore struct {
 	resolvedByContact map[string]friend.ResolveResult
 	addedPairs        [][2]string
+}
+
+type fakeAttachmentUploader struct{}
+
+func (f *fakeAttachmentUploader) UploadGroupAttachment(_ context.Context, input AttachmentUploadInput) (string, error) {
+	return "https://example.com/groups/" + input.GroupID + "/file.jpg", nil
 }
 
 func (f *fakeFriendStore) ResolveByEmailOrPhone(_ context.Context, query string) (friend.ResolveResult, error) {

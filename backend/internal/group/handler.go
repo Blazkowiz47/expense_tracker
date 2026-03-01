@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"slices"
 	"strconv"
@@ -19,12 +21,18 @@ import (
 type Handler struct {
 	store       Store
 	friendStore friend.Store
+	uploader    AttachmentUploader
 }
 
-func NewHandler(store Store, friendStore friend.Store) *Handler {
+func NewHandler(
+	store Store,
+	friendStore friend.Store,
+	uploader AttachmentUploader,
+) *Handler {
 	return &Handler{
 		store:       store,
 		friendStore: friendStore,
+		uploader:    uploader,
 	}
 }
 
@@ -92,6 +100,15 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) == 2 && parts[1] == "attachments" {
+		switch r.Method {
+		case http.MethodPost:
+			h.handleUploadAttachment(w, r, groupID, uid)
+		default:
+			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+		}
+		return
+	}
 	if len(parts) == 3 && parts[1] == "expenses" {
 		expenseID := parts[2]
 		switch r.Method {
@@ -103,6 +120,82 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "route not found")
+}
+
+func (h *Handler) handleUploadAttachment(
+	w http.ResponseWriter,
+	r *http.Request,
+	groupID, uid string,
+) {
+	if h.uploader == nil {
+		httpapi.WriteError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "attachment uploads are unavailable")
+		return
+	}
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid multipart payload")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "file is required")
+		return
+	}
+	defer file.Close()
+	contentType := detectContentType(header, file)
+	if !strings.HasPrefix(contentType, "image/") {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "only image attachments are supported")
+		return
+	}
+	raw, err := io.ReadAll(file)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to read uploaded file")
+		return
+	}
+	if len(raw) == 0 {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "uploaded file is empty")
+		return
+	}
+	downloadURL, err := h.uploader.UploadGroupAttachment(r.Context(), AttachmentUploadInput{
+		GroupID:     groupID,
+		UploaderUID: uid,
+		FileName:    header.Filename,
+		ContentType: contentType,
+		Bytes:       raw,
+	})
+	if err != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", fmt.Sprintf("failed to upload attachment: %v", err))
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusCreated, map[string]any{"url": downloadURL})
+}
+
+func detectContentType(
+	header *multipart.FileHeader,
+	file multipart.File,
+) string {
+	if header != nil {
+		if header.Header != nil {
+			if contentType := strings.TrimSpace(header.Header.Get("Content-Type")); contentType != "" {
+				return contentType
+			}
+		}
+	}
+	sniff := make([]byte, 512)
+	n, _ := file.Read(sniff)
+	_, _ = file.Seek(0, io.SeekStart)
+	if n > 0 {
+		return http.DetectContentType(sniff[:n])
+	}
+	return "application/octet-stream"
 }
 
 func (h *Handler) handleListMembers(w http.ResponseWriter, r *http.Request, groupID, uid string) {

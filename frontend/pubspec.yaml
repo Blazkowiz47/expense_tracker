@@ -43,12 +43,16 @@ dependencies:
   json_annotation: ^4.9.0
   firebase_core: ^4.2.1
   firebase_auth: ^6.1.2
+  google_sign_in: ^7.2.0
   cloud_firestore: ^6.1.0
   firebase_storage: ^13.0.4
   firebase_crashlytics: ^5.0.4
   http: ^1.2.2
+  http_parser: ^4.0.2
   hydrated_bloc: ^10.1.1
   path_provider: ^2.1.4
+  image_picker: ^1.1.2
+  mime: ^2.0.0
 
   # Local Storage
   hive: ^2.2.3

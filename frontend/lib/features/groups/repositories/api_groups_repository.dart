@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
@@ -7,6 +8,7 @@ import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 class ApiGroupsRepository {
   ApiGroupsRepository({
@@ -141,6 +143,43 @@ class ApiGroupsRepository {
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     return GroupExpense.fromJson(payload);
+  }
+
+  Future<String> uploadAttachment({
+    required String groupId,
+    required Uint8List bytes,
+    required String fileName,
+    required String contentType,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/groups/$groupId/attachments',
+    );
+    final mediaType = MediaType.parse(contentType);
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept'] = 'application/json'
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: fileName,
+          contentType: mediaType,
+        ),
+      );
+    final streamed = await request.send().timeout(const Duration(seconds: 30));
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'attachment upload failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final url = (payload['url'] as String?) ?? '';
+    if (url.isEmpty) {
+      throw Exception('attachment upload returned empty url');
+    }
+    return url;
   }
 
   Future<http.Response> _request({
