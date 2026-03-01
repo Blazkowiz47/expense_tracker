@@ -115,9 +115,8 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   @override
   Widget build(BuildContext context) {
-    final accountPhotoUrl = context.select(
-      (AuthCubit cubit) => cubit.state.user?.photoURL,
-    );
+    final authCubit = BlocProvider.maybeOf<AuthCubit>(context);
+    final accountPhotoUrl = authCubit?.state.user?.photoURL;
     return BlocProvider.value(
       value: _dashboardCubit,
       child: SmartSelectionArea(
