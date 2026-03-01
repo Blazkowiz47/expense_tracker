@@ -268,6 +268,7 @@ func (h *Handler) handleAttachmentPreview(
 		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid attachment url")
 		return
 	}
+	req.Header.Set("Accept-Encoding", "identity")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		httpapi.WriteError(w, http.StatusBadGateway, "BAD_GATEWAY", "failed to fetch attachment")
@@ -287,9 +288,6 @@ func (h *Handler) handleAttachmentPreview(
 	}
 	if cacheControl := strings.TrimSpace(resp.Header.Get("Cache-Control")); cacheControl != "" {
 		w.Header().Set("Cache-Control", cacheControl)
-	}
-	if contentLength := strings.TrimSpace(resp.Header.Get("Content-Length")); contentLength != "" {
-		w.Header().Set("Content-Length", contentLength)
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, resp.Body)

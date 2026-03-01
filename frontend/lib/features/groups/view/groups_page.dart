@@ -1036,18 +1036,24 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         if (kIsWeb && previewable) ...[
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            child: _WebAuthedImagePreview(
-                                              key: ValueKey(previewUrl),
-                                              imageUrl: previewUrl!,
-                                              authTokenProvider:
-                                                  _authTokenProvider,
+                                          Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: SizedBox(
                                               width: 110,
                                               height: 170,
-                                              fit: BoxFit.cover,
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                child: _WebAuthedImagePreview(
+                                                  key: ValueKey(previewUrl),
+                                                  imageUrl: previewUrl!,
+                                                  authTokenProvider:
+                                                      _authTokenProvider,
+                                                  width: 110,
+                                                  height: 170,
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                           const SizedBox(height: 8),
@@ -2336,6 +2342,13 @@ class _WebAuthedImagePreviewState extends State<_WebAuthedImagePreview> {
         height: widget.height,
         width: widget.width,
         fit: widget.fit,
+        errorBuilder: (context, error, stackTrace) => Container(
+          height: widget.height,
+          width: widget.width,
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          alignment: Alignment.center,
+          child: const Text('Preview unavailable'),
+        ),
       );
     }
     if (_error != null) {
