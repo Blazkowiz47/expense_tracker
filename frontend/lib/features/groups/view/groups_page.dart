@@ -1028,8 +1028,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         '$previewUrl|attachment-thumb-web',
                                       ),
                                       gaplessPlayback: true,
-                                      webHtmlElementStrategy:
-                                          WebHtmlElementStrategy.prefer,
                                       width: 100,
                                       height: 140,
                                       fit: BoxFit.cover,
@@ -1038,6 +1036,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                             if (loadingProgress == null) {
                                               return child;
                                             }
+                                            final expected = loadingProgress
+                                                .expectedTotalBytes;
+                                            final transferred = loadingProgress
+                                                .cumulativeBytesLoaded;
+                                            final progress =
+                                                expected == null ||
+                                                    expected <= 0
+                                                ? null
+                                                : transferred / expected;
                                             return Container(
                                               width: 100,
                                               height: 140,
@@ -1045,11 +1052,14 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                                   .colorScheme
                                                   .surfaceContainerHighest,
                                               alignment: Alignment.center,
-                                              child: Text(
-                                                'Loading...',
-                                                style: Theme.of(
-                                                  context,
-                                                ).textTheme.bodySmall,
+                                              child: SizedBox(
+                                                width: 24,
+                                                height: 24,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2.2,
+                                                      value: progress,
+                                                    ),
                                               ),
                                             );
                                           },
@@ -1287,6 +1297,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           progress: 1,
                                           url: url,
                                           error: null,
+                                          localPreviewBytes: bytes,
                                           pendingUploadBytes: null,
                                         );
                                   }
@@ -1404,6 +1415,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         progress: 1,
                                         url: url,
                                         error: null,
+                                        localPreviewBytes: bytes,
                                         pendingUploadBytes: null,
                                       );
                                 }
