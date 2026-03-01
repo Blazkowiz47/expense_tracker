@@ -9,6 +9,11 @@ class ApiConfig {
     defaultValue: 'dev-token',
   );
 
+  static const String authMode = String.fromEnvironment(
+    'AUTH_MODE',
+    defaultValue: 'dev',
+  );
+
   static const String accountName = String.fromEnvironment(
     'ACCOUNT_NAME',
     defaultValue: 'Local User',

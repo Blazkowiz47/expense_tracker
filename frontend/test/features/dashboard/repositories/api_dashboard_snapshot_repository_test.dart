@@ -1,12 +1,23 @@
+import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_snapshot_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+class _FakeAuthTokenProvider implements AuthTokenProvider {
+  const _FakeAuthTokenProvider(this.token);
+
+  final String token;
+
+  @override
+  Future<String> getBearerToken() async => token;
+}
+
 void main() {
   test('maps backend snapshot payload into dashboard snapshot', () async {
     final client = MockClient((request) async {
       if (request.url.path.endsWith('/api/v1/dashboard/snapshot')) {
+        expect(request.headers['authorization'], 'Bearer firebase-id-token');
         return http.Response(
           '{"overallLabel":"Overall, you are owed","overallAmountText":"INR 113.33","overallPositive":true,"friendItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"groupItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"activityItems":[{"title":"Groceries 1","subtitle":"2026-02-24T11:00:00Z","amountText":"You owe INR 50.00","positive":false}],"accountName":"Local User","accountEmail":"uid-1@local"}',
           200,
@@ -15,7 +26,10 @@ void main() {
       return http.Response('not found', 404);
     });
 
-    final repository = ApiDashboardSnapshotRepository(client: client);
+    final repository = ApiDashboardSnapshotRepository(
+      client: client,
+      authTokenProvider: const _FakeAuthTokenProvider('firebase-id-token'),
+    );
     final snapshot = await repository.fetchSnapshot();
 
     expect(snapshot.overallLabel, 'Overall, you are owed');
