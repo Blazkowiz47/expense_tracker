@@ -1022,61 +1022,52 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     previewUrl != null) {
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      previewUrl,
-                                      key: ValueKey(
-                                        '$previewUrl|attachment-thumb-web',
-                                      ),
-                                      gaplessPlayback: true,
+                                    child: SizedBox(
                                       width: 100,
                                       height: 140,
-                                      fit: BoxFit.cover,
-                                      loadingBuilder:
-                                          (context, child, loadingProgress) {
-                                            if (loadingProgress == null) {
-                                              return child;
-                                            }
-                                            final expected = loadingProgress
-                                                .expectedTotalBytes;
-                                            final transferred = loadingProgress
-                                                .cumulativeBytesLoaded;
-                                            final progress =
-                                                expected == null ||
-                                                    expected <= 0
-                                                ? null
-                                                : transferred / expected;
-                                            return Container(
-                                              width: 100,
-                                              height: 140,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .surfaceContainerHighest,
-                                              alignment: Alignment.center,
-                                              child: SizedBox(
-                                                width: 24,
-                                                height: 24,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2.2,
-                                                      value: progress,
-                                                    ),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          Container(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                            alignment: Alignment.center,
+                                            child: const SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.2,
                                               ),
-                                            );
-                                          },
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              Container(
-                                                width: 100,
-                                                height: 140,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .surfaceContainerHighest,
-                                                alignment: Alignment.center,
-                                                child: const Text(
-                                                  'Preview unavailable',
-                                                  textAlign: TextAlign.center,
+                                            ),
+                                          ),
+                                          Image.network(
+                                            previewUrl,
+                                            key: ValueKey(
+                                              '$previewUrl|attachment-thumb-web',
+                                            ),
+                                            gaplessPlayback: true,
+                                            webHtmlElementStrategy:
+                                                WebHtmlElementStrategy.prefer,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (
+                                                  context,
+                                                  error,
+                                                  stackTrace,
+                                                ) => Container(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerHighest,
+                                                  alignment: Alignment.center,
+                                                  child: const Text(
+                                                    'Preview unavailable',
+                                                    textAlign: TextAlign.center,
+                                                  ),
                                                 ),
-                                              ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   );
                                 }
