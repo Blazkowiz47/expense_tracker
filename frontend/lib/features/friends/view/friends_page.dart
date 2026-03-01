@@ -19,6 +19,7 @@ class _FriendsPageState extends State<FriendsPage> {
   late final ExpenseRepository _expenseRepository;
 
   List<FriendContact> _friends = const [];
+  Map<String, double> _friendSettlementNetByUid = const {};
   bool _loading = true;
   bool _addingFriend = false;
   bool _showFriendAddedSuccess = false;
@@ -47,8 +48,12 @@ class _FriendsPageState extends State<FriendsPage> {
     });
     try {
       final friends = await _repository.fetchFriends();
+      final settlementMap = await _loadSettlementBalances();
       if (!mounted) return;
-      setState(() => _friends = friends);
+      setState(() {
+        _friends = friends;
+        _friendSettlementNetByUid = settlementMap;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString());
@@ -57,6 +62,40 @@ class _FriendsPageState extends State<FriendsPage> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<Map<String, double>> _loadSettlementBalances() async {
+    await _expenseRepository.refresh();
+    final expenses = _expenseRepository.getExpenses();
+    final netByUid = <String, double>{};
+    for (final expense in expenses) {
+      final category = (expense.category ?? '').trim().toLowerCase();
+      if (category != 'settlement') continue;
+      final meta = _parseSettlementMeta(expense.description ?? '');
+      if (meta == null) continue;
+      final signed = meta.direction == 'received'
+          ? expense.amount
+          : -expense.amount;
+      netByUid.update(
+        meta.uid,
+        (value) => value + signed,
+        ifAbsent: () => signed,
+      );
+    }
+    return netByUid;
+  }
+
+  _SettlementMeta? _parseSettlementMeta(String description) {
+    final match = RegExp(
+      r'\[uid:([^\]]+)\]\[dir:(paid|received)\]',
+    ).firstMatch(description);
+    if (match == null) return null;
+    final uid = (match.group(1) ?? '').trim();
+    final direction = (match.group(2) ?? '').trim();
+    if (uid.isEmpty || (direction != 'paid' && direction != 'received')) {
+      return null;
+    }
+    return _SettlementMeta(uid: uid, direction: direction);
   }
 
   Future<void> _addFriendFlow() async {
@@ -148,29 +187,36 @@ class _FriendsPageState extends State<FriendsPage> {
 
   Future<void> _settleUpFlow(FriendContact friend) async {
     if (_removingFriendUid != null || _addingFriend) return;
-    final amount = await _openSettleUpDialog(friend);
-    if (amount == null || amount <= 0) return;
+    final input = await _openSettleUpDialog(friend);
+    if (input == null || input.amount <= 0) return;
 
     setState(() => _removingFriendUid = friend.uid);
     try {
+      final title = input.direction == 'received'
+          ? 'Settlement received'
+          : 'Settlement paid';
+      final description =
+          'Settle up with ${friend.label} [uid:${friend.uid}][dir:${input.direction}]';
       await _expenseRepository.createExpense(
         Expense(
           core: ExpenseCore(
             id: DateTime.now().microsecondsSinceEpoch.toString(),
-            title: 'Settlement',
-            amount: amount,
+            title: title,
+            amount: input.amount,
             currency: 'INR',
             category: 'Settlement',
             createdAt: DateTime.now(),
           ),
-          description: 'Settle up with ${friend.label}',
+          description: description,
         ),
       );
+      final settlementMap = await _loadSettlementBalances();
       if (!mounted) return;
+      setState(() => _friendSettlementNetByUid = settlementMap);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Settlement of INR ${amount.toStringAsFixed(2)} recorded with ${friend.label}.',
+            'Settlement of INR ${input.amount.toStringAsFixed(2)} recorded with ${friend.label}.',
           ),
         ),
       );
@@ -186,47 +232,73 @@ class _FriendsPageState extends State<FriendsPage> {
     }
   }
 
-  Future<double?> _openSettleUpDialog(FriendContact friend) async {
+  Future<_SettleUpInput?> _openSettleUpDialog(FriendContact friend) async {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
-    return showDialog<double>(
+    var direction = 'paid';
+    return showDialog<_SettleUpInput>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Settle up with ${friend.label}'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Amount',
-              prefixText: 'INR ',
-              hintText: '0.00',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Settle up with ${friend.label}'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment<String>(value: 'paid', label: Text('I paid')),
+                    ButtonSegment<String>(
+                      value: 'received',
+                      label: Text('I received'),
+                    ),
+                  ],
+                  selected: {direction},
+                  onSelectionChanged: (selection) {
+                    setDialogState(() => direction = selection.first);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Amount',
+                    prefixText: 'INR ',
+                    hintText: '0.00',
+                  ),
+                  validator: (value) {
+                    final amount = double.tryParse((value ?? '').trim());
+                    if (amount == null || amount <= 0) {
+                      return 'Enter a valid amount';
+                    }
+                    return null;
+                  },
+                ),
+              ],
             ),
-            validator: (value) {
-              final amount = double.tryParse((value ?? '').trim());
-              if (amount == null || amount <= 0) {
-                return 'Enter a valid amount';
-              }
-              return null;
-            },
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!(formKey.currentState?.validate() ?? false)) return;
+                final amount = double.parse(controller.text.trim());
+                Navigator.of(
+                  context,
+                ).pop(_SettleUpInput(amount: amount, direction: direction));
+              },
+              child: const Text('Record'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (!(formKey.currentState?.validate() ?? false)) return;
-              final amount = double.parse(controller.text.trim());
-              Navigator.of(context).pop(amount);
-            },
-            child: const Text('Record'),
-          ),
-        ],
       ),
     );
   }
@@ -291,22 +363,37 @@ class _FriendsPageState extends State<FriendsPage> {
                     ),
                   )
                 else if (_friends.isEmpty)
-                  const _BalanceTile(
+                  _BalanceTile(
                     name: 'No friends yet',
                     subtitle: 'Add by email or phone number.',
+                    balanceLabel: 'You are all settled up',
+                    balanceColor: Theme.of(context).colorScheme.outline,
                   )
                 else
-                  ..._friends.map(
-                    (friend) => _BalanceTile(
+                  ..._friends.map((friend) {
+                    final net = _friendSettlementNetByUid[friend.uid] ?? 0;
+                    final balanceLabel = net > 0.005
+                        ? 'You are owed INR ${net.toStringAsFixed(2)}'
+                        : net < -0.005
+                        ? 'You owe INR ${(-net).toStringAsFixed(2)}'
+                        : 'You are all settled up';
+                    final balanceColor = net > 0.005
+                        ? Theme.of(context).colorScheme.primary
+                        : net < -0.005
+                        ? Theme.of(context).colorScheme.error
+                        : Theme.of(context).colorScheme.outline;
+                    return _BalanceTile(
                       name: friend.label,
                       subtitle: friend.contactHint.isNotEmpty
                           ? friend.contactHint
                           : 'No email/phone',
+                      balanceLabel: balanceLabel,
+                      balanceColor: balanceColor,
                       removing: _removingFriendUid == friend.uid,
                       onSettleUp: () => _settleUpFlow(friend),
                       onRemove: () => _removeFriendFlow(friend),
-                    ),
-                  ),
+                    );
+                  }),
               ],
             ),
           ),
@@ -439,6 +526,8 @@ class _BalanceTile extends StatelessWidget {
   const _BalanceTile({
     required this.name,
     required this.subtitle,
+    required this.balanceLabel,
+    required this.balanceColor,
     this.removing = false,
     this.onSettleUp,
     this.onRemove,
@@ -446,6 +535,8 @@ class _BalanceTile extends StatelessWidget {
 
   final String name;
   final String subtitle;
+  final String balanceLabel;
+  final Color balanceColor;
   final bool removing;
   final VoidCallback? onSettleUp;
   final VoidCallback? onRemove;
@@ -461,7 +552,20 @@ class _BalanceTile extends StatelessWidget {
           child: const Icon(Icons.person_outline),
         ),
         title: Text(name),
-        subtitle: Text(subtitle),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(subtitle),
+            const SizedBox(height: 2),
+            Text(
+              balanceLabel,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: balanceColor),
+            ),
+          ],
+        ),
         trailing: removing
             ? const SizedBox(
                 width: 20,
@@ -486,4 +590,18 @@ class _BalanceTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SettleUpInput {
+  const _SettleUpInput({required this.amount, required this.direction});
+
+  final double amount;
+  final String direction;
+}
+
+class _SettlementMeta {
+  const _SettlementMeta({required this.uid, required this.direction});
+
+  final String uid;
+  final String direction;
 }
