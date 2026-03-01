@@ -1045,7 +1045,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                               imageUrl: previewUrl!,
                                               authTokenProvider:
                                                   _authTokenProvider,
-                                              height: 140,
+                                              width: 110,
+                                              height: 170,
                                               fit: BoxFit.cover,
                                             ),
                                           ),
@@ -2264,6 +2265,7 @@ class _WebAuthedImagePreview extends StatefulWidget {
   const _WebAuthedImagePreview({
     required this.imageUrl,
     required this.authTokenProvider,
+    required this.width,
     required this.height,
     required this.fit,
     super.key,
@@ -2271,6 +2273,7 @@ class _WebAuthedImagePreview extends StatefulWidget {
 
   final String imageUrl;
   final AuthTokenProvider authTokenProvider;
+  final double width;
   final double height;
   final BoxFit fit;
 
@@ -2331,13 +2334,14 @@ class _WebAuthedImagePreviewState extends State<_WebAuthedImagePreview> {
       return Image.memory(
         _bytes!,
         height: widget.height,
-        width: double.infinity,
+        width: widget.width,
         fit: widget.fit,
       );
     }
     if (_error != null) {
       return Container(
         height: widget.height,
+        width: widget.width,
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         alignment: Alignment.center,
         child: const Text('Preview unavailable'),
@@ -2345,6 +2349,7 @@ class _WebAuthedImagePreviewState extends State<_WebAuthedImagePreview> {
     }
     return Container(
       height: widget.height,
+      width: widget.width,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       alignment: Alignment.center,
       child: Text(
