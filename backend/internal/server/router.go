@@ -56,6 +56,7 @@ func NewRouter(
 
 	mux.Handle("/api/v1/expenses", middleware.RequireAuth(verifier, http.HandlerFunc(expenseHandler.ExpensesCollection)))
 	mux.Handle("/api/v1/expenses/", middleware.RequireAuth(verifier, http.HandlerFunc(expenseHandler.ExpenseByID)))
+	mux.Handle("/api/v1/expenses-export.csv", middleware.RequireAuth(verifier, http.HandlerFunc(expenseHandler.ExportCSV)))
 	mux.Handle("/api/v1/analytics", middleware.RequireAuth(verifier, http.HandlerFunc(expenseHandler.Analytics)))
 	mux.Handle("/api/v1/dashboard/snapshot", middleware.RequireAuth(verifier, http.HandlerFunc(expenseHandler.DashboardSnapshot)))
 	mux.Handle("/api/v1/friends", middleware.RequireAuth(verifier, http.HandlerFunc(friendHandler.List)))

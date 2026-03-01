@@ -16,6 +16,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("invalid configuration: %v", err)
+	}
 
 	var (
 		repo        expense.Repository = expense.NewInMemoryRepository()

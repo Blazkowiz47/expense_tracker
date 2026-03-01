@@ -207,6 +207,7 @@ func (s *FirestoreStore) CreateExpense(ctx context.Context, expense GroupExpense
 	if _, err := doc.Set(ctx, map[string]any{
 		"group_id":    expense.GroupID,
 		"created_by":  expense.CreatedBy,
+		"updated_by":  expense.CreatedBy,
 		"paid_by":     expense.PaidBy,
 		"split_mode":  expense.SplitMode,
 		"split_with":  expense.SplitWith,
@@ -215,6 +216,7 @@ func (s *FirestoreStore) CreateExpense(ctx context.Context, expense GroupExpense
 		"attachments": expense.Attachments,
 		"date":        expense.Date.UTC(),
 		"created_at":  expense.CreatedAt.UTC(),
+		"updated_at":  expense.CreatedAt.UTC(),
 	}); err != nil {
 		return GroupExpense{}, fmt.Errorf("create group expense: %w", err)
 	}
@@ -242,6 +244,7 @@ func (s *FirestoreStore) ListExpenses(ctx context.Context, groupID string) ([]Gr
 		description, _ := data["description"].(string)
 		attachments := stringSliceFrom(data["attachments"])
 		createdBy, _ := data["created_by"].(string)
+		updatedBy, _ := data["updated_by"].(string)
 		paidBy, _ := data["paid_by"].(string)
 		splitMode, _ := data["split_mode"].(string)
 		splitWith := stringSliceFrom(data["split_with"])
@@ -253,10 +256,18 @@ func (s *FirestoreStore) ListExpenses(ctx context.Context, groupID string) ([]Gr
 		}
 		date, _ := data["date"].(time.Time)
 		createdAt, _ := data["created_at"].(time.Time)
+		updatedAt, _ := data["updated_at"].(time.Time)
+		if strings.TrimSpace(updatedBy) == "" {
+			updatedBy = createdBy
+		}
+		if updatedAt.IsZero() {
+			updatedAt = createdAt
+		}
 		out = append(out, GroupExpense{
 			ID:          doc.Ref.ID,
 			GroupID:     groupID,
 			CreatedBy:   createdBy,
+			UpdatedBy:   updatedBy,
 			PaidBy:      paidBy,
 			SplitMode:   splitMode,
 			SplitWith:   splitWith,
@@ -265,6 +276,7 @@ func (s *FirestoreStore) ListExpenses(ctx context.Context, groupID string) ([]Gr
 			Attachments: attachments,
 			Date:        date.UTC(),
 			CreatedAt:   createdAt.UTC(),
+			UpdatedAt:   updatedAt.UTC(),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -289,6 +301,8 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 	data := snap.Data()
 	createdBy, _ := data["created_by"].(string)
 	createdAt, _ := data["created_at"].(time.Time)
+	existingUpdatedBy, _ := data["updated_by"].(string)
+	existingUpdatedAt, _ := data["updated_at"].(time.Time)
 	existingPaidBy, _ := data["paid_by"].(string)
 	existingSplitMode, _ := data["split_mode"].(string)
 	existingSplitWith := stringSliceFrom(data["split_with"])
@@ -307,9 +321,22 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 	if len(expense.SplitWith) == 0 {
 		expense.SplitWith = existingSplitWith
 	}
+	if strings.TrimSpace(expense.UpdatedBy) == "" {
+		expense.UpdatedBy = existingUpdatedBy
+		if strings.TrimSpace(expense.UpdatedBy) == "" {
+			expense.UpdatedBy = expense.CreatedBy
+		}
+	}
+	if expense.UpdatedAt.IsZero() {
+		expense.UpdatedAt = time.Now().UTC()
+	}
+	if existingUpdatedAt.IsZero() {
+		existingUpdatedAt = createdAt
+	}
 	if _, err := expenseDoc.Set(ctx, map[string]any{
 		"group_id":    expense.GroupID,
 		"created_by":  createdBy,
+		"updated_by":  expense.UpdatedBy,
 		"paid_by":     expense.PaidBy,
 		"split_mode":  expense.SplitMode,
 		"split_with":  expense.SplitWith,
@@ -318,6 +345,7 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 		"attachments": expense.Attachments,
 		"date":        expense.Date.UTC(),
 		"created_at":  createdAt.UTC(),
+		"updated_at":  expense.UpdatedAt.UTC(),
 	}, firestore.MergeAll); err != nil {
 		return GroupExpense{}, fmt.Errorf("update group expense: %w", err)
 	}
@@ -325,6 +353,7 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 		ID:          expense.ID,
 		GroupID:     expense.GroupID,
 		CreatedBy:   createdBy,
+		UpdatedBy:   expense.UpdatedBy,
 		PaidBy:      expense.PaidBy,
 		SplitMode:   expense.SplitMode,
 		SplitWith:   append([]string{}, expense.SplitWith...),
@@ -333,7 +362,26 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 		Attachments: append([]string{}, expense.Attachments...),
 		Date:        expense.Date.UTC(),
 		CreatedAt:   createdAt.UTC(),
+		UpdatedAt:   expense.UpdatedAt.UTC(),
 	}, nil
+}
+
+func (s *FirestoreStore) DeleteExpense(ctx context.Context, groupID, expenseID string) error {
+	groupDoc := s.client.Collection(groupsCollection).Doc(groupID)
+	if _, err := groupDoc.Get(ctx); err != nil {
+		return ErrGroupNotFound
+	}
+	expenseDoc := groupDoc.Collection(groupExpensesSubcollection).Doc(expenseID)
+	if _, err := expenseDoc.Get(ctx); err != nil {
+		if status.Code(err) == codes.NotFound {
+			return ErrGroupNotFound
+		}
+		return fmt.Errorf("get group expense: %w", err)
+	}
+	if _, err := expenseDoc.Delete(ctx); err != nil {
+		return fmt.Errorf("delete group expense: %w", err)
+	}
+	return nil
 }
 
 func stringSliceFrom(value any) []string {

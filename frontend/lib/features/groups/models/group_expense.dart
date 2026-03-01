@@ -3,6 +3,7 @@ class GroupExpense {
     required this.id,
     required this.groupId,
     required this.createdBy,
+    required this.updatedBy,
     required this.paidBy,
     required this.splitMode,
     required this.splitWith,
@@ -11,11 +12,13 @@ class GroupExpense {
     required this.attachments,
     required this.date,
     required this.createdAt,
+    required this.updatedAt,
   });
 
   final String id;
   final String groupId;
   final String createdBy;
+  final String updatedBy;
   final String paidBy;
   final String splitMode;
   final List<String> splitWith;
@@ -24,12 +27,14 @@ class GroupExpense {
   final List<String> attachments;
   final DateTime date;
   final DateTime createdAt;
+  final DateTime updatedAt;
 
   factory GroupExpense.fromJson(Map<String, dynamic> json) {
     return GroupExpense(
       id: (json['id'] as String?) ?? '',
       groupId: (json['groupId'] as String?) ?? '',
       createdBy: (json['createdBy'] as String?) ?? '',
+      updatedBy: (json['updatedBy'] as String?) ?? '',
       paidBy: (json['paidBy'] as String?) ?? '',
       splitMode: (json['splitMode'] as String?) ?? 'equally',
       splitWith: (json['splitWith'] as List<dynamic>? ?? const [])
@@ -44,6 +49,9 @@ class GroupExpense {
           DateTime.tryParse((json['date'] as String?) ?? '') ?? DateTime.now(),
       createdAt:
           DateTime.tryParse((json['createdAt'] as String?) ?? '') ??
+          DateTime.now(),
+      updatedAt:
+          DateTime.tryParse((json['updatedAt'] as String?) ?? '') ??
           DateTime.now(),
     );
   }

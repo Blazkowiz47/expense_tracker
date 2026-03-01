@@ -110,6 +110,45 @@ class ExpenseRepository {
     _expensesCache.remove(id);
   }
 
+  Future<String> exportExpensesCsv({
+    String? category,
+    DateTime? from,
+    DateTime? to,
+    String? query,
+  }) async {
+    final params = <String, String>{};
+    if (category != null && category.trim().isNotEmpty) {
+      params['category'] = category.trim();
+    }
+    if (from != null) {
+      params['from'] = from.toUtc().toIso8601String();
+    }
+    if (to != null) {
+      params['to'] = to.toUtc().toIso8601String();
+    }
+    if (query != null && query.trim().isNotEmpty) {
+      params['q'] = query.trim();
+    }
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses-export.csv')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client
+        .get(
+          uri,
+          headers: <String, String>{
+            'Accept': 'text/csv',
+            'Authorization': 'Bearer $token',
+          },
+        )
+        .timeout(_requestTimeout);
+    if (response.statusCode != 200) {
+      throw Exception(
+        'export csv failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return response.body;
+  }
+
   List<Expense> getExpenses() =>
       _expensesCache.values.toList()
         ..sort((a, b) => a.createdAt.compareTo(b.createdAt));

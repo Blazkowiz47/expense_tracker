@@ -13,6 +13,7 @@ void main() {
       id: id,
       groupId: 'g1',
       createdBy: createdBy,
+      updatedBy: createdBy,
       paidBy: createdBy,
       splitMode: 'equally',
       splitWith: const [],
@@ -21,6 +22,7 @@ void main() {
       attachments: const [],
       date: now,
       createdAt: now,
+      updatedAt: now,
     );
   }
 

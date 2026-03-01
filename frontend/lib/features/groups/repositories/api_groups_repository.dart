@@ -147,6 +147,16 @@ class ApiGroupsRepository {
     return GroupExpense.fromJson(payload);
   }
 
+  Future<void> deleteExpense({
+    required String groupId,
+    required String expenseId,
+  }) async {
+    await _request(
+      method: 'DELETE',
+      path: '/api/v1/groups/$groupId/expenses/$expenseId',
+    );
+  }
+
   Future<String> uploadAttachment({
     required String groupId,
     required String expenseId,
@@ -237,6 +247,7 @@ class ApiGroupsRepository {
         headers: headers,
         body: body == null ? null : jsonEncode(body),
       ),
+      'DELETE' => _client.delete(uri, headers: headers),
       _ => throw UnsupportedError('Unsupported method $method'),
     };
 

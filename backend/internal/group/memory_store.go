@@ -140,6 +140,12 @@ func (s *InMemoryStore) CreateExpense(_ context.Context, expense GroupExpense) (
 	if expense.CreatedAt.IsZero() {
 		expense.CreatedAt = time.Now().UTC()
 	}
+	if expense.UpdatedAt.IsZero() {
+		expense.UpdatedAt = expense.CreatedAt
+	}
+	if strings.TrimSpace(expense.UpdatedBy) == "" {
+		expense.UpdatedBy = expense.CreatedBy
+	}
 	if strings.TrimSpace(expense.PaidBy) == "" {
 		expense.PaidBy = expense.CreatedBy
 	}
@@ -175,6 +181,10 @@ func (s *InMemoryStore) UpdateExpense(_ context.Context, expense GroupExpense) (
 			if len(expense.SplitWith) == 0 {
 				expense.SplitWith = items[i].SplitWith
 			}
+			expense.UpdatedAt = time.Now().UTC()
+			if strings.TrimSpace(expense.UpdatedBy) == "" {
+				expense.UpdatedBy = expense.CreatedBy
+			}
 			expense.SplitWith = append([]string{}, expense.SplitWith...)
 			expense.Attachments = append([]string{}, expense.Attachments...)
 			items[i] = expense
@@ -185,6 +195,26 @@ func (s *InMemoryStore) UpdateExpense(_ context.Context, expense GroupExpense) (
 		}
 	}
 	return GroupExpense{}, ErrGroupNotFound
+}
+
+func (s *InMemoryStore) DeleteExpense(_ context.Context, groupID, expenseID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.groups[groupID]; !ok {
+		return ErrGroupNotFound
+	}
+	items := s.groupExpenses[groupID]
+	for i := range items {
+		if items[i].ID != expenseID {
+			continue
+		}
+		s.groupExpenses[groupID] = append(items[:i], items[i+1:]...)
+		group := s.groups[groupID]
+		group.UpdatedAt = time.Now().UTC()
+		s.groups[groupID] = group
+		return nil
+	}
+	return ErrGroupNotFound
 }
 
 func (s *InMemoryStore) ListExpenses(_ context.Context, groupID string) ([]GroupExpense, error) {

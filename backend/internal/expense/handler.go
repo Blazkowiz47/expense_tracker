@@ -1,6 +1,8 @@
 package expense
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -136,6 +138,75 @@ func (h *Handler) DashboardSnapshot(w http.ResponseWriter, r *http.Request) {
 	_ = analytics
 
 	httpapi.WriteJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *Handler) ExportCSV(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
+		return
+	}
+	uid, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || uid == "" {
+		httpapi.WriteError(w, http.StatusUnauthorized, "UNAUTHORIZED", "user missing from context")
+		return
+	}
+
+	from, err := parseTimeParam(r.URL.Query().Get("from"))
+	if err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid 'from' query param")
+		return
+	}
+	to, err := parseTimeParam(r.URL.Query().Get("to"))
+	if err != nil {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid 'to' query param")
+		return
+	}
+	expenses, err := h.service.List(r.Context(), uid, ListFilter{
+		Page:     1,
+		Limit:    1000,
+		Category: r.URL.Query().Get("category"),
+		From:     from,
+		To:       to,
+	})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	query := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("q")))
+	if query != "" {
+		filtered := make([]Expense, 0, len(expenses))
+		for _, expense := range expenses {
+			haystack := strings.ToLower(expense.Description + " " + expense.Category)
+			if strings.Contains(haystack, query) {
+				filtered = append(filtered, expense)
+			}
+		}
+		expenses = filtered
+	}
+
+	var buf bytes.Buffer
+	writer := csv.NewWriter(&buf)
+	_ = writer.Write([]string{"id", "date", "category", "description", "amount"})
+	for _, expense := range expenses {
+		_ = writer.Write([]string{
+			expense.ID,
+			expense.Date.UTC().Format(time.RFC3339),
+			expense.Category,
+			expense.Description,
+			fmt.Sprintf("%.2f", expense.Amount),
+		})
+	}
+	writer.Flush()
+	if writer.Error() != nil {
+		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", "failed to generate csv")
+		return
+	}
+
+	filename := "expenses-" + time.Now().UTC().Format("20060102") + ".csv"
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
 }
 
 type expensePayload struct {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,5 +151,42 @@ func TestThemePacksEndpoint(t *testing.T) {
 	}
 	if len(payload) == 0 {
 		t.Fatalf("expected non-empty theme packs")
+	}
+}
+
+func TestExportCSVEndpoint(t *testing.T) {
+	router := setupTestServer()
+
+	payload := map[string]any{
+		"amount":      499.0,
+		"category":    "Travel",
+		"description": "Train",
+		"date":        "2026-02-10T10:00:00Z",
+	}
+	body, _ := json.Marshal(payload)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/expenses", bytes.NewReader(body))
+	createReq.Header.Set("Authorization", "Bearer dev-token")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", createRR.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/expenses-export.csv?q=train", nil)
+	req.Header.Set("Authorization", "Bearer dev-token")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "text/csv") {
+		t.Fatalf("expected csv content-type, got %q", got)
+	}
+	csv := rr.Body.String()
+	if !strings.Contains(csv, "id,date,category,description,amount") {
+		t.Fatalf("expected csv header, got %q", csv)
+	}
+	if !strings.Contains(csv, "Travel,Train,499.00") {
+		t.Fatalf("expected exported expense row, got %q", csv)
 	}
 }

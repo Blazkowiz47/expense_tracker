@@ -285,6 +285,64 @@ func TestUpdateGroupExpense(t *testing.T) {
 	if updated["splitMode"] != "exact" {
 		t.Fatalf("expected splitMode=exact got %#v", updated["splitMode"])
 	}
+	if _, ok := updated["updatedAt"].(string); !ok {
+		t.Fatalf("expected updatedAt string got %#v", updated["updatedAt"])
+	}
+	if updated["updatedBy"] != "user-1" {
+		t.Fatalf("expected updatedBy=user-1 got %#v", updated["updatedBy"])
+	}
+}
+
+func TestDeleteGroupExpense(t *testing.T) {
+	router := setupTestServer(&fakeFriendStore{})
+	createPayload := map[string]any{"name": "Trip", "groupType": "split"}
+	b, _ := json.Marshal(createPayload)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", bytes.NewReader(b))
+	createReq.Header.Set("Authorization", "Bearer test-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createRR.Code, createRR.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(createRR.Body.Bytes(), &created)
+	groupID, _ := created["id"].(string)
+
+	expensePayload := []byte(`{"amount":1200.5,"description":"Groceries","date":"2026-02-27T10:00:00Z"}`)
+	createExpenseReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/expenses", bytes.NewReader(expensePayload))
+	createExpenseReq.Header.Set("Authorization", "Bearer test-token")
+	createExpenseReq.Header.Set("Content-Type", "application/json")
+	createExpenseRR := httptest.NewRecorder()
+	router.ServeHTTP(createExpenseRR, createExpenseReq)
+	if createExpenseRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createExpenseRR.Code, createExpenseRR.Body.String())
+	}
+	var createdExpense map[string]any
+	_ = json.Unmarshal(createExpenseRR.Body.Bytes(), &createdExpense)
+	expenseID, _ := createdExpense["id"].(string)
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+groupID+"/expenses/"+expenseID, nil)
+	deleteReq.Header.Set("Authorization", "Bearer test-token")
+	deleteRR := httptest.NewRecorder()
+	router.ServeHTTP(deleteRR, deleteReq)
+	if deleteRR.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", deleteRR.Code, deleteRR.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+groupID+"/expenses", nil)
+	listReq.Header.Set("Authorization", "Bearer test-token")
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var listed map[string]any
+	_ = json.Unmarshal(listRR.Body.Bytes(), &listed)
+	expenses, _ := listed["expenses"].([]any)
+	if len(expenses) != 0 {
+		t.Fatalf("expected 0 expenses, got %d", len(expenses))
+	}
 }
 
 func TestUploadGroupAttachment(t *testing.T) {

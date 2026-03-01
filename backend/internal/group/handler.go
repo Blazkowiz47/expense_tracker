@@ -114,6 +114,8 @@ func (h *Handler) GroupByID(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			h.handleUpdateExpense(w, r, groupID, expenseID, uid)
+		case http.MethodDelete:
+			h.handleDeleteExpense(w, r, groupID, expenseID, uid)
 		default:
 			httpapi.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "unsupported method")
 		}
@@ -354,6 +356,7 @@ func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request, gr
 		ID:          expenseID,
 		GroupID:     groupID,
 		CreatedBy:   uid,
+		UpdatedBy:   uid,
 		PaidBy:      strings.TrimSpace(payload.PaidBy),
 		SplitMode:   sanitizeSplitMode(payload.SplitMode),
 		SplitWith:   sanitizeSplitWith(payload.SplitWith),
@@ -362,6 +365,7 @@ func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request, gr
 		Attachments: sanitizeAttachments(payload.Attachments),
 		Date:        date,
 		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
 	}
 	if expense.PaidBy == "" {
 		expense.PaidBy = uid
@@ -411,6 +415,7 @@ func (h *Handler) handleUpdateExpense(
 		ID:          strings.TrimSpace(expenseID),
 		GroupID:     groupID,
 		CreatedBy:   uid,
+		UpdatedBy:   uid,
 		PaidBy:      strings.TrimSpace(payload.PaidBy),
 		SplitMode:   sanitizeSplitMode(payload.SplitMode),
 		SplitWith:   sanitizeSplitWith(payload.SplitWith),
@@ -418,6 +423,7 @@ func (h *Handler) handleUpdateExpense(
 		Description: description,
 		Attachments: sanitizeAttachments(payload.Attachments),
 		Date:        date,
+		UpdatedAt:   time.Now().UTC(),
 	})
 	if err != nil {
 		switch {
@@ -429,6 +435,32 @@ func (h *Handler) handleUpdateExpense(
 		return
 	}
 	httpapi.WriteJSON(w, http.StatusOK, updated)
+}
+
+func (h *Handler) handleDeleteExpense(
+	w http.ResponseWriter,
+	r *http.Request,
+	groupID, expenseID, uid string,
+) {
+	group, err := h.store.GetByID(r.Context(), groupID)
+	if err != nil {
+		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group not found")
+		return
+	}
+	if !slices.Contains(group.MemberUIDs, uid) {
+		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "you are not a group member")
+		return
+	}
+	if err := h.store.DeleteExpense(r.Context(), groupID, strings.TrimSpace(expenseID)); err != nil {
+		switch {
+		case errors.Is(err, ErrGroupNotFound):
+			httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "group or expense not found")
+		default:
+			httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", fmt.Sprintf("failed to delete group expense: %v", err))
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func sanitizeAttachments(raw []string) []string {

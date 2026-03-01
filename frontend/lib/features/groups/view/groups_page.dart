@@ -10,6 +10,7 @@ import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/utils/group_balance_calculator.dart';
+import 'package:expense_tracker/features/groups/utils/group_transfer_simplifier.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -755,6 +756,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     String initialSplitMode = 'equally',
     Set<String>? initialSplitWith,
     List<String>? initialAttachments,
+    DateTime? initialUpdatedAt,
+    String? initialUpdatedBy,
   }) {
     final descriptionController = TextEditingController(
       text: initialDescription ?? '',
@@ -913,6 +916,19 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               ),
                             )
                             .toList(growable: false),
+                      ),
+                    ],
+                    if (isEditing &&
+                        initialUpdatedAt != null &&
+                        initialUpdatedBy != null &&
+                        initialUpdatedBy.trim().isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Last updated ${initialUpdatedAt.toLocal().toString().split('.').first} by ${initialUpdatedBy.trim()}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
                     ],
                     const SizedBox(height: 14),
@@ -1276,12 +1292,29 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               ),
             ),
             actions: [
+              if (isEditing)
+                TextButton.icon(
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).pop({'action': 'delete', 'expenseId': expenseId}),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  label: Text(
+                    'Delete',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Cancel'),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(context).pop({
+                  'action': 'save',
                   'description': descriptionController.text.trim(),
                   'expenseId': expenseId,
                   'amount': double.tryParse(amountController.text.trim()),
@@ -1394,9 +1427,16 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           ? expense.splitWith.toSet()
           : participants.toSet(),
       initialAttachments: expense.attachments,
+      initialUpdatedAt: expense.updatedAt,
+      initialUpdatedBy: _resolvePayerLabel(expense.updatedBy, participants),
     );
 
     if (!mounted || payload == null) return;
+    final action = (payload['action'] as String?) ?? 'save';
+    if (action == 'delete') {
+      await _deleteExpense(expense);
+      return;
+    }
     final description = (payload['description'] as String?) ?? '';
     final paidBy = (payload['paidBy'] as String?) ?? participants.first;
     final splitMode = (payload['splitMode'] as String?) ?? 'equally';
@@ -1443,6 +1483,50 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
   }
 
+  Future<void> _deleteExpense(GroupExpense expense) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete expense'),
+        content: Text('Delete "${expense.description}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busyAction = _GroupBusyAction.deletingExpense);
+    try {
+      await widget.repository.deleteExpense(
+        groupId: widget.group.id,
+        expenseId: expense.id,
+      );
+      if (!mounted) return;
+      await _loadExpenses();
+      if (!mounted) return;
+      setState(() => _busyAction = _GroupBusyAction.none);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Group expense deleted.')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _busyAction = _GroupBusyAction.none);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authUser = context.select((AuthCubit cubit) => cubit.state.user);
@@ -1466,6 +1550,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final busyMessage = switch (_busyAction) {
       _GroupBusyAction.addingMember => 'Adding member...',
       _GroupBusyAction.addingExpense => 'Saving expense...',
+      _GroupBusyAction.deletingExpense => 'Deleting expense...',
       _GroupBusyAction.leavingGroup => 'Leaving group...',
       _GroupBusyAction.none => '',
     };
@@ -1944,12 +2029,24 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     return netByUid;
   }
 
+  String _memberLabelByUid(String uid) {
+    for (final member in widget.members) {
+      if (member.uid == uid) {
+        return member.label;
+      }
+    }
+    return uid;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authUid = context.select(
       (AuthCubit cubit) => cubit.state.user?.uid ?? '',
     );
     final netByUid = _memberNetByUid();
+    final transferSuggestions = _simplify
+        ? simplifyGroupTransfers(netByUid)
+        : const <GroupTransferSuggestion>[];
     return Scaffold(
       appBar: AppBar(title: const Text('Group settings')),
       body: ListView(
@@ -2048,6 +2145,40 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
               },
             ),
           ),
+          if (_simplify) ...[
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Suggested transfers',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    if (transferSuggestions.isEmpty)
+                      Text(
+                        'No transfers needed. Group is settled up.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      )
+                    else
+                      ...transferSuggestions.map(
+                        (item) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            '${_memberLabelByUid(item.fromUid)} pays ${_memberLabelByUid(item.toUid)} INR ${item.amount.toStringAsFixed(2)}',
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(_simplify),
@@ -2059,7 +2190,13 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
   }
 }
 
-enum _GroupBusyAction { none, addingMember, addingExpense, leavingGroup }
+enum _GroupBusyAction {
+  none,
+  addingMember,
+  addingExpense,
+  deletingExpense,
+  leavingGroup,
+}
 
 class _AttachmentUploadItem {
   const _AttachmentUploadItem({
