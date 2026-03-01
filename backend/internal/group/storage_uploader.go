@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/google/uuid"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -25,8 +26,8 @@ type AttachmentUploadInput struct {
 }
 
 type FirebaseAttachmentUploader struct {
-	client *storage.Client
-	bucket string
+	client           *storage.Client
+	bucketCandidates []string
 }
 
 func NewFirebaseAttachmentUploader(
@@ -39,9 +40,22 @@ func NewFirebaseAttachmentUploader(
 		return nil, errors.New("firebase project id is required for storage uploader")
 	}
 	bucket = strings.TrimSpace(bucket)
-	if bucket == "" {
-		bucket = projectID + ".appspot.com"
+	bucketCandidates := make([]string, 0, 2)
+	seen := map[string]struct{}{}
+	addBucket := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		bucketCandidates = append(bucketCandidates, value)
 	}
+	addBucket(bucket)
+	addBucket(projectID + ".firebasestorage.app")
+	addBucket(projectID + ".appspot.com")
 
 	var (
 		client *storage.Client
@@ -55,7 +69,10 @@ func NewFirebaseAttachmentUploader(
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
-	return &FirebaseAttachmentUploader{client: client, bucket: bucket}, nil
+	return &FirebaseAttachmentUploader{
+		client:           client,
+		bucketCandidates: bucketCandidates,
+	}, nil
 }
 
 func (u *FirebaseAttachmentUploader) Close() error {
@@ -75,30 +92,54 @@ func (u *FirebaseAttachmentUploader) UploadGroupAttachment(
 		strings.TrimSpace(input.UploaderUID),
 		uuid.NewString(),
 	)
-	downloadToken := uuid.NewString()
-	writer := u.client.Bucket(u.bucket).Object(objectPath).NewWriter(ctx)
-	writer.ContentType = strings.TrimSpace(input.ContentType)
-	if writer.ContentType == "" {
-		writer.ContentType = "application/octet-stream"
-	}
-	writer.Metadata = map[string]string{
-		"firebaseStorageDownloadTokens": downloadToken,
-		"originalFileName":              strings.TrimSpace(input.FileName),
-	}
-	if _, err := writer.Write(input.Bytes); err != nil {
-		_ = writer.Close()
-		return "", fmt.Errorf("write attachment to storage: %w", err)
-	}
-	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("close storage writer: %w", err)
-	}
+	var lastErr error
+	for _, bucket := range u.bucketCandidates {
+		downloadToken := uuid.NewString()
+		writer := u.client.Bucket(bucket).Object(objectPath).NewWriter(ctx)
+		writer.ContentType = strings.TrimSpace(input.ContentType)
+		if writer.ContentType == "" {
+			writer.ContentType = "application/octet-stream"
+		}
+		writer.Metadata = map[string]string{
+			"firebaseStorageDownloadTokens": downloadToken,
+			"originalFileName":              strings.TrimSpace(input.FileName),
+		}
+		if _, err := writer.Write(input.Bytes); err != nil {
+			_ = writer.Close()
+			lastErr = fmt.Errorf("write attachment to storage: %w", err)
+			continue
+		}
+		if err := writer.Close(); err != nil {
+			lastErr = fmt.Errorf("close storage writer: %w", err)
+			if isNotFoundBucketError(err) {
+				continue
+			}
+			return "", lastErr
+		}
 
-	escaped := url.QueryEscape(objectPath)
-	downloadURL := fmt.Sprintf(
-		"https://firebasestorage.googleapis.com/v0/b/%s/o/%s?alt=media&token=%s",
-		u.bucket,
-		escaped,
-		downloadToken,
+		escaped := url.QueryEscape(objectPath)
+		downloadURL := fmt.Sprintf(
+			"https://firebasestorage.googleapis.com/v0/b/%s/o/%s?alt=media&token=%s",
+			bucket,
+			escaped,
+			downloadToken,
+		)
+		return downloadURL, nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("storage bucket candidates were empty")
+	}
+	return "", fmt.Errorf(
+		"attachment upload failed for buckets %v: %w",
+		u.bucketCandidates,
+		lastErr,
 	)
-	return downloadURL, nil
+}
+
+func isNotFoundBucketError(err error) bool {
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		return apiErr.Code == 404
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "bucket does not exist")
 }
