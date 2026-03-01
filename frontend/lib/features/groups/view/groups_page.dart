@@ -1,4 +1,5 @@
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
+import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/models/expense.dart';
@@ -400,12 +401,14 @@ class GroupDetailsPage extends StatefulWidget {
 }
 
 class _GroupDetailsPageState extends State<GroupDetailsPage> {
+  final AuthTokenProvider _authTokenProvider = const FirebaseAuthTokenProvider();
   List<GroupExpense> _expenses = const [];
   List<GroupMember> _members = const [];
   bool _loading = true;
   bool _simplifyBalances = true;
   _GroupBusyAction _busyAction = _GroupBusyAction.none;
   late int _memberCount;
+  late final Future<String> _authTokenFuture;
   String? _error;
 
   bool get _busy => _busyAction != _GroupBusyAction.none;
@@ -529,6 +532,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   void initState() {
     super.initState();
     _memberCount = widget.group.memberCount;
+    _authTokenFuture = _authTokenProvider.getBearerToken();
     _loadData();
   }
 
@@ -1018,26 +1022,41 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                             borderRadius: BorderRadius.circular(
                                               8,
                                             ),
-                                            child: Image.network(
-                                              previewUrl!,
-                                              height: 140,
-                                              width: double.infinity,
-                                              fit: BoxFit.cover,
-                                              errorBuilder:
-                                                  (
-                                                    context,
-                                                    error,
-                                                    stackTrace,
-                                                  ) => Container(
-                                                    height: 140,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerHighest,
-                                                    alignment: Alignment.center,
-                                                    child: const Text(
-                                                      'Preview unavailable',
-                                                    ),
-                                                  ),
+                                            child: FutureBuilder<String>(
+                                              future: _authTokenFuture,
+                                              builder: (context, snapshot) {
+                                                final token = snapshot.data;
+                                                return Image.network(
+                                                  previewUrl!,
+                                                  height: 140,
+                                                  width: double.infinity,
+                                                  fit: BoxFit.cover,
+                                                  headers:
+                                                      token != null &&
+                                                          token.isNotEmpty
+                                                      ? <String, String>{
+                                                          'Authorization':
+                                                              'Bearer $token',
+                                                        }
+                                                      : null,
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) => Container(
+                                                        height: 140,
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .surfaceContainerHighest,
+                                                        alignment:
+                                                            Alignment.center,
+                                                        child: const Text(
+                                                          'Preview unavailable',
+                                                        ),
+                                                      ),
+                                                );
+                                              },
                                             ),
                                           ),
                                           const SizedBox(height: 8),
