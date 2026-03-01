@@ -992,6 +992,39 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
                               Widget previewBox() {
                                 if (item.localPreviewBytes != null) {
+                                  if (kIsWeb &&
+                                      item.localPreviewPath != null &&
+                                      item.localPreviewPath!.isNotEmpty) {
+                                    return ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        item.localPreviewPath!,
+                                        key: ValueKey(
+                                          '${item.id}|${item.localPreviewPath}|local-web',
+                                        ),
+                                        gaplessPlayback: true,
+                                        webHtmlElementStrategy:
+                                            WebHtmlElementStrategy.prefer,
+                                        width: 100,
+                                        height: 140,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Container(
+                                                  width: 100,
+                                                  height: 140,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .surfaceContainerHighest,
+                                                  alignment: Alignment.center,
+                                                  child: const Text(
+                                                    'Preview unavailable',
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ),
+                                      ),
+                                    );
+                                  }
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: Image.memory(
@@ -1106,13 +1139,34 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     ).colorScheme.surfaceContainerHighest,
                                   ),
                                   alignment: Alignment.center,
-                                  child: Icon(
-                                    item.uploading
-                                        ? Icons.cloud_upload_outlined
-                                        : item.error == null
-                                        ? Icons.image_outlined
-                                        : Icons.error_outline,
-                                  ),
+                                  child: item.uploading
+                                      ? Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            SizedBox(
+                                              width: 26,
+                                              height: 26,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.2,
+                                                value: item.progress > 0
+                                                    ? item.progress.clamp(0, 1)
+                                                    : null,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              '${percent.toStringAsFixed(0)}%',
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
+                                            ),
+                                          ],
+                                        )
+                                      : Icon(
+                                          item.error == null
+                                              ? Icons.image_outlined
+                                              : Icons.error_outline,
+                                        ),
                                 );
                               }
 
@@ -1156,15 +1210,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     ),
                                     const SizedBox(height: 6),
                                     previewBox(),
-                                    if (item.uploading) ...[
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        '${percent.toStringAsFixed(0)}%',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                    ],
                                     if (item.error != null) ...[
                                       const SizedBox(height: 6),
                                       Text(
@@ -1226,6 +1271,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     attachmentItems[idx] = attachmentItems[idx]
                                         .copyWith(
                                           localPreviewBytes: bytes,
+                                          localPreviewPath: image.path,
                                           pendingUploadBytes: bytes,
                                         );
                                   }
@@ -1289,6 +1335,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           url: url,
                                           error: null,
                                           localPreviewBytes: bytes,
+                                          localPreviewPath: image.path,
                                           pendingUploadBytes: null,
                                         );
                                   }
@@ -1345,6 +1392,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   attachmentItems[idx] = attachmentItems[idx]
                                       .copyWith(
                                         localPreviewBytes: bytes,
+                                        localPreviewPath: image.path,
                                         pendingUploadBytes: bytes,
                                       );
                                 }
@@ -1407,6 +1455,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         url: url,
                                         error: null,
                                         localPreviewBytes: bytes,
+                                        localPreviewPath: image.path,
                                         pendingUploadBytes: null,
                                       );
                                 }
@@ -2402,6 +2451,7 @@ class _AttachmentUploadItem {
     this.url,
     this.error,
     this.localPreviewBytes,
+    this.localPreviewPath,
     this.pendingUploadBytes,
     this.uploadFileName,
     this.uploadContentType,
@@ -2414,6 +2464,7 @@ class _AttachmentUploadItem {
   final String? url;
   final String? error;
   final Uint8List? localPreviewBytes;
+  final String? localPreviewPath;
   final Uint8List? pendingUploadBytes;
   final String? uploadFileName;
   final String? uploadContentType;
@@ -2426,6 +2477,7 @@ class _AttachmentUploadItem {
     Object? url = _unset,
     Object? error = _unset,
     Object? localPreviewBytes = _unset,
+    Object? localPreviewPath = _unset,
     Object? pendingUploadBytes = _unset,
     Object? uploadFileName = _unset,
     Object? uploadContentType = _unset,
@@ -2440,6 +2492,9 @@ class _AttachmentUploadItem {
       localPreviewBytes: identical(localPreviewBytes, _unset)
           ? this.localPreviewBytes
           : localPreviewBytes as Uint8List?,
+      localPreviewPath: identical(localPreviewPath, _unset)
+          ? this.localPreviewPath
+          : localPreviewPath as String?,
       pendingUploadBytes: identical(pendingUploadBytes, _unset)
           ? this.pendingUploadBytes
           : pendingUploadBytes as Uint8List?,
