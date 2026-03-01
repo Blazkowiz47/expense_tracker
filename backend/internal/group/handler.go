@@ -217,6 +217,16 @@ func (h *Handler) handleUploadAttachment(
 	expense.UpdatedBy = uid
 	expense.UpdatedAt = time.Now().UTC()
 	if _, err := h.store.UpdateExpense(r.Context(), *expense); err != nil {
+		cleanupErr := h.uploader.DeleteGroupAttachment(r.Context(), downloadURL)
+		if cleanupErr != nil {
+			httpapi.WriteError(
+				w,
+				http.StatusInternalServerError,
+				"INTERNAL",
+				fmt.Sprintf("failed to link attachment to expense: %v (cleanup failed: %v)", err, cleanupErr),
+			)
+			return
+		}
 		httpapi.WriteError(w, http.StatusInternalServerError, "INTERNAL", fmt.Sprintf("failed to link attachment to expense: %v", err))
 		return
 	}

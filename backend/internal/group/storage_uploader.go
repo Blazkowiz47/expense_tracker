@@ -15,6 +15,7 @@ import (
 
 type AttachmentUploader interface {
 	UploadGroupAttachment(ctx context.Context, input AttachmentUploadInput) (string, error)
+	DeleteGroupAttachment(ctx context.Context, downloadURL string) error
 }
 
 type AttachmentUploadInput struct {
@@ -135,6 +136,51 @@ func (u *FirebaseAttachmentUploader) UploadGroupAttachment(
 		u.bucketCandidates,
 		lastErr,
 	)
+}
+
+func (u *FirebaseAttachmentUploader) DeleteGroupAttachment(ctx context.Context, downloadURL string) error {
+	bucket, objectPath, err := parseFirebaseDownloadURL(downloadURL)
+	if err != nil {
+		return err
+	}
+	if err := u.client.Bucket(bucket).Object(objectPath).Delete(ctx); err != nil {
+		if isNotFoundBucketError(err) {
+			return nil
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "no such object") {
+			return nil
+		}
+		return fmt.Errorf("delete attachment from storage: %w", err)
+	}
+	return nil
+}
+
+func parseFirebaseDownloadURL(downloadURL string) (bucket string, objectPath string, err error) {
+	parsed, err := url.Parse(strings.TrimSpace(downloadURL))
+	if err != nil {
+		return "", "", fmt.Errorf("parse attachment url: %w", err)
+	}
+	if !strings.EqualFold(parsed.Host, "firebasestorage.googleapis.com") {
+		return "", "", fmt.Errorf("unsupported attachment host %q", parsed.Host)
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	// Expected: /v0/b/{bucket}/o/{urlEncodedObjectPath}
+	if len(parts) < 5 || parts[0] != "v0" || parts[1] != "b" || parts[3] != "o" {
+		return "", "", fmt.Errorf("invalid firebase storage url path %q", parsed.Path)
+	}
+	bucket = strings.TrimSpace(parts[2])
+	if bucket == "" {
+		return "", "", errors.New("firebase storage url bucket is empty")
+	}
+	encodedObject := strings.Join(parts[4:], "/")
+	if strings.TrimSpace(encodedObject) == "" {
+		return "", "", errors.New("firebase storage url object path is empty")
+	}
+	objectPath, err = url.QueryUnescape(encodedObject)
+	if err != nil {
+		return "", "", fmt.Errorf("decode firebase storage object path: %w", err)
+	}
+	return bucket, objectPath, nil
 }
 
 func isNotFoundBucketError(err error) bool {

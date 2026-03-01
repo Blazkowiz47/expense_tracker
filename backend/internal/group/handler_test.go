@@ -643,6 +643,10 @@ func (f *fakeAttachmentUploader) UploadGroupAttachment(_ context.Context, input 
 	return "https://example.com/groups/" + input.GroupID + "/file.jpg", nil
 }
 
+func (f *fakeAttachmentUploader) DeleteGroupAttachment(_ context.Context, _ string) error {
+	return nil
+}
+
 func (f *fakeFriendStore) ResolveByEmailOrPhone(_ context.Context, query string) (friend.ResolveResult, error) {
 	if resolved, ok := f.resolvedByContact[query]; ok {
 		return resolved, nil
