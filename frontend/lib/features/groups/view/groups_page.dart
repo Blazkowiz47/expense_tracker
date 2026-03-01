@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
@@ -408,7 +410,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   bool _simplifyBalances = true;
   _GroupBusyAction _busyAction = _GroupBusyAction.none;
   late int _memberCount;
-  late final Future<String> _authTokenFuture;
   String? _error;
 
   bool get _busy => _busyAction != _GroupBusyAction.none;
@@ -532,7 +533,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   void initState() {
     super.initState();
     _memberCount = widget.group.memberCount;
-    _authTokenFuture = _authTokenProvider.getBearerToken();
     _loadData();
   }
 
@@ -1040,79 +1040,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                             borderRadius: BorderRadius.circular(
                                               8,
                                             ),
-                                            child: FutureBuilder<String>(
-                                              future: _authTokenFuture,
-                                              builder: (context, snapshot) {
-                                                final token = snapshot.data;
-                                                return Image.network(
-                                                  previewUrl!,
-                                                  height: 140,
-                                                  width: double.infinity,
-                                                  fit: BoxFit.cover,
-                                                  headers:
-                                                      token != null &&
-                                                          token.isNotEmpty
-                                                      ? <String, String>{
-                                                          'Authorization':
-                                                              'Bearer $token',
-                                                        }
-                                                      : null,
-                                                  loadingBuilder: (
-                                                    context,
-                                                    child,
-                                                    loadingProgress,
-                                                  ) {
-                                                    if (loadingProgress ==
-                                                        null) {
-                                                      return child;
-                                                    }
-                                                    final expectedBytes =
-                                                        loadingProgress
-                                                            .expectedTotalBytes;
-                                                    final loadedBytes =
-                                                        loadingProgress
-                                                            .cumulativeBytesLoaded;
-                                                    final progress =
-                                                        expectedBytes == null ||
-                                                            expectedBytes <= 0
-                                                        ? null
-                                                        : loadedBytes /
-                                                              expectedBytes;
-                                                    return Container(
-                                                      height: 140,
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .surfaceContainerHighest,
-                                                      alignment:
-                                                          Alignment.center,
-                                                      child: Text(
-                                                        progress == null
-                                                            ? 'Loading preview...'
-                                                            : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                                                        style: Theme.of(
-                                                          context,
-                                                        ).textTheme.bodySmall,
-                                                      ),
-                                                    );
-                                                  },
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) => Container(
-                                                        height: 140,
-                                                        color: Theme.of(context)
-                                                            .colorScheme
-                                                            .surfaceContainerHighest,
-                                                        alignment:
-                                                            Alignment.center,
-                                                        child: const Text(
-                                                          'Preview unavailable',
-                                                        ),
-                                                      ),
-                                                );
-                                              },
+                                            child: _WebAuthedImagePreview(
+                                              key: ValueKey(previewUrl),
+                                              imageUrl: previewUrl!,
+                                              authTokenProvider:
+                                                  _authTokenProvider,
+                                              height: 140,
+                                              fit: BoxFit.cover,
                                             ),
                                           ),
                                           const SizedBox(height: 8),
@@ -2322,6 +2256,103 @@ class _AttachmentUploadItem {
       uploading: uploading ?? this.uploading,
       url: url ?? this.url,
       error: error,
+    );
+  }
+}
+
+class _WebAuthedImagePreview extends StatefulWidget {
+  const _WebAuthedImagePreview({
+    required this.imageUrl,
+    required this.authTokenProvider,
+    required this.height,
+    required this.fit,
+    super.key,
+  });
+
+  final String imageUrl;
+  final AuthTokenProvider authTokenProvider;
+  final double height;
+  final BoxFit fit;
+
+  @override
+  State<_WebAuthedImagePreview> createState() => _WebAuthedImagePreviewState();
+}
+
+class _WebAuthedImagePreviewState extends State<_WebAuthedImagePreview> {
+  Uint8List? _bytes;
+  String? _error;
+  double? _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final token = await widget.authTokenProvider.getBearerToken();
+      final request = http.Request('GET', Uri.parse(widget.imageUrl))
+        ..headers['Accept'] = 'image/*';
+      if (token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+      final streamed = await http.Client().send(request);
+      if (!mounted) return;
+      if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+        setState(() => _error = 'Preview unavailable');
+        return;
+      }
+
+      final total = streamed.contentLength;
+      final buffer = BytesBuilder(copy: false);
+      var received = 0;
+      await for (final chunk in streamed.stream) {
+        buffer.add(chunk);
+        received += chunk.length;
+        if (mounted && total != null && total > 0) {
+          setState(() => _progress = received / total);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _bytes = buffer.takeBytes();
+        _progress = 1;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = 'Preview unavailable');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_bytes != null) {
+      return Image.memory(
+        _bytes!,
+        height: widget.height,
+        width: double.infinity,
+        fit: widget.fit,
+      );
+    }
+    if (_error != null) {
+      return Container(
+        height: widget.height,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        alignment: Alignment.center,
+        child: const Text('Preview unavailable'),
+      );
+    }
+    return Container(
+      height: widget.height,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      alignment: Alignment.center,
+      child: Text(
+        _progress == null
+            ? '0%'
+            : '${(_progress! * 100).clamp(0, 100).toStringAsFixed(0)}%',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     );
   }
 }
