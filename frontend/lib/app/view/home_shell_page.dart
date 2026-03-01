@@ -98,7 +98,13 @@ class _HomeShellPageState extends State<HomeShellPage> {
   void _onDestinationSelected(int index) {
     if (index == _selectedIndex) return;
     final path = _routeForIndex(index);
-    Navigator.of(context).pushReplacementNamed(path);
+    try {
+      Navigator.of(context).pushReplacementNamed(path);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _selectedIndex = index);
+      }
+    }
   }
 
   void _openAddExpense() {
@@ -115,8 +121,9 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   @override
   Widget build(BuildContext context) {
-    final authCubit = BlocProvider.maybeOf<AuthCubit>(context);
-    final accountPhotoUrl = authCubit?.state.user?.photoURL;
+    final accountPhotoUrl = context.select(
+      (AuthCubit? cubit) => cubit?.state.user?.photoURL,
+    );
     return BlocProvider.value(
       value: _dashboardCubit,
       child: SmartSelectionArea(

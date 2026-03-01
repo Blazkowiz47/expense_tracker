@@ -139,6 +139,7 @@ class OverviewPage extends StatelessWidget {
             : (isCredit
                   ? 'You should receive money overall.'
                   : 'You owe money overall.');
+        final expensesBloc = context.read<ExpensesBloc?>();
 
         return Align(
           alignment: Alignment.topCenter,
@@ -180,96 +181,105 @@ class OverviewPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-                BlocBuilder<ExpensesBloc, ExpensesState>(
-                  builder: (context, expenseState) {
-                    if (expenseState is ExpensesLoading ||
-                        expenseState is ExpensesInitial ||
-                        expenseState is ExpensesRefreshing) {
-                      return const Card(
-                        child: ListTile(
-                          title: Text('Personal expenses'),
-                          subtitle: Text('Loading...'),
-                        ),
+                if (expensesBloc == null)
+                  const Card(
+                    child: ListTile(
+                      title: Text('Personal expenses'),
+                      subtitle: Text('Expenses data unavailable in this view.'),
+                    ),
+                  )
+                else
+                  BlocBuilder<ExpensesBloc, ExpensesState>(
+                    bloc: expensesBloc,
+                    builder: (context, expenseState) {
+                      if (expenseState is ExpensesLoading ||
+                          expenseState is ExpensesInitial ||
+                          expenseState is ExpensesRefreshing) {
+                        return const Card(
+                          child: ListTile(
+                            title: Text('Personal expenses'),
+                            subtitle: Text('Loading...'),
+                          ),
+                        );
+                      }
+                      if (expenseState is ExpensesError) {
+                        return Card(
+                          child: ListTile(
+                            title: const Text('Personal expenses'),
+                            subtitle: Text(expenseState.message),
+                          ),
+                        );
+                      }
+                      final expenses = expenseState is ExpensesLoaded
+                          ? expenseState.expenses
+                                .where((e) => !e.deleted)
+                                .toList()
+                          : expenseState is SyncSuccess
+                          ? expenseState.expenses
+                                .where((e) => !e.deleted)
+                                .toList()
+                          : const [];
+                      final total = expenses.fold<double>(
+                        0,
+                        (sum, expense) => sum + expense.amount,
                       );
-                    }
-                    if (expenseState is ExpensesError) {
                       return Card(
-                        child: ListTile(
-                          title: const Text('Personal expenses'),
-                          subtitle: Text(expenseState.message),
-                        ),
-                      );
-                    }
-                    final expenses = expenseState is ExpensesLoaded
-                        ? expenseState.expenses
-                              .where((e) => !e.deleted)
-                              .toList()
-                        : expenseState is SyncSuccess
-                        ? expenseState.expenses
-                              .where((e) => !e.deleted)
-                              .toList()
-                        : const [];
-                    final total = expenses.fold<double>(
-                      0,
-                      (sum, expense) => sum + expense.amount,
-                    );
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Personal expenses',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'INR ${total.toStringAsFixed(2)}',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Total spent',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 10),
-                            if (expenses.isEmpty)
-                              const Text(
-                                'No personal expenses yet. Tap Add expense to create one.',
-                              )
-                            else
-                              ...expenses
-                                  .toList()
-                                  .reversed
-                                  .take(6)
-                                  .map(
-                                    (expense) => ListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      onTap: () => _editPersonalExpense(
-                                        context,
-                                        expense,
-                                      ),
-                                      title: Text(expense.title),
-                                      subtitle: Text(
-                                        expense.createdAt
-                                            .toLocal()
-                                            .toString()
-                                            .split('.')
-                                            .first,
-                                      ),
-                                      trailing: Text(
-                                        'INR ${expense.amount.toStringAsFixed(2)}',
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Personal expenses',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'INR ${total.toStringAsFixed(2)}',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Total spent',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                              const SizedBox(height: 10),
+                              if (expenses.isEmpty)
+                                const Text(
+                                  'No personal expenses yet. Tap Add expense to create one.',
+                                )
+                              else
+                                ...expenses
+                                    .toList()
+                                    .reversed
+                                    .take(6)
+                                    .map(
+                                      (expense) => ListTile(
+                                        contentPadding: EdgeInsets.zero,
+                                        onTap: () => _editPersonalExpense(
+                                          context,
+                                          expense,
+                                        ),
+                                        title: Text(expense.title),
+                                        subtitle: Text(
+                                          expense.createdAt
+                                              .toLocal()
+                                              .toString()
+                                              .split('.')
+                                              .first,
+                                        ),
+                                        trailing: Text(
+                                          'INR ${expense.amount.toStringAsFixed(2)}',
+                                        ),
                                       ),
                                     ),
-                                  ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
                 const SizedBox(height: 12),
                 const _RecurringOverviewCard(),
               ],

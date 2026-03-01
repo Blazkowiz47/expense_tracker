@@ -25,7 +25,7 @@ class AccountPage extends StatelessWidget {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final user = context.select((AuthCubit cubit) => cubit.state.user);
+        final user = context.select((AuthCubit? cubit) => cubit?.state.user);
         if (user == null) {
           return const SelectableErrorMessage('No authenticated user found.');
         }
@@ -74,7 +74,9 @@ class AccountPage extends StatelessWidget {
                     const _SettingsTile(title: 'Help and feedback'),
                     _SettingsTile(
                       title: 'Logout',
-                      onTap: () => context.read<AuthCubit>().signOut(),
+                      onTap: context.read<AuthCubit?>() == null
+                          ? null
+                          : () => context.read<AuthCubit>().signOut(),
                     ),
                   ],
                 );
