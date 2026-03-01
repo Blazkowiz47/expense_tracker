@@ -51,6 +51,7 @@ func (s *FirestoreStore) Close() error {
 func (s *FirestoreStore) Create(ctx context.Context, group Group) (Group, error) {
 	doc := s.client.Collection(groupsCollection).NewDoc()
 	group.ID = doc.ID
+	group.DisplayData = computeDisplayData(group.MemberUIDs, nil)
 	if _, err := doc.Set(ctx, toFirestoreGroup(group)); err != nil {
 		return Group{}, fmt.Errorf("create group: %w", err)
 	}
@@ -152,6 +153,9 @@ func (s *FirestoreStore) AddMember(ctx context.Context, groupID, memberUID strin
 	}); err != nil {
 		return Group{}, err
 	}
+	if err := s.refreshDisplayData(ctx, groupID); err != nil {
+		return Group{}, err
+	}
 	return s.GetByID(ctx, groupID)
 }
 
@@ -190,6 +194,11 @@ func (s *FirestoreStore) Leave(ctx context.Context, groupID, uid string) (bool, 
 	if err != nil {
 		return false, err
 	}
+	if !deleted {
+		if err := s.refreshDisplayData(ctx, groupID); err != nil {
+			return false, err
+		}
+	}
 	return deleted, nil
 }
 
@@ -219,6 +228,9 @@ func (s *FirestoreStore) CreateExpense(ctx context.Context, expense GroupExpense
 		"updated_at":  expense.CreatedAt.UTC(),
 	}); err != nil {
 		return GroupExpense{}, fmt.Errorf("create group expense: %w", err)
+	}
+	if err := s.refreshDisplayData(ctx, expense.GroupID); err != nil {
+		return GroupExpense{}, err
 	}
 	return expense, nil
 }
@@ -349,6 +361,9 @@ func (s *FirestoreStore) UpdateExpense(ctx context.Context, expense GroupExpense
 	}, firestore.MergeAll); err != nil {
 		return GroupExpense{}, fmt.Errorf("update group expense: %w", err)
 	}
+	if err := s.refreshDisplayData(ctx, expense.GroupID); err != nil {
+		return GroupExpense{}, err
+	}
 	return GroupExpense{
 		ID:          expense.ID,
 		GroupID:     expense.GroupID,
@@ -381,6 +396,9 @@ func (s *FirestoreStore) DeleteExpense(ctx context.Context, groupID, expenseID s
 	if _, err := expenseDoc.Delete(ctx); err != nil {
 		return fmt.Errorf("delete group expense: %w", err)
 	}
+	if err := s.refreshDisplayData(ctx, groupID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -405,13 +423,14 @@ func stringSliceFrom(value any) []string {
 }
 
 type firestoreGroup struct {
-	Name        string    `firestore:"name"`
-	GroupType   string    `firestore:"group_type"`
-	CreatedBy   string    `firestore:"created_by"`
-	MemberUIDs  []string  `firestore:"member_uids"`
-	MemberCount int       `firestore:"member_count"`
-	CreatedAt   time.Time `firestore:"created_at"`
-	UpdatedAt   time.Time `firestore:"updated_at"`
+	Name        string         `firestore:"name"`
+	GroupType   string         `firestore:"group_type"`
+	CreatedBy   string         `firestore:"created_by"`
+	MemberUIDs  []string       `firestore:"member_uids"`
+	MemberCount int            `firestore:"member_count"`
+	DisplayData map[string]any `firestore:"display_data,omitempty"`
+	CreatedAt   time.Time      `firestore:"created_at"`
+	UpdatedAt   time.Time      `firestore:"updated_at"`
 }
 
 func toFirestoreGroup(group Group) firestoreGroup {
@@ -421,6 +440,7 @@ func toFirestoreGroup(group Group) firestoreGroup {
 		CreatedBy:   group.CreatedBy,
 		MemberUIDs:  group.MemberUIDs,
 		MemberCount: group.MemberCount,
+		DisplayData: groupDisplayDataToMap(group.DisplayData),
 		CreatedAt:   group.CreatedAt.UTC(),
 		UpdatedAt:   group.UpdatedAt.UTC(),
 	}
@@ -438,9 +458,125 @@ func fromFirestoreGroup(doc *firestore.DocumentSnapshot) (Group, error) {
 		CreatedBy:   raw.CreatedBy,
 		MemberUIDs:  raw.MemberUIDs,
 		MemberCount: raw.MemberCount,
+		DisplayData: mapToGroupDisplayData(raw.DisplayData),
 		CreatedAt:   raw.CreatedAt.UTC(),
 		UpdatedAt:   raw.UpdatedAt.UTC(),
 	}, nil
+}
+
+func (s *FirestoreStore) refreshDisplayData(ctx context.Context, groupID string) error {
+	group, err := s.GetByID(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	expenses, err := s.ListExpenses(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	displayData := computeDisplayData(group.MemberUIDs, expenses)
+	_, err = s.client.Collection(groupsCollection).Doc(groupID).Set(ctx, map[string]any{
+		"display_data": groupDisplayDataToMap(displayData),
+		"updated_at":   time.Now().UTC(),
+	}, firestore.MergeAll)
+	if err != nil {
+		return fmt.Errorf("refresh group display_data: %w", err)
+	}
+	return nil
+}
+
+func groupDisplayDataToMap(data *GroupDisplayData) map[string]any {
+	if data == nil {
+		return nil
+	}
+	memberBalances := make(map[string]any, len(data.MemberBalances))
+	for uid, balance := range data.MemberBalances {
+		memberBalances[uid] = map[string]any{
+			"owes": balance.Owes,
+			"owed": balance.Owed,
+			"net":  balance.Net,
+		}
+	}
+	attachmentCounts := make(map[string]any, len(data.AttachmentCounts))
+	for expenseID, count := range data.AttachmentCounts {
+		attachmentCounts[expenseID] = count
+	}
+	return map[string]any{
+		"expense_count":     data.ExpenseCount,
+		"total_spend":       data.TotalSpend,
+		"total_attachments": data.TotalAttachments,
+		"attachment_counts": attachmentCounts,
+		"member_balances":   memberBalances,
+		"updated_at":        data.UpdatedAt.UTC(),
+	}
+}
+
+func mapToGroupDisplayData(raw map[string]any) *GroupDisplayData {
+	if len(raw) == 0 {
+		return nil
+	}
+	data := &GroupDisplayData{
+		ExpenseCount:     intFromAny(raw["expense_count"]),
+		TotalSpend:       floatFromAny(raw["total_spend"]),
+		TotalAttachments: intFromAny(raw["total_attachments"]),
+		AttachmentCounts: map[string]int{},
+		MemberBalances:   map[string]GroupMemberBalance{},
+	}
+	if updatedAt, ok := raw["updated_at"].(time.Time); ok {
+		data.UpdatedAt = updatedAt.UTC()
+	}
+	if counts, ok := raw["attachment_counts"].(map[string]any); ok {
+		for expenseID, value := range counts {
+			data.AttachmentCounts[expenseID] = intFromAny(value)
+		}
+	}
+	if balances, ok := raw["member_balances"].(map[string]any); ok {
+		for uid, value := range balances {
+			entry, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			data.MemberBalances[uid] = GroupMemberBalance{
+				Owes: floatFromAny(entry["owes"]),
+				Owed: floatFromAny(entry["owed"]),
+				Net:  floatFromAny(entry["net"]),
+			}
+		}
+	}
+	return data
+}
+
+func intFromAny(value any) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case float32:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return 0
+	}
+}
+
+func floatFromAny(value any) float64 {
+	switch v := value.(type) {
+	case int:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case float32:
+		return float64(v)
+	case float64:
+		return v
+	default:
+		return 0
+	}
 }
 
 func stringFrom(value any) string {

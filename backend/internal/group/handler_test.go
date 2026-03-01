@@ -241,6 +241,91 @@ func TestCreateAndListGroupExpenses(t *testing.T) {
 	}
 }
 
+func TestGroupListIncludesDisplayDataSnapshot(t *testing.T) {
+	store := &fakeFriendStore{
+		resolvedByContact: map[string]friend.ResolveResult{
+			"user2@example.com": {Exists: true, UID: "user-2"},
+		},
+	}
+	router := setupTestServer(store)
+
+	createPayload := map[string]any{
+		"name":      "Trip",
+		"groupType": "split",
+		"members":   []string{"user2@example.com"},
+	}
+	b, _ := json.Marshal(createPayload)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups", bytes.NewReader(b))
+	createReq.Header.Set("Authorization", "Bearer test-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createRR.Code, createRR.Body.String())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(createRR.Body.Bytes(), &created)
+	groupID, _ := created["id"].(string)
+
+	expensePayload := []byte(`{"amount":120.0,"description":"Groceries","paidBy":"user-1","splitMode":"equally","splitWith":["user-1","user-2"],"date":"2026-02-27T10:00:00Z"}`)
+	createExpenseReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/expenses", bytes.NewReader(expensePayload))
+	createExpenseReq.Header.Set("Authorization", "Bearer test-token")
+	createExpenseReq.Header.Set("Content-Type", "application/json")
+	createExpenseRR := httptest.NewRecorder()
+	router.ServeHTTP(createExpenseRR, createExpenseReq)
+	if createExpenseRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", createExpenseRR.Code, createExpenseRR.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/groups", nil)
+	listReq.Header.Set("Authorization", "Bearer test-token")
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(listRR.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	groups, ok := payload["groups"].([]any)
+	if !ok || len(groups) != 1 {
+		t.Fatalf("expected one group, got %#v", payload["groups"])
+	}
+	group, ok := groups[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected group object, got %#v", groups[0])
+	}
+	displayData, ok := group["displayData"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected displayData map, got %#v", group["displayData"])
+	}
+	if got := int(displayData["expenseCount"].(float64)); got != 1 {
+		t.Fatalf("expected expenseCount=1, got %d", got)
+	}
+	if got := displayData["totalSpend"].(float64); got != 120.0 {
+		t.Fatalf("expected totalSpend=120.0, got %v", got)
+	}
+	memberBalances, ok := displayData["memberBalances"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected memberBalances map, got %#v", displayData["memberBalances"])
+	}
+	user1, ok := memberBalances["user-1"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected user-1 balance entry")
+	}
+	if got := user1["owed"].(float64); got != 60.0 {
+		t.Fatalf("expected user-1 owed=60, got %v", got)
+	}
+	user2, ok := memberBalances["user-2"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected user-2 balance entry")
+	}
+	if got := user2["owes"].(float64); got != 60.0 {
+		t.Fatalf("expected user-2 owes=60, got %v", got)
+	}
+}
+
 func TestUpdateGroupExpense(t *testing.T) {
 	router := setupTestServer(&fakeFriendStore{})
 	createPayload := map[string]any{"name": "Trip", "groupType": "split"}

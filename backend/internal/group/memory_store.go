@@ -26,6 +26,7 @@ func NewInMemoryStore() *InMemoryStore {
 func (s *InMemoryStore) Create(_ context.Context, group Group) (Group, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	group.DisplayData = computeDisplayData(group.MemberUIDs, nil)
 	s.groups[group.ID] = group
 	return group, nil
 }
@@ -91,6 +92,7 @@ func (s *InMemoryStore) AddMember(_ context.Context, groupID, memberUID string) 
 	group.MemberUIDs = append(group.MemberUIDs, memberUID)
 	group.MemberCount = len(group.MemberUIDs)
 	group.UpdatedAt = time.Now().UTC()
+	group.DisplayData = computeDisplayData(group.MemberUIDs, s.groupExpenses[groupID])
 	s.groups[groupID] = group
 	return group, nil
 }
@@ -123,6 +125,7 @@ func (s *InMemoryStore) Leave(_ context.Context, groupID, uid string) (bool, err
 
 	group.MemberUIDs = nextMembers
 	group.MemberCount = len(nextMembers)
+	group.DisplayData = computeDisplayData(group.MemberUIDs, s.groupExpenses[groupID])
 	s.groups[groupID] = group
 	return false, nil
 }
@@ -155,8 +158,10 @@ func (s *InMemoryStore) CreateExpense(_ context.Context, expense GroupExpense) (
 	expense.SplitWith = append([]string{}, expense.SplitWith...)
 	expense.Attachments = append([]string{}, expense.Attachments...)
 	group.UpdatedAt = time.Now().UTC()
+	updatedExpenses := append(s.groupExpenses[group.ID], expense)
+	group.DisplayData = computeDisplayData(group.MemberUIDs, updatedExpenses)
 	s.groups[group.ID] = group
-	s.groupExpenses[group.ID] = append(s.groupExpenses[group.ID], expense)
+	s.groupExpenses[group.ID] = updatedExpenses
 	return expense, nil
 }
 
@@ -190,6 +195,7 @@ func (s *InMemoryStore) UpdateExpense(_ context.Context, expense GroupExpense) (
 			items[i] = expense
 			s.groupExpenses[expense.GroupID] = items
 			group.UpdatedAt = time.Now().UTC()
+			group.DisplayData = computeDisplayData(group.MemberUIDs, items)
 			s.groups[group.ID] = group
 			return expense, nil
 		}
@@ -211,6 +217,7 @@ func (s *InMemoryStore) DeleteExpense(_ context.Context, groupID, expenseID stri
 		s.groupExpenses[groupID] = append(items[:i], items[i+1:]...)
 		group := s.groups[groupID]
 		group.UpdatedAt = time.Now().UTC()
+		group.DisplayData = computeDisplayData(group.MemberUIDs, s.groupExpenses[groupID])
 		s.groups[groupID] = group
 		return nil
 	}

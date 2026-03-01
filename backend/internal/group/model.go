@@ -10,14 +10,30 @@ const (
 )
 
 type Group struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	GroupType   GroupType `json:"groupType"`
-	CreatedBy   string    `json:"createdBy"`
-	MemberUIDs  []string  `json:"memberUids"`
-	MemberCount int       `json:"memberCount"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	GroupType   GroupType         `json:"groupType"`
+	CreatedBy   string            `json:"createdBy"`
+	MemberUIDs  []string          `json:"memberUids"`
+	MemberCount int               `json:"memberCount"`
+	DisplayData *GroupDisplayData `json:"displayData,omitempty"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
+}
+
+type GroupDisplayData struct {
+	ExpenseCount     int                           `json:"expenseCount"`
+	TotalSpend       float64                       `json:"totalSpend"`
+	TotalAttachments int                           `json:"totalAttachments"`
+	AttachmentCounts map[string]int                `json:"attachmentCounts,omitempty"`
+	MemberBalances   map[string]GroupMemberBalance `json:"memberBalances,omitempty"`
+	UpdatedAt        time.Time                     `json:"updatedAt"`
+}
+
+type GroupMemberBalance struct {
+	Owes float64 `json:"owes"`
+	Owed float64 `json:"owed"`
+	Net  float64 `json:"net"`
 }
 
 type GroupExpense struct {
