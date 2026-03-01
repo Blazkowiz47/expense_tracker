@@ -735,7 +735,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       }
                       final expectedBytes = loadingProgress.expectedTotalBytes;
                       final loadedBytes = loadingProgress.cumulativeBytesLoaded;
-                      final progress = expectedBytes == null || expectedBytes <= 0
+                      final progress =
+                          expectedBytes == null || expectedBytes <= 0
                           ? null
                           : loadedBytes / expectedBytes;
                       return Center(
@@ -1015,7 +1016,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   );
                                 }
 
-                                if (kIsWeb && previewable && previewUrl != null) {
+                                if (kIsWeb &&
+                                    previewable &&
+                                    previewUrl != null) {
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: Image.network(
@@ -1027,16 +1030,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       height: 140,
                                       fit: BoxFit.cover,
                                       loadingBuilder:
-                                          (
-                                            context,
-                                            child,
-                                            loadingProgress,
-                                          ) {
+                                          (context, child, loadingProgress) {
                                             if (loadingProgress == null) {
                                               return child;
                                             }
-                                            final expectedBytes = loadingProgress
-                                                .expectedTotalBytes;
+                                            final expectedBytes =
+                                                loadingProgress
+                                                    .expectedTotalBytes;
                                             final loadedBytes = loadingProgress
                                                 .cumulativeBytesLoaded;
                                             final progress =
@@ -1079,7 +1079,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   );
                                 }
 
-                                if (!kIsWeb && previewable && previewUrl != null) {
+                                if (!kIsWeb &&
+                                    previewable &&
+                                    previewUrl != null) {
                                   return InkWell(
                                     onTap: () => _openAttachmentPreview(
                                       title: item.label,
@@ -1091,9 +1093,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       height: 140,
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .surfaceContainerHighest,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHighest,
                                       ),
                                       alignment: Alignment.center,
                                       child: const Icon(Icons.zoom_in),
@@ -1229,7 +1231,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   );
                                   if (idx >= 0) {
                                     attachmentItems[idx] = attachmentItems[idx]
-                                        .copyWith(localPreviewBytes: bytes);
+                                        .copyWith(
+                                          localPreviewBytes: bytes,
+                                          pendingUploadBytes: bytes,
+                                        );
                                   }
                                 });
                                 final mimeType =
@@ -1238,6 +1243,23 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       headerBytes: bytes,
                                     ) ??
                                     'image/jpeg';
+                                if (!isEditing) {
+                                  setDialogState(() {
+                                    final idx = attachmentItems.indexWhere(
+                                      (it) => it.id == itemId,
+                                    );
+                                    if (idx >= 0) {
+                                      attachmentItems[idx] =
+                                          attachmentItems[idx].copyWith(
+                                            uploading: false,
+                                            progress: 1,
+                                            uploadFileName: image.name,
+                                            uploadContentType: mimeType,
+                                          );
+                                    }
+                                  });
+                                  continue;
+                                }
                                 final url = await widget.repository
                                     .uploadAttachment(
                                       groupId: widget.group.id,
@@ -1273,6 +1295,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           progress: 1,
                                           url: url,
                                           error: null,
+                                          pendingUploadBytes: null,
                                         );
                                   }
                                 });
@@ -1326,7 +1349,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 );
                                 if (idx >= 0) {
                                   attachmentItems[idx] = attachmentItems[idx]
-                                      .copyWith(localPreviewBytes: bytes);
+                                      .copyWith(
+                                        localPreviewBytes: bytes,
+                                        pendingUploadBytes: bytes,
+                                      );
                                 }
                               });
                               final mimeType =
@@ -1335,6 +1361,23 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     headerBytes: bytes,
                                   ) ??
                                   'image/jpeg';
+                              if (!isEditing) {
+                                setDialogState(() {
+                                  final idx = attachmentItems.indexWhere(
+                                    (it) => it.id == itemId,
+                                  );
+                                  if (idx >= 0) {
+                                    attachmentItems[idx] = attachmentItems[idx]
+                                        .copyWith(
+                                          uploading: false,
+                                          progress: 1,
+                                          uploadFileName: image.name,
+                                          uploadContentType: mimeType,
+                                        );
+                                  }
+                                });
+                                return;
+                              }
                               final url = await widget.repository
                                   .uploadAttachment(
                                     groupId: widget.group.id,
@@ -1369,6 +1412,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         progress: 1,
                                         url: url,
                                         error: null,
+                                        pendingUploadBytes: null,
                                       );
                                 }
                               });
@@ -1447,6 +1491,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       .where((item) => !item.uploading && item.url != null)
                       .map((item) => item.url!)
                       .toList(growable: false),
+                  'attachmentItems': List<_AttachmentUploadItem>.from(
+                    attachmentItems,
+                  ),
                 }),
                 child: Text(isEditing ? 'Done' : 'Save'),
               ),
@@ -1468,17 +1515,14 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             _memberCount,
             (index) => index == 0 ? 'You' : 'Member ${index + 1}',
           );
-    final draftExpenseId = DateTime.now().microsecondsSinceEpoch.toString();
-
     final payload = await _showExpenseForm(
       title: 'Add group expense',
-      expenseId: draftExpenseId,
+      expenseId: '',
       participants: participants,
       initialSplitWith: participants.toSet(),
     );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
-    final expenseId = (payload['expenseId'] as String?) ?? '';
     final paidBy = (payload['paidBy'] as String?) ?? participants.first;
     final splitMode = (payload['splitMode'] as String?) ?? 'equally';
     final splitWith = (payload['splitWith'] as List<dynamic>? ?? participants)
@@ -1488,6 +1532,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
+    final attachmentItems =
+        (payload['attachmentItems'] as List<dynamic>? ?? const [])
+            .whereType<_AttachmentUploadItem>()
+            .toList(growable: false);
     if (description.isEmpty || amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid description and amount.')),
@@ -1496,8 +1544,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
     setState(() => _busyAction = _GroupBusyAction.addingExpense);
     try {
-      await widget.repository.addExpense(
-        expenseId: expenseId,
+      final created = await widget.repository.addExpense(
         groupId: widget.group.id,
         description: description,
         paidBy: paidBy,
@@ -1507,13 +1554,58 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         attachments: attachments,
         date: DateTime.now(),
       );
+
+      var failedUploads = 0;
+      final uploadedUrls = <String>[];
+      for (final item in attachmentItems) {
+        final bytes = item.pendingUploadBytes;
+        if (bytes == null || bytes.isEmpty) {
+          continue;
+        }
+        try {
+          final uploaded = await widget.repository.uploadAttachment(
+            groupId: widget.group.id,
+            expenseId: created.id,
+            bytes: bytes,
+            fileName: item.uploadFileName?.trim().isNotEmpty == true
+                ? item.uploadFileName!
+                : item.label,
+            contentType: item.uploadContentType?.trim().isNotEmpty == true
+                ? item.uploadContentType!
+                : 'image/jpeg',
+          );
+          uploadedUrls.add(uploaded);
+        } catch (_) {
+          failedUploads += 1;
+        }
+      }
+
+      if (uploadedUrls.isNotEmpty) {
+        await widget.repository.updateExpense(
+          groupId: widget.group.id,
+          expenseId: created.id,
+          description: description,
+          paidBy: paidBy,
+          splitMode: splitMode,
+          splitWith: splitWith,
+          amount: amount,
+          attachments: [...attachments, ...uploadedUrls],
+          date: DateTime.now(),
+        );
+      }
       if (!mounted) return;
       await _loadExpenses();
       if (!mounted) return;
       setState(() => _busyAction = _GroupBusyAction.none);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Group expense added.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            failedUploads > 0
+                ? 'Group expense added. $failedUploads attachment(s) failed.'
+                : 'Group expense added.',
+          ),
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _busyAction = _GroupBusyAction.none);
@@ -2331,6 +2423,9 @@ class _AttachmentUploadItem {
     this.url,
     this.error,
     this.localPreviewBytes,
+    this.pendingUploadBytes,
+    this.uploadFileName,
+    this.uploadContentType,
   });
 
   final String id;
@@ -2340,6 +2435,9 @@ class _AttachmentUploadItem {
   final String? url;
   final String? error;
   final Uint8List? localPreviewBytes;
+  final Uint8List? pendingUploadBytes;
+  final String? uploadFileName;
+  final String? uploadContentType;
 
   _AttachmentUploadItem copyWith({
     String? id,
@@ -2349,6 +2447,9 @@ class _AttachmentUploadItem {
     Object? url = _unset,
     Object? error = _unset,
     Object? localPreviewBytes = _unset,
+    Object? pendingUploadBytes = _unset,
+    Object? uploadFileName = _unset,
+    Object? uploadContentType = _unset,
   }) {
     return _AttachmentUploadItem(
       id: id ?? this.id,
@@ -2360,6 +2461,15 @@ class _AttachmentUploadItem {
       localPreviewBytes: identical(localPreviewBytes, _unset)
           ? this.localPreviewBytes
           : localPreviewBytes as Uint8List?,
+      pendingUploadBytes: identical(pendingUploadBytes, _unset)
+          ? this.pendingUploadBytes
+          : pendingUploadBytes as Uint8List?,
+      uploadFileName: identical(uploadFileName, _unset)
+          ? this.uploadFileName
+          : uploadFileName as String?,
+      uploadContentType: identical(uploadContentType, _unset)
+          ? this.uploadContentType
+          : uploadContentType as String?,
     );
   }
 }
