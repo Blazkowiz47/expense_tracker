@@ -784,7 +784,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final amountController = TextEditingController(
       text: initialAmount == null ? '' : initialAmount.toStringAsFixed(2),
     );
-    final previewByteFutures = <String, Future<Uint8List?>>{};
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
@@ -969,7 +968,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       )
                     else
                       ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 260),
+                        constraints: const BoxConstraints(maxHeight: 220),
                         child: Scrollbar(
                           thumbVisibility: true,
                           child: ListView.separated(
@@ -991,19 +990,58 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               final previewUrl = item.url;
 
                               Widget previewBox() {
-                                if (item.localPreviewBytes != null) {
+                                if (kIsWeb &&
+                                    previewable &&
+                                    previewUrl != null) {
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      item.localPreviewBytes!,
-                                      width: 100,
-                                      height: 140,
+                                    child: Image.network(
+                                      previewUrl,
+                                      key: ValueKey(
+                                        '$previewUrl|attachment-thumb',
+                                      ),
+                                      width: 110,
+                                      height: 170,
                                       fit: BoxFit.cover,
+                                      webHtmlElementStrategy:
+                                          WebHtmlElementStrategy.prefer,
+                                      loadingBuilder:
+                                          (context, child, loadingProgress) {
+                                            if (loadingProgress == null) {
+                                              return child;
+                                            }
+                                            final expectedBytes =
+                                                loadingProgress
+                                                    .expectedTotalBytes;
+                                            final loadedBytes = loadingProgress
+                                                .cumulativeBytesLoaded;
+                                            final progress =
+                                                expectedBytes == null ||
+                                                    expectedBytes <= 0
+                                                ? null
+                                                : loadedBytes / expectedBytes;
+                                            return Container(
+                                              width: 110,
+                                              height: 170,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHighest,
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                progress == null
+                                                    ? '0%'
+                                                    : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            );
+                                          },
                                       errorBuilder:
                                           (context, error, stackTrace) =>
                                               Container(
-                                                width: 100,
-                                                height: 140,
+                                                width: 110,
+                                                height: 170,
                                                 color: Theme.of(context)
                                                     .colorScheme
                                                     .surfaceContainerHighest,
@@ -1013,88 +1051,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                                   textAlign: TextAlign.center,
                                                 ),
                                               ),
-                                    ),
-                                  );
-                                }
-
-                                if (kIsWeb &&
-                                    previewable &&
-                                    previewUrl != null &&
-                                    expenseId.trim().isNotEmpty) {
-                                  final cacheKey = '${item.id}|$previewUrl';
-                                  final previewFuture = previewByteFutures
-                                      .putIfAbsent(
-                                        cacheKey,
-                                        () => widget.repository
-                                            .fetchAttachmentPreviewBytes(
-                                              groupId: widget.group.id,
-                                              expenseId: expenseId,
-                                              attachmentUrl: previewUrl,
-                                            )
-                                            .then<Uint8List?>((bytes) => bytes)
-                                            .catchError((_) => null),
-                                      );
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: FutureBuilder<Uint8List?>(
-                                      future: previewFuture,
-                                      builder: (context, snapshot) {
-                                        if (snapshot.connectionState !=
-                                            ConnectionState.done) {
-                                          return Container(
-                                            width: 100,
-                                            height: 140,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            alignment: Alignment.center,
-                                            child: Text(
-                                              '0%',
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          );
-                                        }
-                                        final bytes = snapshot.data;
-                                        if (bytes == null || bytes.isEmpty) {
-                                          return Container(
-                                            width: 100,
-                                            height: 140,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            alignment: Alignment.center,
-                                            child: const Text(
-                                              'Preview unavailable',
-                                              textAlign: TextAlign.center,
-                                            ),
-                                          );
-                                        }
-                                        return Image.memory(
-                                          bytes,
-                                          width: 100,
-                                          height: 140,
-                                          fit: BoxFit.cover,
-                                          errorBuilder:
-                                              (
-                                                context,
-                                                error,
-                                                stackTrace,
-                                              ) => Container(
-                                                width: 100,
-                                                height: 140,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .surfaceContainerHighest,
-                                                alignment: Alignment.center,
-                                                child: const Text(
-                                                  'Preview unavailable',
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                              ),
-                                        );
-                                      },
                                     ),
                                   );
                                 }
@@ -1109,8 +1065,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     ),
                                     borderRadius: BorderRadius.circular(8),
                                     child: Container(
-                                      width: 100,
-                                      height: 140,
+                                      width: 110,
+                                      height: 170,
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
                                         color: Theme.of(
@@ -1124,8 +1080,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 }
 
                                 return Container(
-                                  width: 100,
-                                  height: 140,
+                                  width: 110,
+                                  height: 170,
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(8),
                                     color: Theme.of(
@@ -1144,7 +1100,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               }
 
                               return Container(
-                                width: 132,
+                                width: 140,
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(10),
@@ -1245,41 +1201,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               });
                               try {
                                 final bytes = await image.readAsBytes();
-                                setDialogState(() {
-                                  final idx = attachmentItems.indexWhere(
-                                    (it) => it.id == itemId,
-                                  );
-                                  if (idx >= 0) {
-                                    attachmentItems[idx] = attachmentItems[idx]
-                                        .copyWith(
-                                          localPreviewBytes: bytes,
-                                          pendingUploadBytes: bytes,
-                                        );
-                                  }
-                                });
                                 final mimeType =
                                     lookupMimeType(
                                       image.name,
                                       headerBytes: bytes,
                                     ) ??
                                     'image/jpeg';
-                                if (!isEditing) {
-                                  setDialogState(() {
-                                    final idx = attachmentItems.indexWhere(
-                                      (it) => it.id == itemId,
-                                    );
-                                    if (idx >= 0) {
-                                      attachmentItems[idx] =
-                                          attachmentItems[idx].copyWith(
-                                            uploading: false,
-                                            progress: 1,
-                                            uploadFileName: image.name,
-                                            uploadContentType: mimeType,
-                                          );
-                                    }
-                                  });
-                                  continue;
-                                }
                                 final url = await widget.repository
                                     .uploadAttachment(
                                       groupId: widget.group.id,
@@ -1315,7 +1242,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           progress: 1,
                                           url: url,
                                           error: null,
-                                          pendingUploadBytes: null,
                                         );
                                   }
                                 });
@@ -1363,41 +1289,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             });
                             try {
                               final bytes = await image.readAsBytes();
-                              setDialogState(() {
-                                final idx = attachmentItems.indexWhere(
-                                  (it) => it.id == itemId,
-                                );
-                                if (idx >= 0) {
-                                  attachmentItems[idx] = attachmentItems[idx]
-                                      .copyWith(
-                                        localPreviewBytes: bytes,
-                                        pendingUploadBytes: bytes,
-                                      );
-                                }
-                              });
                               final mimeType =
                                   lookupMimeType(
                                     image.name,
                                     headerBytes: bytes,
                                   ) ??
                                   'image/jpeg';
-                              if (!isEditing) {
-                                setDialogState(() {
-                                  final idx = attachmentItems.indexWhere(
-                                    (it) => it.id == itemId,
-                                  );
-                                  if (idx >= 0) {
-                                    attachmentItems[idx] = attachmentItems[idx]
-                                        .copyWith(
-                                          uploading: false,
-                                          progress: 1,
-                                          uploadFileName: image.name,
-                                          uploadContentType: mimeType,
-                                        );
-                                  }
-                                });
-                                return;
-                              }
                               final url = await widget.repository
                                   .uploadAttachment(
                                     groupId: widget.group.id,
@@ -1432,7 +1329,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                         progress: 1,
                                         url: url,
                                         error: null,
-                                        pendingUploadBytes: null,
                                       );
                                 }
                               });
@@ -1511,9 +1407,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       .where((item) => !item.uploading && item.url != null)
                       .map((item) => item.url!)
                       .toList(growable: false),
-                  'attachmentItems': List<_AttachmentUploadItem>.from(
-                    attachmentItems,
-                  ),
                 }),
                 child: Text(isEditing ? 'Done' : 'Save'),
               ),
@@ -1535,14 +1428,17 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             _memberCount,
             (index) => index == 0 ? 'You' : 'Member ${index + 1}',
           );
+    final draftExpenseId = DateTime.now().microsecondsSinceEpoch.toString();
+
     final payload = await _showExpenseForm(
       title: 'Add group expense',
-      expenseId: '',
+      expenseId: draftExpenseId,
       participants: participants,
       initialSplitWith: participants.toSet(),
     );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
+    final expenseId = (payload['expenseId'] as String?) ?? '';
     final paidBy = (payload['paidBy'] as String?) ?? participants.first;
     final splitMode = (payload['splitMode'] as String?) ?? 'equally';
     final splitWith = (payload['splitWith'] as List<dynamic>? ?? participants)
@@ -1552,10 +1448,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
-    final attachmentItems =
-        (payload['attachmentItems'] as List<dynamic>? ?? const [])
-            .whereType<_AttachmentUploadItem>()
-            .toList(growable: false);
     if (description.isEmpty || amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a valid description and amount.')),
@@ -1564,7 +1456,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
     setState(() => _busyAction = _GroupBusyAction.addingExpense);
     try {
-      final created = await widget.repository.addExpense(
+      await widget.repository.addExpense(
+        expenseId: expenseId,
         groupId: widget.group.id,
         description: description,
         paidBy: paidBy,
@@ -1574,58 +1467,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         attachments: attachments,
         date: DateTime.now(),
       );
-
-      var failedUploads = 0;
-      final uploadedUrls = <String>[];
-      for (final item in attachmentItems) {
-        final bytes = item.pendingUploadBytes;
-        if (bytes == null || bytes.isEmpty) {
-          continue;
-        }
-        try {
-          final uploaded = await widget.repository.uploadAttachment(
-            groupId: widget.group.id,
-            expenseId: created.id,
-            bytes: bytes,
-            fileName: item.uploadFileName?.trim().isNotEmpty == true
-                ? item.uploadFileName!
-                : item.label,
-            contentType: item.uploadContentType?.trim().isNotEmpty == true
-                ? item.uploadContentType!
-                : 'image/jpeg',
-          );
-          uploadedUrls.add(uploaded);
-        } catch (_) {
-          failedUploads += 1;
-        }
-      }
-
-      if (uploadedUrls.isNotEmpty) {
-        await widget.repository.updateExpense(
-          groupId: widget.group.id,
-          expenseId: created.id,
-          description: description,
-          paidBy: paidBy,
-          splitMode: splitMode,
-          splitWith: splitWith,
-          amount: amount,
-          attachments: [...attachments, ...uploadedUrls],
-          date: DateTime.now(),
-        );
-      }
       if (!mounted) return;
       await _loadExpenses();
       if (!mounted) return;
       setState(() => _busyAction = _GroupBusyAction.none);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            failedUploads > 0
-                ? 'Group expense added. $failedUploads attachment(s) failed.'
-                : 'Group expense added.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Group expense added.')));
     } catch (error) {
       if (!mounted) return;
       setState(() => _busyAction = _GroupBusyAction.none);
@@ -2433,8 +2281,6 @@ enum _GroupBusyAction {
 }
 
 class _AttachmentUploadItem {
-  static const Object _unset = Object();
-
   const _AttachmentUploadItem({
     required this.id,
     required this.label,
@@ -2442,10 +2288,6 @@ class _AttachmentUploadItem {
     required this.uploading,
     this.url,
     this.error,
-    this.localPreviewBytes,
-    this.pendingUploadBytes,
-    this.uploadFileName,
-    this.uploadContentType,
   });
 
   final String id;
@@ -2454,42 +2296,22 @@ class _AttachmentUploadItem {
   final bool uploading;
   final String? url;
   final String? error;
-  final Uint8List? localPreviewBytes;
-  final Uint8List? pendingUploadBytes;
-  final String? uploadFileName;
-  final String? uploadContentType;
 
   _AttachmentUploadItem copyWith({
     String? id,
     String? label,
     double? progress,
     bool? uploading,
-    Object? url = _unset,
-    Object? error = _unset,
-    Object? localPreviewBytes = _unset,
-    Object? pendingUploadBytes = _unset,
-    Object? uploadFileName = _unset,
-    Object? uploadContentType = _unset,
+    String? url,
+    String? error,
   }) {
     return _AttachmentUploadItem(
       id: id ?? this.id,
       label: label ?? this.label,
       progress: progress ?? this.progress,
       uploading: uploading ?? this.uploading,
-      url: identical(url, _unset) ? this.url : url as String?,
-      error: identical(error, _unset) ? this.error : error as String?,
-      localPreviewBytes: identical(localPreviewBytes, _unset)
-          ? this.localPreviewBytes
-          : localPreviewBytes as Uint8List?,
-      pendingUploadBytes: identical(pendingUploadBytes, _unset)
-          ? this.pendingUploadBytes
-          : pendingUploadBytes as Uint8List?,
-      uploadFileName: identical(uploadFileName, _unset)
-          ? this.uploadFileName
-          : uploadFileName as String?,
-      uploadContentType: identical(uploadContentType, _unset)
-          ? this.uploadContentType
-          : uploadContentType as String?,
+      url: url ?? this.url,
+      error: error,
     );
   }
 }
