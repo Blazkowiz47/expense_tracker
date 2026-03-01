@@ -728,6 +728,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                 child: InteractiveViewer(
                   child: Image.network(
                     url,
+                    gaplessPlayback: true,
+                    webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
                     fit: BoxFit.contain,
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) {
@@ -996,6 +998,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     key: ValueKey(
                                       '$url|attachment-thumb-fallback',
                                     ),
+                                    gaplessPlayback: true,
+                                    webHtmlElementStrategy:
+                                        WebHtmlElementStrategy.prefer,
                                     width: 100,
                                     height: 140,
                                     fit: BoxFit.cover,
