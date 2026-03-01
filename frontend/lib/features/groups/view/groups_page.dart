@@ -979,6 +979,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 const SizedBox(width: 8),
                             itemBuilder: (context, index) {
                               final item = attachmentItems[index];
+                              final displayLabel =
+                                  !item.uploading &&
+                                      (item.url?.isNotEmpty ?? false)
+                                  ? 'Bill ${index + 1}'
+                                  : item.label;
                               final percent = (item.progress * 100).clamp(
                                 0,
                                 100,
@@ -1188,7 +1193,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            item.label,
+                                            displayLabel,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),
