@@ -91,6 +91,7 @@ class ApiGroupsRepository {
   }
 
   Future<GroupExpense> addExpense({
+    String? expenseId,
     required String groupId,
     required String description,
     required String paidBy,
@@ -105,6 +106,7 @@ class ApiGroupsRepository {
       path: '/api/v1/groups/$groupId/expenses',
       body: <String, dynamic>{
         'description': description,
+        if ((expenseId ?? '').trim().isNotEmpty) 'id': expenseId!.trim(),
         'paidBy': paidBy,
         'splitMode': splitMode,
         'splitWith': splitWith,
@@ -147,9 +149,11 @@ class ApiGroupsRepository {
 
   Future<String> uploadAttachment({
     required String groupId,
+    required String expenseId,
     required Uint8List bytes,
     required String fileName,
     required String contentType,
+    void Function(int sentBytes, int totalBytes)? onProgress,
   }) async {
     final token = await _authTokenProvider.getBearerToken();
     final uri = Uri.parse(
@@ -159,6 +163,7 @@ class ApiGroupsRepository {
     final request = http.MultipartRequest('POST', uri)
       ..headers['Authorization'] = 'Bearer $token'
       ..headers['Accept'] = 'application/json'
+      ..fields['expenseId'] = expenseId
       ..files.add(
         http.MultipartFile.fromBytes(
           'file',
@@ -167,7 +172,30 @@ class ApiGroupsRepository {
           contentType: mediaType,
         ),
       );
-    final streamed = await request.send().timeout(const Duration(seconds: 30));
+    final totalBytes = request.contentLength;
+    final source = request.finalize();
+
+    final streamedRequest = http.StreamedRequest('POST', uri)
+      ..headers.addAll(request.headers)
+      ..contentLength = totalBytes;
+
+    var sentBytes = 0;
+    source.listen(
+      (chunk) {
+        sentBytes += chunk.length;
+        streamedRequest.sink.add(chunk);
+        if (onProgress != null) {
+          onProgress(sentBytes, totalBytes);
+        }
+      },
+      onDone: () => streamedRequest.sink.close(),
+      onError: streamedRequest.sink.addError,
+      cancelOnError: true,
+    );
+
+    final streamed = await _client
+        .send(streamedRequest)
+        .timeout(const Duration(seconds: 30));
     final response = await http.Response.fromStream(streamed);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(

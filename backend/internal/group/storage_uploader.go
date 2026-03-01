@@ -19,6 +19,7 @@ type AttachmentUploader interface {
 
 type AttachmentUploadInput struct {
 	GroupID     string
+	ExpenseID   string
 	UploaderUID string
 	FileName    string
 	ContentType string
@@ -87,9 +88,9 @@ func (u *FirebaseAttachmentUploader) UploadGroupAttachment(
 		return "", errors.New("attachment is empty")
 	}
 	objectPath := fmt.Sprintf(
-		"groups/%s/attachments/%s/%s",
+		"groups/%s/%s/%s",
 		strings.TrimSpace(input.GroupID),
-		strings.TrimSpace(input.UploaderUID),
+		strings.TrimSpace(input.ExpenseID),
 		uuid.NewString(),
 	)
 	var lastErr error

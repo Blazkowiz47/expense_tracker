@@ -687,7 +687,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   Future<Map<String, dynamic>?> _showExpenseForm({
     required String title,
+    required String expenseId,
     required List<String> participants,
+    bool isEditing = false,
     String? initialDescription,
     double? initialAmount,
     String? initialPaidBy,
@@ -710,9 +712,17 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         var splitMode = initialSplitMode;
         final selected = {...(initialSplitWith ?? participants)};
         var splitWithAll = selected.length == participants.length;
-        final attachments = [...?initialAttachments];
-        var attachmentUploadError = '';
-        var uploadingAttachment = false;
+        final attachmentItems = [
+          ...?initialAttachments?.asMap().entries.map(
+            (entry) => _AttachmentUploadItem(
+              id: 'existing-${entry.key}-${entry.value.hashCode}',
+              label: 'Bill ${entry.key + 1}',
+              url: entry.value,
+              progress: 1,
+              uploading: false,
+            ),
+          ),
+        ];
 
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -855,65 +865,200 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    if (attachmentItems.isEmpty)
+                      Text(
+                        'No attachments yet.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: attachmentItems.length,
+                          separatorBuilder: (_, index) =>
+                              const SizedBox(height: 6),
+                          itemBuilder: (context, index) {
+                            final item = attachmentItems[index];
+                            final percent = (item.progress * 100).clamp(0, 100);
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outlineVariant,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    item.uploading
+                                        ? Icons.cloud_upload_outlined
+                                        : item.error == null
+                                        ? Icons.image_outlined
+                                        : Icons.error_outline,
+                                    size: 18,
+                                    color: item.error == null
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          item.label,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (item.uploading) ...[
+                                          const SizedBox(height: 4),
+                                          LinearProgressIndicator(
+                                            minHeight: 3,
+                                            value: item.progress <= 0
+                                                ? null
+                                                : item.progress,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${percent.toStringAsFixed(0)}%',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                        ],
+                                        if (item.error != null)
+                                          Text(
+                                            item.error!,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Remove',
+                                    onPressed: () {
+                                      setDialogState(
+                                        () => attachmentItems.removeAt(index),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.close),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        ...attachments.asMap().entries.map(
-                          (entry) => Chip(
-                            label: Text('Bill ${entry.key + 1}'),
-                            onDeleted: () {
-                              setDialogState(
-                                () => attachments.removeAt(entry.key),
-                              );
-                            },
-                          ),
-                        ),
                         ActionChip(
                           avatar: const Icon(
                             Icons.photo_library_outlined,
                             size: 16,
                           ),
                           label: const Text('Gallery'),
-                          onPressed: uploadingAttachment
-                              ? null
-                              : () async {
-                                  final picker = ImagePicker();
-                                  final picked = await picker.pickImage(
-                                    source: ImageSource.gallery,
-                                    imageQuality: 85,
+                          onPressed: () async {
+                            final picker = ImagePicker();
+                            final picked = await picker.pickMultiImage(
+                              imageQuality: 85,
+                            );
+                            if (picked.isEmpty) return;
+                            for (final image in picked) {
+                              final itemId =
+                                  '${DateTime.now().microsecondsSinceEpoch}-${image.name.hashCode}';
+                              setDialogState(() {
+                                attachmentItems.add(
+                                  _AttachmentUploadItem(
+                                    id: itemId,
+                                    label: image.name,
+                                    progress: 0,
+                                    uploading: true,
+                                  ),
+                                );
+                              });
+                              try {
+                                final bytes = await image.readAsBytes();
+                                final mimeType =
+                                    lookupMimeType(
+                                      image.name,
+                                      headerBytes: bytes,
+                                    ) ??
+                                    'image/jpeg';
+                                final url = await widget.repository
+                                    .uploadAttachment(
+                                      groupId: widget.group.id,
+                                      expenseId: expenseId,
+                                      bytes: bytes,
+                                      fileName: image.name,
+                                      contentType: mimeType,
+                                      onProgress: (sent, total) {
+                                        if (total <= 0) return;
+                                        final progress = sent / total;
+                                        setDialogState(() {
+                                          final idx = attachmentItems
+                                              .indexWhere(
+                                                (it) => it.id == itemId,
+                                              );
+                                          if (idx >= 0) {
+                                            attachmentItems[idx] =
+                                                attachmentItems[idx].copyWith(
+                                                  progress: progress,
+                                                );
+                                          }
+                                        });
+                                      },
+                                    );
+                                setDialogState(() {
+                                  final idx = attachmentItems.indexWhere(
+                                    (it) => it.id == itemId,
                                   );
-                                  if (picked == null) return;
-                                  try {
-                                    setDialogState(() {
-                                      uploadingAttachment = true;
-                                      attachmentUploadError = '';
-                                    });
-                                    final bytes = await picked.readAsBytes();
-                                    final mimeType =
-                                        lookupMimeType(
-                                          picked.name,
-                                          headerBytes: bytes,
-                                        ) ??
-                                        'image/jpeg';
-                                    final url = await widget.repository
-                                        .uploadAttachment(
-                                          groupId: widget.group.id,
-                                          bytes: bytes,
-                                          fileName: picked.name,
-                                          contentType: mimeType,
+                                  if (idx >= 0) {
+                                    attachmentItems[idx] = attachmentItems[idx]
+                                        .copyWith(
+                                          uploading: false,
+                                          progress: 1,
+                                          url: url,
+                                          error: null,
                                         );
-                                    setDialogState(() {
-                                      attachments.add(url);
-                                      uploadingAttachment = false;
-                                    });
-                                  } catch (error) {
-                                    setDialogState(() {
-                                      uploadingAttachment = false;
-                                      attachmentUploadError = error.toString();
-                                    });
                                   }
-                                },
+                                });
+                              } catch (error) {
+                                setDialogState(() {
+                                  final idx = attachmentItems.indexWhere(
+                                    (it) => it.id == itemId,
+                                  );
+                                  if (idx >= 0) {
+                                    attachmentItems[idx] = attachmentItems[idx]
+                                        .copyWith(
+                                          uploading: false,
+                                          error: error.toString(),
+                                        );
+                                  }
+                                });
+                              }
+                            }
+                          },
                         ),
                         ActionChip(
                           avatar: const Icon(
@@ -921,45 +1066,85 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             size: 16,
                           ),
                           label: const Text('Camera'),
-                          onPressed: uploadingAttachment
-                              ? null
-                              : () async {
-                                  final picker = ImagePicker();
-                                  final picked = await picker.pickImage(
-                                    source: ImageSource.camera,
-                                    imageQuality: 85,
-                                  );
-                                  if (picked == null) return;
-                                  try {
-                                    setDialogState(() {
-                                      uploadingAttachment = true;
-                                      attachmentUploadError = '';
-                                    });
-                                    final bytes = await picked.readAsBytes();
-                                    final mimeType =
-                                        lookupMimeType(
-                                          picked.name,
-                                          headerBytes: bytes,
-                                        ) ??
-                                        'image/jpeg';
-                                    final url = await widget.repository
-                                        .uploadAttachment(
-                                          groupId: widget.group.id,
-                                          bytes: bytes,
-                                          fileName: picked.name,
-                                          contentType: mimeType,
+                          onPressed: () async {
+                            final picker = ImagePicker();
+                            final image = await picker.pickImage(
+                              source: ImageSource.camera,
+                              imageQuality: 85,
+                            );
+                            if (image == null) return;
+                            final itemId =
+                                '${DateTime.now().microsecondsSinceEpoch}-${image.name.hashCode}';
+                            setDialogState(() {
+                              attachmentItems.add(
+                                _AttachmentUploadItem(
+                                  id: itemId,
+                                  label: image.name,
+                                  progress: 0,
+                                  uploading: true,
+                                ),
+                              );
+                            });
+                            try {
+                              final bytes = await image.readAsBytes();
+                              final mimeType =
+                                  lookupMimeType(
+                                    image.name,
+                                    headerBytes: bytes,
+                                  ) ??
+                                  'image/jpeg';
+                              final url = await widget.repository
+                                  .uploadAttachment(
+                                    groupId: widget.group.id,
+                                    expenseId: expenseId,
+                                    bytes: bytes,
+                                    fileName: image.name,
+                                    contentType: mimeType,
+                                    onProgress: (sent, total) {
+                                      if (total <= 0) return;
+                                      final progress = sent / total;
+                                      setDialogState(() {
+                                        final idx = attachmentItems.indexWhere(
+                                          (it) => it.id == itemId,
                                         );
-                                    setDialogState(() {
-                                      attachments.add(url);
-                                      uploadingAttachment = false;
-                                    });
-                                  } catch (error) {
-                                    setDialogState(() {
-                                      uploadingAttachment = false;
-                                      attachmentUploadError = error.toString();
-                                    });
-                                  }
-                                },
+                                        if (idx >= 0) {
+                                          attachmentItems[idx] =
+                                              attachmentItems[idx].copyWith(
+                                                progress: progress,
+                                              );
+                                        }
+                                      });
+                                    },
+                                  );
+                              setDialogState(() {
+                                final idx = attachmentItems.indexWhere(
+                                  (it) => it.id == itemId,
+                                );
+                                if (idx >= 0) {
+                                  attachmentItems[idx] = attachmentItems[idx]
+                                      .copyWith(
+                                        uploading: false,
+                                        progress: 1,
+                                        url: url,
+                                        error: null,
+                                      );
+                                }
+                              });
+                            } catch (error) {
+                              setDialogState(() {
+                                final idx = attachmentItems.indexWhere(
+                                  (it) => it.id == itemId,
+                                );
+                                if (idx >= 0) {
+                                  attachmentItems[idx] = attachmentItems[idx]
+                                      .copyWith(
+                                        uploading: false,
+                                        error: error.toString(),
+                                      );
+                                }
+                              });
+                            }
+                          },
                         ),
                         ActionChip(
                           avatar: const Icon(Icons.attach_file, size: 16),
@@ -967,25 +1152,21 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           onPressed: () async {
                             final url = await _promptAttachmentUrl();
                             if (url == null || url.isEmpty) return;
-                            setDialogState(() => attachments.add(url));
+                            setDialogState(() {
+                              attachmentItems.add(
+                                _AttachmentUploadItem(
+                                  id: '${DateTime.now().microsecondsSinceEpoch}-url',
+                                  label: 'Bill URL',
+                                  url: url,
+                                  progress: 1,
+                                  uploading: false,
+                                ),
+                              );
+                            });
                           },
                         ),
                       ],
                     ),
-                    if (uploadingAttachment) ...[
-                      const SizedBox(height: 8),
-                      const LinearProgressIndicator(minHeight: 2),
-                    ],
-                    if (attachmentUploadError.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        attachmentUploadError,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -998,13 +1179,17 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               FilledButton(
                 onPressed: () => Navigator.of(context).pop({
                   'description': descriptionController.text.trim(),
+                  'expenseId': expenseId,
                   'amount': double.tryParse(amountController.text.trim()),
                   'paidBy': paidBy,
                   'splitMode': splitMode,
                   'splitWith': selected.toList(growable: false),
-                  'attachments': attachments,
+                  'attachments': attachmentItems
+                      .where((item) => !item.uploading && item.url != null)
+                      .map((item) => item.url!)
+                      .toList(growable: false),
                 }),
-                child: const Text('Save'),
+                child: Text(isEditing ? 'Done' : 'Save'),
               ),
             ],
           ),
@@ -1024,14 +1209,17 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             _memberCount,
             (index) => index == 0 ? 'You' : 'Member ${index + 1}',
           );
+    final draftExpenseId = DateTime.now().microsecondsSinceEpoch.toString();
 
     final payload = await _showExpenseForm(
       title: 'Add group expense',
+      expenseId: draftExpenseId,
       participants: participants,
       initialSplitWith: participants.toSet(),
     );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
+    final expenseId = (payload['expenseId'] as String?) ?? '';
     final paidBy = (payload['paidBy'] as String?) ?? participants.first;
     final splitMode = (payload['splitMode'] as String?) ?? 'equally';
     final splitWith = (payload['splitWith'] as List<dynamic>? ?? participants)
@@ -1050,6 +1238,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     setState(() => _busyAction = _GroupBusyAction.addingExpense);
     try {
       await widget.repository.addExpense(
+        expenseId: expenseId,
         groupId: widget.group.id,
         description: description,
         paidBy: paidBy,
@@ -1088,7 +1277,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           );
     final payload = await _showExpenseForm(
       title: 'Edit group expense',
+      expenseId: expense.id,
       participants: participants,
+      isEditing: true,
       initialDescription: expense.description,
       initialAmount: expense.amount,
       initialPaidBy: _resolvePayerLabel(expense.paidBy, participants),
@@ -1614,6 +1805,42 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
 }
 
 enum _GroupBusyAction { none, addingMember, addingExpense, leavingGroup }
+
+class _AttachmentUploadItem {
+  const _AttachmentUploadItem({
+    required this.id,
+    required this.label,
+    required this.progress,
+    required this.uploading,
+    this.url,
+    this.error,
+  });
+
+  final String id;
+  final String label;
+  final double progress;
+  final bool uploading;
+  final String? url;
+  final String? error;
+
+  _AttachmentUploadItem copyWith({
+    String? id,
+    String? label,
+    double? progress,
+    bool? uploading,
+    String? url,
+    String? error,
+  }) {
+    return _AttachmentUploadItem(
+      id: id ?? this.id,
+      label: label ?? this.label,
+      progress: progress ?? this.progress,
+      uploading: uploading ?? this.uploading,
+      url: url ?? this.url,
+      error: error,
+    );
+  }
+}
 
 class _SplitSelectionResult {
   const _SplitSelectionResult({

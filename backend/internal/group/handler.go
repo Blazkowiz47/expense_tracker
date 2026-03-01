@@ -164,8 +164,14 @@ func (h *Handler) handleUploadAttachment(
 		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "uploaded file is empty")
 		return
 	}
+	expenseID := strings.TrimSpace(r.FormValue("expenseId"))
+	if expenseID == "" {
+		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "expenseId is required")
+		return
+	}
 	downloadURL, err := h.uploader.UploadGroupAttachment(r.Context(), AttachmentUploadInput{
 		GroupID:     groupID,
+		ExpenseID:   expenseID,
 		UploaderUID: uid,
 		FileName:    header.Filename,
 		ContentType: contentType,
@@ -283,6 +289,7 @@ func (h *Handler) handleAddMember(w http.ResponseWriter, r *http.Request, groupI
 }
 
 type groupExpensePayload struct {
+	ID          string   `json:"id"`
 	Amount      float64  `json:"amount"`
 	Description string   `json:"description"`
 	PaidBy      string   `json:"paidBy"`
@@ -339,8 +346,12 @@ func (h *Handler) handleCreateExpense(w http.ResponseWriter, r *http.Request, gr
 		}
 		date = parsed.UTC()
 	}
+	expenseID := strings.TrimSpace(payload.ID)
+	if expenseID == "" {
+		expenseID = strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	}
 	expense := GroupExpense{
-		ID:          strconv.FormatInt(time.Now().UTC().UnixNano(), 10),
+		ID:          expenseID,
 		GroupID:     groupID,
 		CreatedBy:   uid,
 		PaidBy:      strings.TrimSpace(payload.PaidBy),

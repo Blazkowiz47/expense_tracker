@@ -310,6 +310,7 @@ func TestUploadGroupAttachment(t *testing.T) {
 	headers.Set("Content-Type", "image/png")
 	part, _ := writer.CreatePart(headers)
 	_, _ = part.Write([]byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a})
+	_ = writer.WriteField("expenseId", "expense-1")
 	_ = writer.Close()
 
 	uploadReq := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+groupID+"/attachments", &payload)
