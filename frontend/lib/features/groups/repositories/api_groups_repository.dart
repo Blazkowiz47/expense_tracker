@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
@@ -7,6 +6,7 @@ import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -237,6 +237,9 @@ class ApiGroupsRepository {
       },
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      debugPrint(
+        'GROUP_ATTACHMENT_PREVIEW: failed status=${response.statusCode} groupId=$groupId expenseId=$expenseId url=$attachmentUrl body=${response.body}',
+      );
       throw Exception(
         'attachment preview request failed (${response.statusCode}): ${response.body}',
       );

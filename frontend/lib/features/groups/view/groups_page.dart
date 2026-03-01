@@ -786,7 +786,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final amountController = TextEditingController(
       text: initialAmount == null ? '' : initialAmount.toStringAsFixed(2),
     );
-    final previewByteFutures = <String, Future<Uint8List?>>{};
+    final previewByteFutures = <String, Future<Uint8List>>{};
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
@@ -992,66 +992,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               final previewUrl = item.url;
 
                               Widget previewBox() {
-                                Widget webNetworkFallback(String url) {
-                                  return Image.network(
-                                    url,
-                                    key: ValueKey(
-                                      '$url|attachment-thumb-fallback',
-                                    ),
-                                    gaplessPlayback: true,
-                                    webHtmlElementStrategy:
-                                        WebHtmlElementStrategy.prefer,
-                                    width: 100,
-                                    height: 140,
-                                    fit: BoxFit.cover,
-                                    loadingBuilder:
-                                        (context, child, loadingProgress) {
-                                          if (loadingProgress == null) {
-                                            return child;
-                                          }
-                                          final expectedBytes = loadingProgress
-                                              .expectedTotalBytes;
-                                          final loadedBytes = loadingProgress
-                                              .cumulativeBytesLoaded;
-                                          final progress =
-                                              expectedBytes == null ||
-                                                  expectedBytes <= 0
-                                              ? null
-                                              : loadedBytes / expectedBytes;
-                                          return Container(
-                                            width: 100,
-                                            height: 140,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            alignment: Alignment.center,
-                                            child: Text(
-                                              progress == null
-                                                  ? '0%'
-                                                  : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          );
-                                        },
-                                    errorBuilder:
-                                        (context, error, stackTrace) =>
-                                            Container(
-                                              width: 100,
-                                              height: 140,
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .surfaceContainerHighest,
-                                              alignment: Alignment.center,
-                                              child: const Text(
-                                                'Preview unavailable',
-                                                textAlign: TextAlign.center,
-                                              ),
-                                            ),
-                                  );
-                                }
-
                                 if (item.localPreviewBytes != null) {
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
@@ -1091,13 +1031,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                               groupId: widget.group.id,
                                               expenseId: expenseId,
                                               attachmentUrl: previewUrl,
-                                            )
-                                            .then<Uint8List?>((bytes) => bytes)
-                                            .catchError((_) => null),
+                                            ),
                                       );
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: FutureBuilder<Uint8List?>(
+                                    child: FutureBuilder<Uint8List>(
                                       future: previewFuture,
                                       builder: (context, snapshot) {
                                         if (snapshot.connectionState !=
@@ -1117,9 +1055,40 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                             ),
                                           );
                                         }
+                                        if (snapshot.hasError) {
+                                          final errorText =
+                                              snapshot.error?.toString() ??
+                                              'unknown error';
+                                          return Container(
+                                            width: 100,
+                                            height: 140,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                            alignment: Alignment.center,
+                                            child: Text(
+                                              'Preview failed\n${errorText.length > 72 ? '${errorText.substring(0, 72)}...' : errorText}',
+                                              textAlign: TextAlign.center,
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
+                                            ),
+                                          );
+                                        }
                                         final bytes = snapshot.data;
                                         if (bytes == null || bytes.isEmpty) {
-                                          return webNetworkFallback(previewUrl);
+                                          return Container(
+                                            width: 100,
+                                            height: 140,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                            alignment: Alignment.center,
+                                            child: const Text(
+                                              'Preview unavailable',
+                                              textAlign: TextAlign.center,
+                                            ),
+                                          );
                                         }
                                         return Image.memory(
                                           bytes,
@@ -1127,22 +1096,25 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           height: 140,
                                           fit: BoxFit.cover,
                                           errorBuilder:
-                                              (context, error, stackTrace) =>
-                                                  webNetworkFallback(
-                                                    previewUrl,
-                                                  ),
+                                              (
+                                                context,
+                                                error,
+                                                stackTrace,
+                                              ) => Container(
+                                                width: 100,
+                                                height: 140,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .surfaceContainerHighest,
+                                                alignment: Alignment.center,
+                                                child: const Text(
+                                                  'Preview unavailable',
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
                                         );
                                       },
                                     ),
-                                  );
-                                }
-
-                                if (kIsWeb &&
-                                    previewable &&
-                                    previewUrl != null) {
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: webNetworkFallback(previewUrl),
                                   );
                                 }
 
