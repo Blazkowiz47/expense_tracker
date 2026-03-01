@@ -7,6 +7,7 @@ import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -20,13 +21,70 @@ class ApiGroupsRepository {
 
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;
+  static const String _cacheBoxName = 'api_groups_cache_v1';
+  static const String _groupsKey = 'groups';
+
+  Future<Box<String>> _cacheBox() async {
+    if (Hive.isBoxOpen(_cacheBoxName)) {
+      return Hive.box<String>(_cacheBoxName);
+    }
+    return Hive.openBox<String>(_cacheBoxName);
+  }
+
+  Future<void> _saveListCache(
+    String key,
+    List<Map<String, dynamic>> items,
+  ) async {
+    final box = await _cacheBox();
+    await box.put(key, jsonEncode(items));
+  }
+
+  Future<List<Map<String, dynamic>>> _readListCache(String key) async {
+    final box = await _cacheBox();
+    final raw = box.get(key);
+    if (raw == null || raw.isEmpty) {
+      return const [];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        return const [];
+      }
+      return decoded
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  String _expensesKey(String groupId) => 'group:$groupId:expenses';
+  String _membersKey(String groupId) => 'group:$groupId:members';
+
+  Future<List<GroupSummary>> getCachedGroups() async {
+    final cached = await _readListCache(_groupsKey);
+    return cached.map(GroupSummary.fromJson).toList(growable: false);
+  }
+
+  Future<List<GroupExpense>> getCachedExpenses(String groupId) async {
+    final cached = await _readListCache(_expensesKey(groupId));
+    return cached.map(GroupExpense.fromJson).toList(growable: false);
+  }
+
+  Future<List<GroupMember>> getCachedMembers(String groupId) async {
+    final cached = await _readListCache(_membersKey(groupId));
+    return cached.map(GroupMember.fromJson).toList(growable: false);
+  }
 
   Future<List<GroupSummary>> fetchGroups() async {
     final response = await _request(method: 'GET', path: '/api/v1/groups');
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final rawGroups = (payload['groups'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>();
-    return rawGroups.map(GroupSummary.fromJson).toList(growable: false);
+    final groups = rawGroups.map(GroupSummary.fromJson).toList(growable: false);
+    await _saveListCache(_groupsKey, rawGroups.toList(growable: false));
+    return groups;
   }
 
   Future<GroupSummary> createGroup({
@@ -76,7 +134,14 @@ class ApiGroupsRepository {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final rawExpenses = (payload['expenses'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>();
-    return rawExpenses.map(GroupExpense.fromJson).toList(growable: false);
+    final expenses = rawExpenses
+        .map(GroupExpense.fromJson)
+        .toList(growable: false);
+    await _saveListCache(
+      _expensesKey(groupId),
+      rawExpenses.toList(growable: false),
+    );
+    return expenses;
   }
 
   Future<List<GroupMember>> fetchMembers(String groupId) async {
@@ -87,7 +152,14 @@ class ApiGroupsRepository {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final rawMembers = (payload['members'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>();
-    return rawMembers.map(GroupMember.fromJson).toList(growable: false);
+    final members = rawMembers
+        .map(GroupMember.fromJson)
+        .toList(growable: false);
+    await _saveListCache(
+      _membersKey(groupId),
+      rawMembers.toList(growable: false),
+    );
+    return members;
   }
 
   Future<GroupExpense> addExpense({

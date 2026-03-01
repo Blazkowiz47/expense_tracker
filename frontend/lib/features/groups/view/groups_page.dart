@@ -52,13 +52,22 @@ class _GroupsPageState extends State<GroupsPage> {
       _loading = true;
       _error = null;
     });
+    var hadCached = false;
     try {
+      final cachedGroups = await _repository.getCachedGroups();
+      if (!mounted) return;
+      if (cachedGroups.isNotEmpty) {
+        hadCached = true;
+        setState(() => _groups = cachedGroups);
+      }
       final groups = await _repository.fetchGroups();
       if (!mounted) return;
       setState(() => _groups = groups);
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      if (!hadCached) {
+        setState(() => _error = error.toString());
+      }
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -537,7 +546,19 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   }
 
   Future<bool> _loadMembers() async {
+    var hadCached = false;
     try {
+      final cachedMembers = await widget.repository.getCachedMembers(
+        widget.group.id,
+      );
+      if (!mounted) return false;
+      if (cachedMembers.isNotEmpty) {
+        hadCached = true;
+        setState(() {
+          _members = cachedMembers;
+          _memberCount = cachedMembers.length;
+        });
+      }
       final items = await widget.repository.fetchMembers(widget.group.id);
       if (!mounted) return false;
       setState(() {
@@ -546,7 +567,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       });
       return true;
     } catch (_) {
-      return false;
+      return hadCached;
     }
   }
 
@@ -555,13 +576,24 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       _loading = true;
       _error = null;
     });
+    var hadCached = false;
     try {
+      final cachedItems = await widget.repository.getCachedExpenses(
+        widget.group.id,
+      );
+      if (!mounted) return;
+      if (cachedItems.isNotEmpty) {
+        hadCached = true;
+        setState(() => _expenses = cachedItems);
+      }
       final items = await widget.repository.fetchExpenses(widget.group.id);
       if (!mounted) return;
       setState(() => _expenses = items);
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      if (!hadCached) {
+        setState(() => _error = error.toString());
+      }
     } finally {
       if (mounted) {
         setState(() => _loading = false);
