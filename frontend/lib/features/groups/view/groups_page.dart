@@ -969,197 +969,204 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                     else
                       ConstrainedBox(
                         constraints: const BoxConstraints(maxHeight: 220),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: attachmentItems.length,
-                          separatorBuilder: (_, index) =>
-                              const SizedBox(height: 6),
-                          itemBuilder: (context, index) {
-                            final item = attachmentItems[index];
-                            final percent = (item.progress * 100).clamp(0, 100);
-                            final previewable =
-                                item.url != null &&
-                                item.url!.isNotEmpty &&
-                                !item.uploading &&
-                                item.error == null;
-                            final previewUrl = item.url;
-                            final tile = Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: attachmentItems.length,
+                            separatorBuilder: (_, index) =>
+                                const SizedBox(width: 8),
+                            itemBuilder: (context, index) {
+                              final item = attachmentItems[index];
+                              final percent = (item.progress * 100).clamp(
+                                0,
+                                100,
+                              );
+                              final previewable =
+                                  item.url != null &&
+                                  item.url!.isNotEmpty &&
+                                  !item.uploading &&
+                                  item.error == null;
+                              final previewUrl = item.url;
+
+                              Widget previewBox() {
+                                if (kIsWeb &&
+                                    previewable &&
+                                    previewUrl != null) {
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      previewUrl,
+                                      key: ValueKey(
+                                        '$previewUrl|attachment-thumb',
+                                      ),
+                                      width: 110,
+                                      height: 170,
+                                      fit: BoxFit.cover,
+                                      webHtmlElementStrategy:
+                                          WebHtmlElementStrategy.prefer,
+                                      loadingBuilder:
+                                          (context, child, loadingProgress) {
+                                            if (loadingProgress == null) {
+                                              return child;
+                                            }
+                                            final expectedBytes =
+                                                loadingProgress
+                                                    .expectedTotalBytes;
+                                            final loadedBytes = loadingProgress
+                                                .cumulativeBytesLoaded;
+                                            final progress =
+                                                expectedBytes == null ||
+                                                    expectedBytes <= 0
+                                                ? null
+                                                : loadedBytes / expectedBytes;
+                                            return Container(
+                                              width: 110,
+                                              height: 170,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHighest,
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                progress == null
+                                                    ? '0%'
+                                                    : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            );
+                                          },
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              Container(
+                                                width: 110,
+                                                height: 170,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .surfaceContainerHighest,
+                                                alignment: Alignment.center,
+                                                child: const Text(
+                                                  'Preview unavailable',
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                    ),
+                                  );
+                                }
+
+                                if (!kIsWeb &&
+                                    previewable &&
+                                    previewUrl != null) {
+                                  return InkWell(
+                                    onTap: () => _openAttachmentPreview(
+                                      title: item.label,
+                                      url: previewUrl,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 110,
+                                      height: 170,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(8),
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHighest,
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: const Icon(Icons.zoom_in),
+                                    ),
+                                  );
+                                }
+
+                                return Container(
+                                  width: 110,
+                                  height: 170,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.surfaceContainerHighest,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
                                     item.uploading
                                         ? Icons.cloud_upload_outlined
                                         : item.error == null
                                         ? Icons.image_outlined
                                         : Icons.error_outline,
-                                    size: 18,
-                                    color: item.error == null
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context).colorScheme.error,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      mainAxisSize: MainAxisSize.min,
+                                );
+                              }
+
+                              return Container(
+                                width: 140,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.outlineVariant,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
                                       children: [
-                                        if (kIsWeb && previewable) ...[
-                                          Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: SizedBox(
-                                              width: 110,
-                                              height: 170,
-                                              child: ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: Image.network(
-                                                  previewUrl!,
-                                                  key: ValueKey(
-                                                    '$previewUrl|attachment-thumb',
-                                                  ),
-                                                  fit: BoxFit.cover,
-                                                  webHtmlElementStrategy:
-                                                      WebHtmlElementStrategy
-                                                          .prefer,
-                                                  loadingBuilder:
-                                                      (
-                                                        context,
-                                                        child,
-                                                        loadingProgress,
-                                                      ) {
-                                                        if (loadingProgress ==
-                                                            null) {
-                                                          return child;
-                                                        }
-                                                        final expectedBytes =
-                                                            loadingProgress
-                                                                .expectedTotalBytes;
-                                                        final loadedBytes =
-                                                            loadingProgress
-                                                                .cumulativeBytesLoaded;
-                                                        final progress =
-                                                            expectedBytes ==
-                                                                    null ||
-                                                                expectedBytes <=
-                                                                    0
-                                                            ? null
-                                                            : loadedBytes /
-                                                                  expectedBytes;
-                                                        return Container(
-                                                          color: Theme.of(context)
-                                                              .colorScheme
-                                                              .surfaceContainerHighest,
-                                                          alignment:
-                                                              Alignment.center,
-                                                          child: Text(
-                                                            progress == null
-                                                                ? '0%'
-                                                                : '${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                                                            style:
-                                                                Theme.of(
-                                                                      context,
-                                                                    )
-                                                                    .textTheme
-                                                                    .bodySmall,
-                                                          ),
-                                                        );
-                                                      },
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) {
-                                                        return Container(
-                                                          color: Theme.of(context)
-                                                              .colorScheme
-                                                              .surfaceContainerHighest,
-                                                          alignment:
-                                                              Alignment.center,
-                                                          child: const Text(
-                                                            'Preview unavailable',
-                                                          ),
-                                                        );
-                                                      },
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                        ],
-                                        Text(
-                                          item.label,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        if (item.uploading) ...[
-                                          const SizedBox(height: 4),
-                                          LinearProgressIndicator(
-                                            minHeight: 3,
-                                            value: item.progress <= 0
-                                                ? null
-                                                : item.progress,
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '${percent.toStringAsFixed(0)}%',
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.bodySmall,
-                                          ),
-                                        ],
-                                        if (item.error != null)
-                                          Text(
-                                            item.error!,
+                                        Expanded(
+                                          child: Text(
+                                            item.label,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              color: Theme.of(
-                                                context,
-                                              ).colorScheme.error,
-                                              fontSize: 12,
-                                            ),
                                           ),
+                                        ),
+                                        InkWell(
+                                          onTap: () {
+                                            setDialogState(
+                                              () => attachmentItems.removeAt(
+                                                index,
+                                              ),
+                                            );
+                                          },
+                                          child: const Padding(
+                                            padding: EdgeInsets.all(4),
+                                            child: Icon(Icons.close, size: 18),
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                  ),
-                                  IconButton(
-                                    tooltip: 'Remove',
-                                    onPressed: () {
-                                      setDialogState(
-                                        () => attachmentItems.removeAt(index),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.close),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (!kIsWeb && previewable) {
-                              return InkWell(
-                                onTap: () => _openAttachmentPreview(
-                                  title: item.label,
-                                  url: item.url!,
+                                    const SizedBox(height: 6),
+                                    previewBox(),
+                                    if (item.uploading) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        '${percent.toStringAsFixed(0)}%',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
+                                      ),
+                                    ],
+                                    if (item.error != null) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        item.error!,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                                borderRadius: BorderRadius.circular(10),
-                                child: tile,
                               );
-                            }
-                            return tile;
-                          },
+                            },
+                          ),
                         ),
                       ),
                     const SizedBox(height: 8),
