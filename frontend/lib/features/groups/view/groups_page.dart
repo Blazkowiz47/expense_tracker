@@ -967,7 +967,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       )
                     else
                       ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 220),
+                        constraints: const BoxConstraints(maxHeight: 260),
                         child: Scrollbar(
                           thumbVisibility: true,
                           child: ListView.separated(
@@ -989,6 +989,32 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               final previewUrl = item.url;
 
                               Widget previewBox() {
+                                if (item.localPreviewBytes != null) {
+                                  return ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.memory(
+                                      item.localPreviewBytes!,
+                                      width: 100,
+                                      height: 140,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              Container(
+                                                width: 100,
+                                                height: 140,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .surfaceContainerHighest,
+                                                alignment: Alignment.center,
+                                                child: const Text(
+                                                  'Preview unavailable',
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                    ),
+                                  );
+                                }
+
                                 if (kIsWeb && previewable && previewUrl != null) {
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
@@ -997,11 +1023,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       key: ValueKey(
                                         '$previewUrl|attachment-thumb',
                                       ),
-                                      width: 110,
-                                      height: 170,
+                                      width: 100,
+                                      height: 140,
                                       fit: BoxFit.cover,
-                                      webHtmlElementStrategy:
-                                          WebHtmlElementStrategy.prefer,
                                       loadingBuilder:
                                           (
                                             context,
@@ -1021,8 +1045,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                                 ? null
                                                 : loadedBytes / expectedBytes;
                                             return Container(
-                                              width: 110,
-                                              height: 170,
+                                              width: 100,
+                                              height: 140,
                                               color: Theme.of(context)
                                                   .colorScheme
                                                   .surfaceContainerHighest,
@@ -1040,8 +1064,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       errorBuilder:
                                           (context, error, stackTrace) =>
                                               Container(
-                                                width: 110,
-                                                height: 170,
+                                                width: 100,
+                                                height: 140,
                                                 color: Theme.of(context)
                                                     .colorScheme
                                                     .surfaceContainerHighest,
@@ -1063,8 +1087,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     ),
                                     borderRadius: BorderRadius.circular(8),
                                     child: Container(
-                                      width: 110,
-                                      height: 170,
+                                      width: 100,
+                                      height: 140,
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(8),
                                         color: Theme.of(context)
@@ -1078,8 +1102,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 }
 
                                 return Container(
-                                  width: 110,
-                                  height: 170,
+                                  width: 100,
+                                  height: 140,
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(8),
                                     color: Theme.of(
@@ -1098,7 +1122,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               }
 
                               return Container(
-                                width: 140,
+                                width: 132,
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(10),
@@ -1199,6 +1223,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               });
                               try {
                                 final bytes = await image.readAsBytes();
+                                setDialogState(() {
+                                  final idx = attachmentItems.indexWhere(
+                                    (it) => it.id == itemId,
+                                  );
+                                  if (idx >= 0) {
+                                    attachmentItems[idx] = attachmentItems[idx]
+                                        .copyWith(localPreviewBytes: bytes);
+                                  }
+                                });
                                 final mimeType =
                                     lookupMimeType(
                                       image.name,
@@ -1287,6 +1320,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             });
                             try {
                               final bytes = await image.readAsBytes();
+                              setDialogState(() {
+                                final idx = attachmentItems.indexWhere(
+                                  (it) => it.id == itemId,
+                                );
+                                if (idx >= 0) {
+                                  attachmentItems[idx] = attachmentItems[idx]
+                                      .copyWith(localPreviewBytes: bytes);
+                                }
+                              });
                               final mimeType =
                                   lookupMimeType(
                                     image.name,
@@ -2279,6 +2321,8 @@ enum _GroupBusyAction {
 }
 
 class _AttachmentUploadItem {
+  static const Object _unset = Object();
+
   const _AttachmentUploadItem({
     required this.id,
     required this.label,
@@ -2286,6 +2330,7 @@ class _AttachmentUploadItem {
     required this.uploading,
     this.url,
     this.error,
+    this.localPreviewBytes,
   });
 
   final String id;
@@ -2294,22 +2339,27 @@ class _AttachmentUploadItem {
   final bool uploading;
   final String? url;
   final String? error;
+  final Uint8List? localPreviewBytes;
 
   _AttachmentUploadItem copyWith({
     String? id,
     String? label,
     double? progress,
     bool? uploading,
-    String? url,
-    String? error,
+    Object? url = _unset,
+    Object? error = _unset,
+    Object? localPreviewBytes = _unset,
   }) {
     return _AttachmentUploadItem(
       id: id ?? this.id,
       label: label ?? this.label,
       progress: progress ?? this.progress,
       uploading: uploading ?? this.uploading,
-      url: url ?? this.url,
-      error: error,
+      url: identical(url, _unset) ? this.url : url as String?,
+      error: identical(error, _unset) ? this.error : error as String?,
+      localPreviewBytes: identical(localPreviewBytes, _unset)
+          ? this.localPreviewBytes
+          : localPreviewBytes as Uint8List?,
     );
   }
 }
