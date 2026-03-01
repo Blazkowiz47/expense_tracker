@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"slices"
@@ -270,10 +271,12 @@ func (h *Handler) handleAttachmentPreview(
 
 	sourceURL := strings.TrimSpace(r.URL.Query().Get("url"))
 	if sourceURL == "" {
+		log.Printf("group attachment preview rejected: missing url group=%s expense=%s uid=%s", groupID, expenseID, uid)
 		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "url is required")
 		return
 	}
 	if !(strings.HasPrefix(sourceURL, "http://") || strings.HasPrefix(sourceURL, "https://")) {
+		log.Printf("group attachment preview rejected: unsupported url group=%s expense=%s uid=%s url=%q", groupID, expenseID, uid, sourceURL)
 		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "unsupported attachment url")
 		return
 	}
@@ -291,10 +294,12 @@ func (h *Handler) handleAttachmentPreview(
 		}
 	}
 	if target == nil {
+		log.Printf("group attachment preview rejected: expense not found group=%s expense=%s uid=%s", groupID, expenseID, uid)
 		httpapi.WriteError(w, http.StatusNotFound, "NOT_FOUND", "expense not found")
 		return
 	}
 	if !slices.Contains(target.Attachments, sourceURL) {
+		log.Printf("group attachment preview rejected: url not linked group=%s expense=%s uid=%s url=%q attachments=%d", groupID, expenseID, uid, sourceURL, len(target.Attachments))
 		httpapi.WriteError(w, http.StatusForbidden, "FORBIDDEN", "attachment not found for expense")
 		return
 	}
@@ -303,20 +308,32 @@ func (h *Handler) handleAttachmentPreview(
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
+		log.Printf("group attachment preview failed: invalid source url group=%s expense=%s uid=%s url=%q err=%v", groupID, expenseID, uid, sourceURL, err)
 		httpapi.WriteError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid attachment url")
 		return
 	}
 	req.Header.Set("Accept-Encoding", "identity")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		log.Printf("group attachment preview failed: fetch error group=%s expense=%s uid=%s url=%q err=%v", groupID, expenseID, uid, sourceURL, err)
 		httpapi.WriteError(w, http.StatusBadGateway, "BAD_GATEWAY", "failed to fetch attachment")
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		log.Printf("group attachment preview failed: source status group=%s expense=%s uid=%s url=%q status=%d", groupID, expenseID, uid, sourceURL, resp.StatusCode)
 		httpapi.WriteError(w, http.StatusBadGateway, "BAD_GATEWAY", "attachment source returned an error")
 		return
 	}
+	log.Printf(
+		"group attachment preview success: group=%s expense=%s uid=%s url=%q status=%d content_type=%q",
+		groupID,
+		expenseID,
+		uid,
+		sourceURL,
+		resp.StatusCode,
+		strings.TrimSpace(resp.Header.Get("Content-Type")),
+	)
 
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if contentType := strings.TrimSpace(resp.Header.Get("Content-Type")); contentType != "" {

@@ -786,7 +786,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final amountController = TextEditingController(
       text: initialAmount == null ? '' : initialAmount.toStringAsFixed(2),
     );
-    final previewByteFutures = <String, Future<Uint8List>>{};
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
@@ -1020,87 +1019,43 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
                                 if (kIsWeb &&
                                     previewable &&
-                                    previewUrl != null &&
-                                    expenseId.trim().isNotEmpty) {
-                                  final cacheKey = '${item.id}|$previewUrl';
-                                  final previewFuture = previewByteFutures
-                                      .putIfAbsent(
-                                        cacheKey,
-                                        () => widget.repository
-                                            .fetchAttachmentPreviewBytes(
-                                              groupId: widget.group.id,
-                                              expenseId: expenseId,
-                                              attachmentUrl: previewUrl,
-                                            ),
-                                      );
+                                    previewUrl != null) {
                                   return ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
-                                    child: FutureBuilder<Uint8List>(
-                                      future: previewFuture,
-                                      builder: (context, snapshot) {
-                                        if (snapshot.connectionState !=
-                                            ConnectionState.done) {
-                                          return Container(
-                                            width: 100,
-                                            height: 140,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            alignment: Alignment.center,
-                                            child: Text(
-                                              '0%',
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          );
-                                        }
-                                        if (snapshot.hasError) {
-                                          final errorText =
-                                              snapshot.error?.toString() ??
-                                              'unknown error';
-                                          return Container(
-                                            width: 100,
-                                            height: 140,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            alignment: Alignment.center,
-                                            child: Text(
-                                              'Preview failed\n${errorText.length > 72 ? '${errorText.substring(0, 72)}...' : errorText}',
-                                              textAlign: TextAlign.center,
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          );
-                                        }
-                                        final bytes = snapshot.data;
-                                        if (bytes == null || bytes.isEmpty) {
-                                          return Container(
-                                            width: 100,
-                                            height: 140,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            alignment: Alignment.center,
-                                            child: const Text(
-                                              'Preview unavailable',
-                                              textAlign: TextAlign.center,
-                                            ),
-                                          );
-                                        }
-                                        return Image.memory(
-                                          bytes,
-                                          width: 100,
-                                          height: 140,
-                                          fit: BoxFit.cover,
-                                          errorBuilder:
-                                              (
-                                                context,
-                                                error,
-                                                stackTrace,
-                                              ) => Container(
+                                    child: Image.network(
+                                      previewUrl,
+                                      key: ValueKey(
+                                        '$previewUrl|attachment-thumb-web',
+                                      ),
+                                      gaplessPlayback: true,
+                                      webHtmlElementStrategy:
+                                          WebHtmlElementStrategy.prefer,
+                                      width: 100,
+                                      height: 140,
+                                      fit: BoxFit.cover,
+                                      loadingBuilder:
+                                          (context, child, loadingProgress) {
+                                            if (loadingProgress == null) {
+                                              return child;
+                                            }
+                                            return Container(
+                                              width: 100,
+                                              height: 140,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHighest,
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                'Loading...',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            );
+                                          },
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              Container(
                                                 width: 100,
                                                 height: 140,
                                                 color: Theme.of(context)
@@ -1112,8 +1067,6 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                                   textAlign: TextAlign.center,
                                                 ),
                                               ),
-                                        );
-                                      },
                                     ),
                                   );
                                 }
