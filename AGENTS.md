@@ -24,7 +24,6 @@
     <rule>Default full-session restart command is <code>scripts/start_expense_dev_tmux.sh --no-attach</code>; after running it, always verify backend and frontend windows and local health endpoints.</rule>
     <rule>No user approval is required for project-scoped <code>flutter</code>, <code>dart</code>, <code>tmux</code>, and <code>go</code> commands.</rule>
     <rule>No user approval is required for <code>curl</code> to localhost/current project URLs (for example <code>127.0.0.1</code>, <code>localhost</code>, <code>8080</code>, <code>7357</code>).</rule>
-    <rule>Assume multiple agents may edit in parallel: before editing a file, re-read current file contents to ensure it has not changed since initial inspection; before committing, verify only intended and current changes are staged.</rule>
     <rule>After code or documentation edits, run <code>git add</code> and create a concise commit.</rule>
     <rule>If rollback is needed, prefer safe git operations over manual large-scale file re-editing.</rule>
   </local_workflow_preferences>
@@ -74,6 +73,11 @@
 
   <git_and_pr_guidelines>
     <rule>Use clear, imperative commit messages (example: <code>backend: add auth middleware tests</code>).</rule>
+    <rule>Assume multiple agents may edit in parallel.</rule>
+    <rule>If a file changes while being edited, do not panic; another agent may be updating it concurrently.</rule>
+    <rule>When concurrent edits are detected, re-read the latest file content and integrate changes safely.</rule>
+    <rule>Only stage and commit the specific changes created by the current agent.</rule>
+    <rule>Before committing, verify only intended and current changes are staged.</rule>
     <rule>PRs should include scope summary, test evidence (commands/results), config or env changes, and UI screenshots when applicable.</rule>
   </git_and_pr_guidelines>
 
