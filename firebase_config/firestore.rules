@@ -1,0 +1,59 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Users can only read/write their own profile document.
+    match /users/{uid} {
+      allow read: if isSelf(uid);
+
+      // Create own profile document with a restricted schema.
+      allow create: if isSelf(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'display_name',
+          'photo_url',
+          'email',
+          'default_currency',
+          'theme',
+          'created_at',
+          'updated_at'
+        ]);
+
+      // Update own profile; only mutable profile fields are allowed to change.
+      allow update: if isSelf(uid)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'display_name',
+          'photo_url',
+          'default_currency',
+          'theme',
+          'updated_at'
+        ]);
+
+      allow delete: if false;
+    }
+
+    // Controlled read access for expense metadata.
+    match /expenses/{expenseId} {
+      allow read: if signedIn() && (
+        resource.data.created_by == request.auth.uid ||
+        request.auth.uid in resource.data.participant_uids
+      );
+      allow write: if false;
+    }
+
+    // Controlled read access for group metadata.
+    match /groups/{groupId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.member_uids;
+      allow write: if false;
+    }
+  }
+}

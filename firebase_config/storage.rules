@@ -1,0 +1,60 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isImageUpload() {
+      return request.resource != null
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    function expenseDoc(expenseId) {
+      return firestore.get(/databases/(default)/documents/expenses/$(expenseId));
+    }
+
+    function groupDoc(groupId) {
+      return firestore.get(/databases/(default)/documents/groups/$(groupId));
+    }
+
+    function isExpenseParticipant(expenseId) {
+      let expense = expenseDoc(expenseId);
+      return signedIn() && (
+        expense.data.created_by == request.auth.uid ||
+        request.auth.uid in expense.data.participant_uids
+      );
+    }
+
+    function isGroupMember(groupId) {
+      let group = groupDoc(groupId);
+      return signedIn() && request.auth.uid in group.data.member_uids;
+    }
+
+    // User avatar: exact path only.
+    match /users/{uid}/profile_photo.jpg {
+      allow read: if signedIn();
+      allow write: if signedIn()
+        && request.auth.uid == uid
+        && isImageUpload();
+    }
+
+    // Expense attachments.
+    match /expenses/{expenseId}/attachments/{fileName} {
+      allow read: if isExpenseParticipant(expenseId);
+      allow write: if isExpenseParticipant(expenseId)
+        && request.resource != null
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Group assets.
+    match /groups/{groupId}/assets/{fileName} {
+      allow read: if isGroupMember(groupId);
+      allow write: if isGroupMember(groupId)
+        && request.resource != null
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+  }
+}

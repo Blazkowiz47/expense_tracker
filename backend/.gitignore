@@ -20,6 +20,7 @@ mem.prof
 # Environment and local config
 .env
 .env.*
+.gocache/
 
 # IDE / OS files
 .DS_Store
