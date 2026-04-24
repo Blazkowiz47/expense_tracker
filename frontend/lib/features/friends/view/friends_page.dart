@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/friends/utils/settlement_balance_calculator.dart';
@@ -214,7 +215,7 @@ class _FriendsPageState extends State<FriendsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Settlement of INR ${input.amount.toStringAsFixed(2)} recorded with ${friend.label}.',
+            'Settlement of ${AppMoney.format(input.amount)} recorded with ${friend.label}.',
           ),
         ),
       );
@@ -333,68 +334,59 @@ class _FriendsPageState extends State<FriendsPage> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _SummaryCard(
-                  title: 'Friends',
-                  amount: '${_friends.length}',
-                  amountColor: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 16),
-                _ListSectionHeader(
-                  title: 'Friends',
-                  actionLabel: 'Add friend',
-                  onAction: _addingFriend ? null : _addFriendFlow,
-                ),
-                if (_loading)
-                  const Card(child: ListTile(title: Text('Loading friends...')))
-                else if (_error != null)
-                  Card(
-                    child: ListTile(
-                      title: const Text('Failed to load friends'),
-                      subtitle: Text(_error!),
-                    ),
-                  )
-                else if (_friends.isEmpty)
-                  _BalanceTile(
-                    name: 'No friends yet',
-                    subtitle: 'Add by email or phone number.',
-                    balanceLabel: 'You are all settled up',
-                    balanceColor: Theme.of(context).colorScheme.outline,
-                  )
-                else
-                  ..._friends.map((friend) {
-                    final net = _friendSettlementNetByUid[friend.uid] ?? 0;
-                    final balanceLabel = net > 0.005
-                        ? 'You are owed INR ${net.toStringAsFixed(2)}'
-                        : net < -0.005
-                        ? 'You owe INR ${(-net).toStringAsFixed(2)}'
-                        : 'You are all settled up';
-                    final balanceColor = net > 0.005
-                        ? Theme.of(context).colorScheme.primary
-                        : net < -0.005
-                        ? Theme.of(context).colorScheme.error
-                        : Theme.of(context).colorScheme.outline;
-                    return _BalanceTile(
-                      name: friend.label,
-                      subtitle: friend.contactHint.isNotEmpty
-                          ? friend.contactHint
-                          : 'No email/phone',
-                      balanceLabel: balanceLabel,
-                      balanceColor: balanceColor,
-                      removing: _removingFriendUid == friend.uid,
-                      onSettleUp: () => _settleUpFlow(friend),
-                      onRemove: () => _removeFriendFlow(friend),
-                    );
-                  }),
-              ],
+        AppPageContainer(
+          children: [
+            AppSummaryCard(title: 'Friends', amount: '${_friends.length}'),
+            const SizedBox(height: 16),
+            AppSectionHeader(
+              title: 'Friends',
+              actionLabel: 'Add friend',
+              onAction: _addingFriend ? null : _addFriendFlow,
             ),
-          ),
+            if (_loading)
+              const AppBalanceTile(
+                title: 'Loading friends...',
+                leadingIcon: Icons.person_outline,
+              )
+            else if (_error != null)
+              AppBalanceTile(
+                title: 'Failed to load friends',
+                subtitle: Text(_error!),
+                leadingIcon: Icons.error_outline,
+              )
+            else if (_friends.isEmpty)
+              AppEmptyState(
+                title: 'No friends yet',
+                subtitle: 'Your friend balances will appear here.',
+                actionLabel: 'Add your first friend',
+                onAction: _addFriendFlow,
+              )
+            else
+              ..._friends.map((friend) {
+                final net = _friendSettlementNetByUid[friend.uid] ?? 0;
+                final balanceLabel = net > 0.005
+                    ? 'You are owed ${AppMoney.format(net)}'
+                    : net < -0.005
+                    ? 'You owe ${AppMoney.format(-net)}'
+                    : "You're all settled up";
+                final balanceColor = net > 0.005
+                    ? AppMoney.positiveColor
+                    : net < -0.005
+                    ? Theme.of(context).colorScheme.error
+                    : Theme.of(context).colorScheme.outline;
+                return _BalanceTile(
+                  name: friend.label,
+                  subtitle: friend.contactHint.isNotEmpty
+                      ? friend.contactHint
+                      : 'No email/phone',
+                  balanceLabel: balanceLabel,
+                  balanceColor: balanceColor,
+                  removing: _removingFriendUid == friend.uid,
+                  onSettleUp: () => _settleUpFlow(friend),
+                  onRemove: () => _removeFriendFlow(friend),
+                );
+              }),
+          ],
         ),
         if (_addingFriend || _showFriendAddedSuccess)
           Positioned.fill(
@@ -459,67 +451,6 @@ class _FriendsPageState extends State<FriendsPage> {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    required this.title,
-    required this.amount,
-    required this.amountColor,
-  });
-
-  final String title;
-  final String amount;
-  final Color amountColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              amount,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: amountColor,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ListSectionHeader extends StatelessWidget {
-  const _ListSectionHeader({
-    required this.title,
-    required this.actionLabel,
-    required this.onAction,
-  });
-
-  final String title;
-  final String actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Row(
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const Spacer(),
-          TextButton(onPressed: onAction, child: Text(actionLabel)),
-        ],
-      ),
-    );
-  }
-}
-
 class _BalanceTile extends StatelessWidget {
   const _BalanceTile({
     required this.name,
@@ -541,14 +472,9 @@ class _BalanceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return AppCard(
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: Theme.of(
-            context,
-          ).colorScheme.surfaceContainerHighest,
-          child: const Icon(Icons.person_outline),
-        ),
+        leading: const AppAvatar(icon: Icons.person_outline),
         title: Text(name),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/theme/app_theme.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
 import 'package:flutter/material.dart';
@@ -20,8 +21,7 @@ class ThemeSettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          body: ListView(
-            padding: const EdgeInsets.all(16),
+          body: AppPageContainer(
             children: [
               DropdownButtonFormField<ThemeFamily>(
                 initialValue: state.family,
@@ -116,28 +116,26 @@ class _PreviewCard extends StatelessWidget {
     final previewTheme = AppThemeFactory.build(state);
     final colors = previewTheme.colorScheme;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${state.family.name} • ${state.variant.name}',
-              style: previewTheme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                _ColorSwatchBox(label: 'Primary', color: colors.primary),
-                const SizedBox(width: 10),
-                _ColorSwatchBox(label: 'Secondary', color: colors.secondary),
-                const SizedBox(width: 10),
-                _ColorSwatchBox(label: 'Surface', color: colors.surface),
-              ],
-            ),
-          ],
-        ),
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${state.family.name} • ${state.variant.name}',
+            style: previewTheme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _ColorSwatchBox(label: 'Primary', color: colors.primary),
+              const SizedBox(width: 10),
+              _ColorSwatchBox(label: 'Secondary', color: colors.secondary),
+              const SizedBox(width: 10),
+              _ColorSwatchBox(label: 'Surface', color: colors.surface),
+            ],
+          ),
+        ],
       ),
     );
   }

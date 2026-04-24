@@ -76,6 +76,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
         home: Scaffold(
           body: FriendsPage(
             friendsRepository: friendsRepository,

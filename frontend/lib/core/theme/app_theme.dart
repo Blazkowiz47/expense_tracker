@@ -16,6 +16,7 @@ class AppThemeFactory {
         seedColor: accent,
         brightness: brightness,
       ),
+      splashFactory: InkRipple.splashFactory,
       useMaterial3: true,
     );
 

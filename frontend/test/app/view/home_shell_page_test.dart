@@ -9,8 +9,11 @@ void main() {
     await tester.pumpWidget(
       MediaQuery(
         data: MediaQueryData(size: size),
-        child: const MaterialApp(
-          home: HomeShellPage(repository: MockDashboardSnapshotRepository()),
+        child: MaterialApp(
+          theme: ThemeData(splashFactory: InkRipple.splashFactory),
+          home: const HomeShellPage(
+            repository: MockDashboardSnapshotRepository(),
+          ),
         ),
       ),
     );
@@ -24,6 +27,12 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.text('Overview'), findsNothing);
+    expect(find.text('Friends'), findsWidgets);
+    expect(find.text('Family'), findsWidgets);
+    expect(find.text('Groups'), findsWidgets);
+    expect(find.text('Activity'), findsWidgets);
+    expect(find.text('Account'), findsWidgets);
 
     await tester.tap(find.text('Account').last);
     await tester.pumpAndSettle();

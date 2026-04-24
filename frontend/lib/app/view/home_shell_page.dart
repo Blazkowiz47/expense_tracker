@@ -12,9 +12,9 @@ import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_sn
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_selector_page.dart';
+import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
-import 'package:expense_tracker/features/overview/view/overview_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -38,16 +38,16 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   static const _destinations = <_ShellDestination>[
     _ShellDestination(
-      label: 'Overview',
-      icon: Icons.dashboard_outlined,
-      selectedIcon: Icons.dashboard,
-      page: OverviewPage(),
-    ),
-    _ShellDestination(
       label: 'Friends',
       icon: Icons.person_outline,
       selectedIcon: Icons.person,
       page: FriendsPage(),
+    ),
+    _ShellDestination(
+      label: 'Family',
+      icon: Icons.home_outlined,
+      selectedIcon: Icons.home,
+      page: FamilyPage(),
     ),
     _ShellDestination(
       label: 'Groups',
@@ -392,9 +392,9 @@ class _HomeShellPageState extends State<HomeShellPage> {
   String _routeForIndex(int index) {
     switch (index) {
       case 0:
-        return AppRoutes.overview;
-      case 1:
         return AppRoutes.friends;
+      case 1:
+        return AppRoutes.family;
       case 2:
         return AppRoutes.groups;
       case 3:
@@ -402,7 +402,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
       case 4:
         return AppRoutes.account;
       default:
-        return AppRoutes.overview;
+        return AppRoutes.friends;
     }
   }
 

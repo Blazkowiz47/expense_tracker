@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
@@ -136,130 +137,110 @@ class _ActivityPageState extends State<ActivityPage> {
         }
 
         final filtered = _filteredItems(state.snapshot.activityItems);
-        return Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
+        return AppPageContainer(
+          children: [
+            TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search activity',
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                TextField(
-                  controller: _searchController,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Search activity',
-                  ),
-                  onChanged: (value) => setState(() => _query = value),
+                FilledButton.icon(
+                  onPressed: _exporting ? null : _exportCsv,
+                  icon: _exporting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_outlined),
+                  label: const Text('Export CSV'),
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    FilledButton.icon(
-                      onPressed: _exporting ? null : _exportCsv,
-                      icon: _exporting
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.download_outlined),
-                      label: const Text('Export CSV'),
-                    ),
-                    ChoiceChip(
-                      label: const Text('All'),
-                      selected: _typeFilter == _ActivityTypeFilter.all,
-                      onSelected: (_) {
-                        setState(() => _typeFilter = _ActivityTypeFilter.all);
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Spent'),
-                      selected: _typeFilter == _ActivityTypeFilter.spent,
-                      onSelected: (_) {
-                        setState(() => _typeFilter = _ActivityTypeFilter.spent);
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Incoming'),
-                      selected: _typeFilter == _ActivityTypeFilter.incoming,
-                      onSelected: (_) {
-                        setState(
-                          () => _typeFilter = _ActivityTypeFilter.incoming,
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: const Text('Any time'),
-                      selected: _windowFilter == _ActivityWindowFilter.all,
-                      onSelected: (_) {
-                        setState(
-                          () => _windowFilter = _ActivityWindowFilter.all,
-                        );
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Last 7d'),
-                      selected:
-                          _windowFilter == _ActivityWindowFilter.last7Days,
-                      onSelected: (_) {
-                        setState(
-                          () => _windowFilter = _ActivityWindowFilter.last7Days,
-                        );
-                      },
-                    ),
-                    ChoiceChip(
-                      label: const Text('Last 30d'),
-                      selected:
-                          _windowFilter == _ActivityWindowFilter.last30Days,
-                      onSelected: (_) {
-                        setState(
-                          () =>
-                              _windowFilter = _ActivityWindowFilter.last30Days,
-                        );
-                      },
-                    ),
-                  ],
+                ChoiceChip(
+                  label: const Text('All'),
+                  selected: _typeFilter == _ActivityTypeFilter.all,
+                  onSelected: (_) {
+                    setState(() => _typeFilter = _ActivityTypeFilter.all);
+                  },
                 ),
-                const SizedBox(height: 10),
-                if (filtered.isEmpty)
-                  const Card(
-                    child: ListTile(
-                      title: Text('No activity matches your filters'),
-                    ),
-                  )
-                else
-                  ...filtered.map((item) {
-                    final isSpending = item.amountText.toLowerCase().startsWith(
-                      'you spent',
+                ChoiceChip(
+                  label: const Text('Spent'),
+                  selected: _typeFilter == _ActivityTypeFilter.spent,
+                  onSelected: (_) {
+                    setState(() => _typeFilter = _ActivityTypeFilter.spent);
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Incoming'),
+                  selected: _typeFilter == _ActivityTypeFilter.incoming,
+                  onSelected: (_) {
+                    setState(() => _typeFilter = _ActivityTypeFilter.incoming);
+                  },
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: const Text('Any time'),
+                  selected: _windowFilter == _ActivityWindowFilter.all,
+                  onSelected: (_) {
+                    setState(() => _windowFilter = _ActivityWindowFilter.all);
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Last 7d'),
+                  selected: _windowFilter == _ActivityWindowFilter.last7Days,
+                  onSelected: (_) {
+                    setState(
+                      () => _windowFilter = _ActivityWindowFilter.last7Days,
                     );
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.receipt_long_outlined),
-                          title: Text(item.title),
-                          subtitle: Text(item.subtitle),
-                          trailing: Text(
-                            item.amountText,
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: isSpending
-                                      ? null
-                                      : item.positive
-                                      ? const Color(0xFF1B8C67)
-                                      : Theme.of(context).colorScheme.error,
-                                ),
-                          ),
-                        ),
-                      ),
+                  },
+                ),
+                ChoiceChip(
+                  label: const Text('Last 30d'),
+                  selected: _windowFilter == _ActivityWindowFilter.last30Days,
+                  onSelected: (_) {
+                    setState(
+                      () => _windowFilter = _ActivityWindowFilter.last30Days,
                     );
-                  }),
+                  },
+                ),
               ],
             ),
-          ),
+            const SizedBox(height: 10),
+            if (filtered.isEmpty)
+              const AppEmptyState(title: 'No activity matches your filters')
+            else
+              ...filtered.map((item) {
+                final isSpending = item.amountText.toLowerCase().startsWith(
+                  'you spent',
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: AppCard(
+                    child: ListTile(
+                      leading: const AppAvatar(
+                        icon: Icons.receipt_long_outlined,
+                      ),
+                      title: Text(item.title),
+                      subtitle: Text(
+                        AppMoney.normalizeDisplayText(item.subtitle),
+                      ),
+                      trailing: AppMoneyLabel(
+                        text: item.amountText,
+                        positive: item.positive,
+                        neutral: isSpending,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+          ],
         );
       },
     );

@@ -1,4 +1,5 @@
 import 'package:expense_tracker/core/constants/app_spacing.dart';
+import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/utils/platform_page_route.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/data/models/group.dart';
@@ -115,37 +116,30 @@ class _AddExpenseSelectorPageState extends State<AddExpenseSelectorPage> {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.md),
       children: [
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.person_outline),
-            title: const Text('Personal expense'),
-            subtitle: const Text('Track your own spending'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _openPersonalExpense,
-          ),
+        AppBalanceTile(
+          title: 'Personal expense',
+          subtitle: const Text('Track your own spending'),
+          leadingIcon: Icons.person_outline,
+          trailing: const Icon(Icons.chevron_right),
+          onTap: _openPersonalExpense,
         ),
         const SizedBox(height: 8),
-        Text('Groups', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const AppSectionHeader(title: 'Groups'),
         if (_groups.isEmpty)
-          const Card(
-            child: ListTile(
-              title: Text('No groups yet'),
-              subtitle: Text('Create a group to add shared expenses.'),
-            ),
+          const AppEmptyState(
+            title: 'No groups yet',
+            subtitle: 'Create a group to add shared expenses.',
           )
         else
           ..._groups.map(
-            (group) => Card(
-              child: ListTile(
-                leading: Icon(_iconForGroupType(group.groupType)),
-                title: Text(group.name),
-                subtitle: Text(
-                  '${group.groupType.name} • ${group.memberCount} member(s)',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openGroupExpense(group),
+            (group) => AppBalanceTile(
+              title: group.name,
+              subtitle: Text(
+                '${group.groupType.name} • ${group.memberCount} member(s)',
               ),
+              leadingIcon: _iconForGroupType(group.groupType),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _openGroupExpense(group),
             ),
           ),
       ],

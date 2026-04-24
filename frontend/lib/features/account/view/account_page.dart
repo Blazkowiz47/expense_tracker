@@ -1,4 +1,5 @@
 import 'package:expense_tracker/app/routes/app_routes.dart';
+import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
@@ -31,58 +32,51 @@ class AccountPage extends StatelessWidget {
         }
         final repo = profileRepository ?? UserProfileRepository();
 
-        return Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: StreamBuilder<UserProfile>(
-              stream: repo.watchProfile(user),
-              builder: (context, profileSnapshot) {
-                final profile =
-                    profileSnapshot.data ??
-                    UserProfile(
-                      uid: user.uid,
-                      displayName: user.displayName ?? 'User',
-                      email: user.email ?? '',
-                      photoUrl: user.photoURL,
-                    );
-
-                return ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    _ProfileCard(
-                      profile: profile,
-                      onEdit: () async {
-                        await Navigator.of(
-                          context,
-                        ).pushNamed<void>(AppRoutes.accountEdit);
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    const _SettingsTile(title: 'Notifications'),
-                    const _SettingsTile(title: 'Security'),
-                    _SettingsTile(
-                      title: 'Theme',
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const ThemeSettingsPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    const _SettingsTile(title: 'Help and feedback'),
-                    _SettingsTile(
-                      title: 'Logout',
-                      onTap: context.read<AuthCubit?>() == null
-                          ? null
-                          : () => context.read<AuthCubit>().signOut(),
-                    ),
-                  ],
+        return StreamBuilder<UserProfile>(
+          stream: repo.watchProfile(user),
+          builder: (context, profileSnapshot) {
+            final profile =
+                profileSnapshot.data ??
+                UserProfile(
+                  uid: user.uid,
+                  displayName: user.displayName ?? 'User',
+                  email: user.email ?? '',
+                  photoUrl: user.photoURL,
                 );
-              },
-            ),
-          ),
+
+            return AppPageContainer(
+              children: [
+                _ProfileCard(
+                  profile: profile,
+                  onEdit: () async {
+                    await Navigator.of(
+                      context,
+                    ).pushNamed<void>(AppRoutes.accountEdit);
+                  },
+                ),
+                const SizedBox(height: 16),
+                const _SettingsTile(title: 'Notifications'),
+                const _SettingsTile(title: 'Security'),
+                _SettingsTile(
+                  title: 'Theme',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ThemeSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
+                const _SettingsTile(title: 'Help and feedback'),
+                _SettingsTile(
+                  title: 'Logout',
+                  onTap: context.read<AuthCubit?>() == null
+                      ? null
+                      : () => context.read<AuthCubit>().signOut(),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -98,7 +92,7 @@ class _ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const avatarSize = 44.0;
-    return Card(
+    return AppCard(
       child: ListTile(
         onTap: onEdit,
         leading: SizedBox(
@@ -130,7 +124,7 @@ class _AccountAvatarFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+      color: AppMoney.positiveColor.withValues(alpha: 0.18),
       alignment: Alignment.center,
       child: const Icon(Icons.person),
     );
@@ -145,7 +139,7 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return AppCard(
       child: ListTile(
         title: Text(title),
         trailing: const Icon(Icons.chevron_right),
