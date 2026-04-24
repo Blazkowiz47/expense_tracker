@@ -20,3 +20,4 @@ firebase_config/*.json
 # Firebase app config files (kept local; platform-specific copies may exist)
 **/google-services.json
 **/GoogleService-Info.plist
+*.DS_Store

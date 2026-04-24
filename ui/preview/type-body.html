@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Type — Body & Labels</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; }
+  .row { display: grid; grid-template-columns: 140px 1fr 90px; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); }
+  .row:last-child { border-bottom: none; }
+  .tok { font-family: var(--font-mono); font-size: 11px; color: var(--fg3); }
+  .meta { font-family: var(--font-mono); font-size: 11px; color: var(--fg3); text-align: right; }
+  .tm { font-size: 16px; font-weight: 500; color: var(--fg1); }
+  .bl { font-size: 16px; color: var(--fg1); line-height: 1.4; }
+  .bm { font-size: 14px; color: var(--fg2); line-height: 1.4; }
+  .ll { font-size: 14px; font-weight: 500; color: var(--positive); font-feature-settings: "tnum" 1; }
+  .bs { font-size: 12px; color: var(--fg3); }
+</style>
+</head>
+<body>
+  <div class="row"><span class="tok">titleMedium</span><span class="tm">Friends</span><span class="meta">16 / 500</span></div>
+  <div class="row"><span class="tok">bodyLarge</span><span class="bl">Weekly shopping at the corner store</span><span class="meta">16 / 400</span></div>
+  <div class="row"><span class="tok">bodyMedium</span><span class="bm">Your friend balances will appear here.</span><span class="meta">14 / 400</span></div>
+  <div class="row"><span class="tok">labelLarge</span><span class="ll">owes you ₹120.00</span><span class="meta">14 / 500</span></div>
+  <div class="row"><span class="tok">bodySmall</span><span class="bs">Updated just now · INR</span><span class="meta">12 / 400</span></div>
+</body>
+</html>

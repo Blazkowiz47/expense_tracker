@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Components — Buttons</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; background: var(--bg-light); font-family: var(--font-sans); }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .filled { background: var(--accent); color: #fff; border: none; border-radius: 22px; padding: 10px 20px; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .fab { background: var(--accent); color: #fff; border: none; border-radius: 16px; padding: 14px 20px; font-size: 14px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; box-shadow: 0 6px 16px rgba(0,0,0,0.18); cursor: pointer; }
+  .text { background: none; border: none; color: var(--accent); font-size: 14px; font-weight: 500; cursor: pointer; padding: 8px 12px; }
+  .icn { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .plus { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.4; }
+</style>
+</head>
+<body>
+<div class="row">
+  <button class="fab"><svg class="icn" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>Add expense</button>
+  <button class="filled"><svg class="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+  <button class="text">Save</button>
+  <button class="text">Edit</button>
+  <button class="text">Reset</button>
+</div>
+</body>
+</html>

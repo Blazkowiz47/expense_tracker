@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Components — Balance Tile</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; background: var(--bg-light); font-family: var(--font-sans); }
+  .card { background: #fff; border-radius: var(--radius-md); margin-bottom: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 14px; }
+  .av { width: 40px; height: 40px; border-radius: 999px; background: #E4E2E8; display: flex; align-items: center; justify-content: center; color: var(--fg2); flex-shrink: 0; }
+  .av.g { background: #A8F2CD; color: #0b3d2e; }
+  .txt { flex: 1; min-width: 0; }
+  .t { font-size: 16px; font-weight: 500; color: var(--fg1); line-height: 1.2; }
+  .s { font-size: 13px; color: var(--fg3); margin-top: 2px; }
+  .amt { font-size: 14px; font-weight: 500; font-feature-settings: "tnum" 1; text-align: right; }
+  .pos { color: var(--positive); }
+  .neg { color: var(--negative); }
+  svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="av"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div>
+    <div class="txt"><div class="t">Aarav Sharma</div><div class="s">owes you</div></div>
+    <div class="amt pos">₹1,250.00</div>
+  </div>
+  <div class="card">
+    <div class="av g"><svg viewBox="0 0 24 24"><path d="M17 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="8" r="3"/><path d="M21 20v-2a4 4 0 0 0-3-3.87"/><path d="M17 5a4 4 0 0 1 0 7"/></svg></div>
+    <div class="txt"><div class="t">Trip to Goa</div><div class="s">4 people · settled this week</div></div>
+    <div class="amt neg">you owe ₹340.00</div>
+  </div>
+</body>
+</html>

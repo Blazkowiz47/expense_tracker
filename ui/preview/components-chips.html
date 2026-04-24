@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Components — Chips & Segmented</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; background: var(--bg-light); font-family: var(--font-sans); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .chip { background: #E4E2E8; border-radius: 8px; padding: 6px 12px; font-size: 13px; color: var(--fg1); border: 1px solid transparent; }
+  .chip.sel { background: #A8F2CD; border-color: #6FCFA6; }
+  .pill-cup { background: #E1E3E8; border-radius: 16px; padding: 8px 12px; font-size: 14px; color: var(--fg1); font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--border-light); border-radius: 999px; overflow: hidden; background: #fff; }
+  .seg button { border: none; background: none; padding: 9px 16px; font-size: 13px; font-family: inherit; color: var(--fg2); cursor: pointer; font-weight: 500; }
+  .seg button.sel { background: rgba(38,161,123,0.18); color: var(--accent-strong); }
+  .seg button + button { border-left: 1px solid var(--border-light); }
+</style>
+</head>
+<body>
+<div class="row">
+  <span class="chip sel">All of this group</span>
+  <span class="chip">Aarav</span>
+  <span class="chip">Priya</span>
+  <span class="pill-cup">All of this group</span>
+</div>
+<div class="seg">
+  <button class="sel">Light</button>
+  <button>Dark</button>
+  <button>High Contrast</button>
+  <button>Custom</button>
+</div>
+</body>
+</html>

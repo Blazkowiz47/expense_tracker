@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Components — Form Fields</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; background: var(--bg-light); font-family: var(--font-sans); }
+  .card { background: #fff; border-radius: var(--radius-md); padding: 16px; }
+  .stack > * + * { margin-top: 12px; }
+  .field { position: relative; }
+  .field input { width: 100%; box-sizing: border-box; border: 1px solid var(--border-light); border-radius: 6px; padding: 14px 12px 12px; font-size: 15px; font-family: inherit; color: var(--fg1); background: #fff; outline: none; }
+  .field input:focus { border-color: var(--accent); border-width: 2px; padding: 13px 11px 11px; }
+  .field .lbl { position: absolute; top: -7px; left: 10px; background: #fff; padding: 0 4px; font-size: 11px; color: var(--fg3); }
+  .field.focus .lbl { color: var(--accent); }
+  .prefix { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 15px; color: var(--fg3); font-weight: 500; }
+  .field.has-prefix input { padding-left: 44px; }
+</style>
+</head>
+<body>
+<div class="card stack">
+  <div class="field focus">
+    <span class="lbl">Description</span>
+    <input value="Weekly shopping" />
+  </div>
+  <div class="field has-prefix">
+    <span class="lbl">Amount</span>
+    <span class="prefix">INR</span>
+    <input value="250.00" />
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,162 @@
+/* ==========================================================================
+   Expense Tracker — Colors & Type Tokens
+   Source: frontend/lib/core/theme/*.dart + frontend/lib/core/constants/*
+   ========================================================================== */
+
+:root {
+  /* -------------------- THEME FAMILIES (accents) -------------------- */
+  /* Splitwise (default) */
+  --accent-splitwise-light: #26A17B;
+  --accent-splitwise-dark:  #1A8F6C;
+  --accent-splitwise-hc:    #000000;
+
+  /* Tokyo Night */
+  --accent-tokyo-light: #7AA2F7;
+  --accent-tokyo-dark:  #7DCFFF;
+  --accent-tokyo-hc:    #1D1D1D;
+
+  /* Mint */
+  --accent-mint-light: #3FBF9B;
+  --accent-mint-dark:  #2FAE8E;
+  --accent-mint-hc:    #0B3D2E;
+
+  /* Custom-theme preset swatches (from theme_settings_page.dart) */
+  --custom-green:  #26A17B;
+  --custom-blue:   #7AA2F7;
+  --custom-coral:  #FF6B6B;
+  --custom-amber:  #E8A317;
+  --custom-violet: #9D7CFF;
+
+  /* -------------------- ACTIVE SEMANTIC ACCENT (Splitwise light default) -- */
+  --accent:          var(--accent-splitwise-light);
+  --accent-strong:   var(--accent-splitwise-dark);
+  --accent-soft:     rgba(38, 161, 123, 0.18); /* nav indicator light */
+  --accent-soft-hc:  rgba(38, 161, 123, 0.36); /* nav indicator high-contrast */
+  --accent-on:       #FFFFFF;
+
+  /* -------------------- SURFACES / SCAFFOLD -------------------- */
+  --bg-light: #F7F8F9;
+  --bg-dark:  #111318;
+  --bg-hc:    #FFFFFF;
+
+  --surface-light: #FFFFFF;
+  --surface-dark:  #1A1D24;
+
+  /* Material 3 derived (from ColorScheme.fromSeed @ light) — see card prev */
+  --surface-container-highest-light: #E4E2E8;
+  --primary-container-light:         #A8F2CD;
+
+  /* -------------------- FOREGROUND / TEXT -------------------- */
+  --fg1:        #1A1C1E; /* primary text on light */
+  --fg2:        #45474A; /* secondary text on light */
+  --fg3:        #58646F; /* muted — empty states, subtitles */
+  --fg1-dark:   #E3E2E6;
+  --fg2-dark:   #C4C6CA;
+  --fg3-dark:   #8E9197;
+
+  /* -------------------- SEMANTIC: MONEY -------------------- */
+  --positive:      #1B8C67; /* "you get back" / "you are owed" */
+  --positive-soft: #E6F4EE;
+  --negative:      #BA1A1A; /* colorScheme.error @ light */
+  --negative-soft: #FDE7E7;
+  --neutral:       #58646F; /* zero / settled */
+
+  /* -------------------- BORDERS -------------------- */
+  --border-light:   #E2E4E8;
+  --border-subtle:  #EEF0F3;
+  --divider:        rgba(0, 0, 0, 0.12);
+  --divider-dark:   rgba(255, 255, 255, 0.12);
+
+  /* -------------------- SPACING (app_spacing.dart) -------------------- */
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  /* Common extensions observed in screens */
+  --sp-xl: 32px;
+  --sp-2xl: 48px;
+
+  /* -------------------- RADII -------------------- */
+  --radius-sm:   8px;   /* swatch, small buttons */
+  --radius-md:   14px;  /* Card (app_theme.dart) */
+  --radius-pill: 16px;  /* Cupertino pill / chip */
+  --radius-full: 999px; /* circle avatar, accent button */
+
+  /* -------------------- BREAKPOINTS (app_breakpoints.dart) -------------- */
+  --bp-mobile:  600px;
+  --bp-tablet:  1024px;
+  --bp-desktop: 1280px;
+
+  /* -------------------- ELEVATION -------------------- */
+  /* Cards use elevation 0 (flat) + subtle border */
+  --shadow-card: 0 1px 0 rgba(0,0,0,0.04);
+  --shadow-nav:  0 -1px 0 rgba(0,0,0,0.06);
+  --shadow-fab:  0 6px 16px rgba(0,0,0,0.18);
+
+  /* -------------------- TYPOGRAPHY -------------------- */
+  /* Flutter ships with Roboto (Android/Web) and SF Pro (iOS via Cupertino).
+     No custom fonts are declared in pubspec.yaml — we stay on system stacks. */
+  --font-sans: "Roboto", -apple-system, "SF Pro Text", BlinkMacSystemFont,
+               "Segoe UI", system-ui, sans-serif;
+  --font-ios:  -apple-system, "SF Pro Text", BlinkMacSystemFont, system-ui,
+               sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas,
+               monospace;
+
+  /* Type scale — mirrors Material 3 defaults used via Theme.of(context).textTheme */
+  --fs-display-lg: 57px;  /* displayLarge */
+  --fs-display-md: 45px;  /* displayMedium */
+  --fs-display-sm: 36px;  /* displaySmall */
+  --fs-headline-lg: 32px; /* headlineLarge */
+  --fs-headline-md: 28px; /* headlineMedium */
+  --fs-headline-sm: 24px; /* headlineSmall — balances, page titles */
+  --fs-title-lg: 22px;    /* titleLarge */
+  --fs-title-md: 16px;    /* titleMedium — section headers, tile titles */
+  --fs-title-sm: 14px;    /* titleSmall */
+  --fs-body-lg:  16px;    /* bodyLarge */
+  --fs-body-md:  14px;    /* bodyMedium */
+  --fs-body-sm:  12px;    /* bodySmall — swatch labels, captions */
+  --fs-label-lg: 14px;    /* labelLarge — trailing amounts */
+  --fs-label-md: 12px;
+  --fs-label-sm: 11px;
+
+  --lh-tight:  1.15;
+  --lh-normal: 1.4;
+  --lh-loose:  1.55;
+
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semibold:600; /* Cupertino pill label weight */
+  --fw-bold:    700; /* overall-amount emphasis */
+}
+
+/* ==========================================================================
+   Semantic element defaults — use on prototypes sitting on --bg-light
+   ========================================================================== */
+
+html, body {
+  font-family: var(--font-sans);
+  color: var(--fg1);
+  background: var(--bg-light);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "tnum" 1;
+}
+
+h1 { font-size: var(--fs-headline-lg); font-weight: var(--fw-bold);     line-height: var(--lh-tight);  letter-spacing: -0.01em; margin: 0; }
+h2 { font-size: var(--fs-headline-sm); font-weight: var(--fw-bold);     line-height: var(--lh-tight);  letter-spacing: -0.005em; margin: 0; }
+h3 { font-size: var(--fs-title-lg);    font-weight: var(--fw-semibold); line-height: var(--lh-tight);  margin: 0; }
+h4 { font-size: var(--fs-title-md);    font-weight: var(--fw-semibold); line-height: var(--lh-normal); margin: 0; }
+h5 { font-size: var(--fs-title-sm);    font-weight: var(--fw-semibold); line-height: var(--lh-normal); margin: 0; }
+
+p          { font-size: var(--fs-body-md); line-height: var(--lh-loose); color: var(--fg2); margin: 0; }
+small      { font-size: var(--fs-body-sm); color: var(--fg3); }
+.caption   { font-size: var(--fs-body-sm); color: var(--fg3); letter-spacing: 0.02em; }
+.amount    { font-size: var(--fs-headline-sm); font-weight: var(--fw-bold); font-feature-settings: "tnum" 1; }
+.amount-lg { font-size: var(--fs-display-sm);  font-weight: var(--fw-bold); font-feature-settings: "tnum" 1; }
+.mono      { font-family: var(--font-mono); }
+
+/* Positive / negative money */
+.money--pos { color: var(--positive); }
+.money--neg { color: var(--negative); }
+.money--neu { color: var(--neutral); }

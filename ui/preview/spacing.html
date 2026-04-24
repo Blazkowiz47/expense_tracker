@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Spacing</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; }
+  .row { display: grid; grid-template-columns: 60px 1fr 80px; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+  .row:last-child { border-bottom: none; }
+  .tok { font-family: var(--font-mono); font-size: 12px; color: var(--fg2); font-weight: 600; }
+  .bar { height: 14px; background: var(--accent); border-radius: 3px; }
+  .val { font-family: var(--font-mono); font-size: 11px; color: var(--fg3); text-align: right; }
+</style>
+</head>
+<body>
+  <div class="row"><span class="tok">xs</span><div class="bar" style="width:4px"></div><span class="val">4px</span></div>
+  <div class="row"><span class="tok">sm</span><div class="bar" style="width:8px"></div><span class="val">8px</span></div>
+  <div class="row"><span class="tok">md</span><div class="bar" style="width:16px"></div><span class="val">16px</span></div>
+  <div class="row"><span class="tok">lg</span><div class="bar" style="width:24px"></div><span class="val">24px</span></div>
+</body>
+</html>

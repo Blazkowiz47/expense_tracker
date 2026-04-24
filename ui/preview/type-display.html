@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Type — Display & Headlines</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; }
+  .row { display: grid; grid-template-columns: 140px 1fr 90px; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); }
+  .row:last-child { border-bottom: none; }
+  .tok { font-family: var(--font-mono); font-size: 11px; color: var(--fg3); }
+  .meta { font-family: var(--font-mono); font-size: 11px; color: var(--fg3); text-align: right; }
+  .s1 { font-size: 36px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+  .s2 { font-size: 28px; font-weight: 700; letter-spacing: -0.005em; line-height: 1.2; }
+  .s3 { font-size: 24px; font-weight: 700; line-height: 1.2; }
+  .s4 { font-size: 22px; font-weight: 600; line-height: 1.25; }
+</style>
+</head>
+<body>
+  <div class="row"><span class="tok">displaySmall</span><span class="s1">₹12,450.00</span><span class="meta">36 / 700</span></div>
+  <div class="row"><span class="tok">headlineMedium</span><span class="s2">Overall, you are owed</span><span class="meta">28 / 700</span></div>
+  <div class="row"><span class="tok">headlineSmall</span><span class="s3">₹1,250.00</span><span class="meta">24 / 700</span></div>
+  <div class="row"><span class="tok">titleLarge</span><span class="s4">Add an expense</span><span class="meta">22 / 600</span></div>
+</body>
+</html>

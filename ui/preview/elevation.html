@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Elevation</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 24px; margin: 0; background: var(--bg-light); }
+  .row { display: flex; gap: 18px; }
+  .cell { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .box { width: 100%; height: 64px; background: #fff; border-radius: var(--radius-md); }
+  .e0 { border: 1px solid var(--border-light); }
+  .efab { box-shadow: 0 6px 16px rgba(0,0,0,0.18); }
+  .name { font-size: 12px; font-weight: 600; color: var(--fg1); }
+  .desc { font-family: var(--font-mono); font-size: 10px; color: var(--fg3); }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="cell"><div class="box e0"></div><span class="name">Card · elev 0</span><span class="desc">flat + 14r</span></div>
+  <div class="cell"><div class="box efab"></div><span class="name">FAB · shadow</span><span class="desc">0 6px 16px /.18</span></div>
+</div>
+</body>
+</html>

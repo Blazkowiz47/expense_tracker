@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Colors — Theme Accents</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; }
+  .wrap { display: flex; flex-direction: column; gap: 14px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row-label { width: 110px; font-size: 13px; color: var(--fg2); font-weight: 500; }
+  .sw { flex: 1; height: 52px; border-radius: var(--radius-sm); display: flex; align-items: flex-end; padding: 8px 10px; color: #fff; font-size: 11px; font-weight: 500; letter-spacing: 0.02em; font-family: var(--font-mono); }
+  .row-label { position: relative; display: flex; align-items: center; gap: 6px; }
+  .row.default .row-label { color: var(--fg1); font-weight: 600; }
+  .default-tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #2C68BF; background: rgba(59,127,224,0.12); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); }
+  .row.default .sw { box-shadow: 0 0 0 2px #7AA2F7, 0 0 0 4px #fff inset; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row default">
+    <div class="row-label">Tokyo Night <span class="default-tag">default</span></div>
+    <div class="sw" style="background:#7AA2F7">#7AA2F7 light</div>
+    <div class="sw" style="background:#7DCFFF;color:#0b1e33">#7DCFFF dark</div>
+    <div class="sw" style="background:#1D1D1D">#1D1D1D hc</div>
+  </div>
+  <div class="row">
+    <div class="row-label">Mint</div>
+    <div class="sw" style="background:#3FBF9B">#3FBF9B light</div>
+    <div class="sw" style="background:#2FAE8E">#2FAE8E dark</div>
+    <div class="sw" style="background:#0B3D2E">#0B3D2E hc</div>
+  </div>
+</div>
+</body>
+</html>

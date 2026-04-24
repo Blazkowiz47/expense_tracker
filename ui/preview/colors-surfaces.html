@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Colors — Surfaces</title>
+<link rel="stylesheet" href="../colors_and_type.css"/>
+<style>
+  body { padding: 20px; margin: 0; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tile { border-radius: var(--radius-sm); padding: 14px; height: 90px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid var(--border-subtle); font-size: 12px; }
+  .tile .name { font-weight: 600; color: var(--fg1); }
+  .tile .hex { font-family: var(--font-mono); color: var(--fg3); font-size: 11px; }
+  .tile.inv .name, .tile.inv .hex { color: #fff; }
+  .tile.inv .hex { color: rgba(255,255,255,0.7); }
+</style>
+</head>
+<body>
+<div class="grid">
+  <div class="tile" style="background:#F7F8F9"><div class="name">Scaffold (light)</div><div class="hex">#F7F8F9</div></div>
+  <div class="tile" style="background:#FFFFFF"><div class="name">Surface (card)</div><div class="hex">#FFFFFF</div></div>
+  <div class="tile inv" style="background:#111318"><div class="name">Scaffold (dark)</div><div class="hex">#111318</div></div>
+  <div class="tile inv" style="background:#1A1D24"><div class="name">Surface (dark)</div><div class="hex">#1A1D24</div></div>
+</div>
+</body>
+</html>
