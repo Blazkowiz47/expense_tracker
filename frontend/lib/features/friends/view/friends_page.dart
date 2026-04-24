@@ -2,6 +2,7 @@ import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/friends/utils/settlement_balance_calculator.dart';
+import 'package:expense_tracker/features/dashboard/view/dashboard_overall_summary_card.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
@@ -267,7 +268,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   ),
                   decoration: const InputDecoration(
                     labelText: 'Amount',
-                    prefixText: 'INR ',
+                    prefixText: AppMoney.inputPrefix,
                     hintText: '0.00',
                   ),
                   validator: (value) {
@@ -323,7 +324,7 @@ class _FriendsPageState extends State<FriendsPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Find & add'),
+            child: const Text('Find and add'),
           ),
         ],
       ),
@@ -336,7 +337,7 @@ class _FriendsPageState extends State<FriendsPage> {
       children: [
         AppPageContainer(
           children: [
-            AppSummaryCard(title: 'Friends', amount: '${_friends.length}'),
+            const DashboardOverallSummaryCard(),
             const SizedBox(height: 16),
             AppSectionHeader(
               title: 'Friends',
@@ -364,23 +365,16 @@ class _FriendsPageState extends State<FriendsPage> {
             else
               ..._friends.map((friend) {
                 final net = _friendSettlementNetByUid[friend.uid] ?? 0;
-                final balanceLabel = net > 0.005
-                    ? 'You are owed ${AppMoney.format(net)}'
-                    : net < -0.005
-                    ? 'You owe ${AppMoney.format(-net)}'
-                    : "You're all settled up";
-                final balanceColor = net > 0.005
-                    ? AppMoney.positiveColor
-                    : net < -0.005
-                    ? Theme.of(context).colorScheme.error
-                    : Theme.of(context).colorScheme.outline;
+                final settled = net.abs() <= 0.005;
                 return _BalanceTile(
                   name: friend.label,
-                  subtitle: friend.contactHint.isNotEmpty
-                      ? friend.contactHint
-                      : 'No email/phone',
-                  balanceLabel: balanceLabel,
-                  balanceColor: balanceColor,
+                  subtitle: settled
+                      ? 'settled'
+                      : net > 0
+                      ? 'owes you'
+                      : 'you owe',
+                  amount: settled ? null : net.abs(),
+                  positive: net >= 0,
                   removing: _removingFriendUid == friend.uid,
                   onSettleUp: () => _settleUpFlow(friend),
                   onRemove: () => _removeFriendFlow(friend),
@@ -393,7 +387,7 @@ class _FriendsPageState extends State<FriendsPage> {
             child: ColoredBox(
               color: Colors.black26,
               child: Center(
-                child: Card(
+                child: AppCard(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 20,
@@ -455,8 +449,8 @@ class _BalanceTile extends StatelessWidget {
   const _BalanceTile({
     required this.name,
     required this.subtitle,
-    required this.balanceLabel,
-    required this.balanceColor,
+    required this.positive,
+    this.amount,
     this.removing = false,
     this.onSettleUp,
     this.onRemove,
@@ -464,8 +458,8 @@ class _BalanceTile extends StatelessWidget {
 
   final String name;
   final String subtitle;
-  final String balanceLabel;
-  final Color balanceColor;
+  final double? amount;
+  final bool positive;
   final bool removing;
   final VoidCallback? onSettleUp;
   final VoidCallback? onRemove;
@@ -474,43 +468,23 @@ class _BalanceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       child: ListTile(
+        onTap: removing ? null : onSettleUp,
+        onLongPress: removing ? null : onRemove,
         leading: const AppAvatar(icon: Icons.person_outline),
         title: Text(name),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(subtitle),
-            const SizedBox(height: 2),
-            Text(
-              balanceLabel,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: balanceColor),
-            ),
-          ],
-        ),
+        subtitle: Text(subtitle),
         trailing: removing
             ? const SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2.2),
               )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: 'Settle up',
-                    onPressed: onSettleUp,
-                    icon: const Icon(Icons.handshake_outlined),
-                  ),
-                  IconButton(
-                    tooltip: 'Remove friend',
-                    onPressed: onRemove,
-                    icon: const Icon(Icons.person_remove_outlined),
-                  ),
-                ],
-              ),
+            : amount == null
+            ? Text(
+                'settled',
+                style: TextStyle(color: Theme.of(context).colorScheme.outline),
+              )
+            : AppMoneyLabel(text: AppMoney.format(amount!), positive: positive),
       ),
     );
   }

@@ -89,7 +89,7 @@ void main() {
 
     expect(find.text('Test Friend'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Settle up').first);
+    await tester.tap(find.text('Test Friend'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField).first, '120');

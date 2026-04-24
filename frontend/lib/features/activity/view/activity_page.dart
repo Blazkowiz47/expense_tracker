@@ -1,9 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
+import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -14,115 +16,169 @@ class ActivityPage extends StatefulWidget {
   State<ActivityPage> createState() => _ActivityPageState();
 }
 
-enum _ActivityTypeFilter { all, spent, incoming }
-
-enum _ActivityWindowFilter { all, last7Days, last30Days }
+enum _ActivityRange { week, month, year }
 
 class _ActivityPageState extends State<ActivityPage> {
-  final _searchController = TextEditingController();
-  String _query = '';
-  _ActivityTypeFilter _typeFilter = _ActivityTypeFilter.all;
-  _ActivityWindowFilter _windowFilter = _ActivityWindowFilter.all;
-  bool _exporting = false;
+  ExpenseRepository? _repository;
+  List<Expense> _expenses = const [];
+  _ActivityRange _range = _ActivityRange.week;
+  bool _loadedRepository = false;
+  bool _loadingExpenses = false;
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_loadedRepository) return;
+    _loadedRepository = true;
+    _repository = context.read<ExpenseRepository?>();
+    _refreshExpenses();
   }
 
-  List<ActivityItem> _filteredItems(List<ActivityItem> source) {
-    final q = _query.trim().toLowerCase();
-    final now = DateTime.now();
-    final start = switch (_windowFilter) {
-      _ActivityWindowFilter.all => null,
-      _ActivityWindowFilter.last7Days => now.subtract(const Duration(days: 7)),
-      _ActivityWindowFilter.last30Days => now.subtract(
-        const Duration(days: 30),
-      ),
+  Future<void> _refreshExpenses() async {
+    final repository = _repository;
+    if (repository == null) return;
+    setState(() => _loadingExpenses = true);
+    try {
+      await repository.refresh();
+      if (!mounted) return;
+      setState(() => _expenses = repository.getExpenses());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _expenses = repository.getExpenses());
+    } finally {
+      if (mounted) {
+        setState(() => _loadingExpenses = false);
+      }
+    }
+  }
+
+  DateTime _startForRange(_ActivityRange range, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    return switch (range) {
+      _ActivityRange.week => today.subtract(const Duration(days: 6)),
+      _ActivityRange.month => DateTime(now.year, now.month),
+      _ActivityRange.year => DateTime(now.year),
     };
+  }
 
-    return source
-        .where((item) {
-          final isSpending = item.amountText.toLowerCase().startsWith(
-            'you spent',
-          );
-          final matchesType = switch (_typeFilter) {
-            _ActivityTypeFilter.all => true,
-            _ActivityTypeFilter.spent => isSpending,
-            _ActivityTypeFilter.incoming => !isSpending,
-          };
-          if (!matchesType) return false;
+  DateTime _previousStartForRange(_ActivityRange range, DateTime start) {
+    return switch (range) {
+      _ActivityRange.week => start.subtract(const Duration(days: 7)),
+      _ActivityRange.month => DateTime(start.year, start.month - 1),
+      _ActivityRange.year => DateTime(start.year - 1),
+    };
+  }
 
-          if (start != null) {
-            final date = DateTime.tryParse(item.subtitle)?.toLocal();
-            if (date == null || date.isBefore(start)) {
-              return false;
-            }
-          }
+  DateTime _periodEndForRange(_ActivityRange range, DateTime start) {
+    return switch (range) {
+      _ActivityRange.week => start.add(const Duration(days: 7)),
+      _ActivityRange.month => DateTime(start.year, start.month + 1),
+      _ActivityRange.year => DateTime(start.year + 1),
+    };
+  }
 
-          if (q.isEmpty) {
-            return true;
-          }
-          final haystack = '${item.title} ${item.subtitle} ${item.amountText}'
-              .toLowerCase();
-          return haystack.contains(q);
+  List<Expense> _expensesInPeriod(DateTime start, DateTime end) {
+    return _expenses
+        .where((expense) {
+          final date = expense.createdAt;
+          return !date.isBefore(start) && date.isBefore(end);
         })
         .toList(growable: false);
   }
 
-  Future<void> _exportCsv() async {
-    if (_exporting) return;
-    setState(() => _exporting = true);
-    try {
-      final repository = context.read<ExpenseRepository>();
-      final now = DateTime.now();
-      final from = switch (_windowFilter) {
-        _ActivityWindowFilter.all => null,
-        _ActivityWindowFilter.last7Days => now.subtract(
-          const Duration(days: 7),
-        ),
-        _ActivityWindowFilter.last30Days => now.subtract(
-          const Duration(days: 30),
-        ),
-      };
-      final csv = await repository.exportExpensesCsv(query: _query, from: from);
-      if (!mounted) return;
-      await Clipboard.setData(ClipboardData(text: csv));
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('CSV exported'),
-          content: SizedBox(
-            width: 700,
-            child: SingleChildScrollView(
-              child: Text(
-                csv,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-              ),
+  List<_TrendPoint> _trendPoints(DateTime start, DateTime end) {
+    switch (_range) {
+      case _ActivityRange.week:
+        return List.generate(7, (index) {
+          final day = start.add(Duration(days: index));
+          final next = day.add(const Duration(days: 1));
+          return _TrendPoint(
+            label: _weekdayLabel(day),
+            value: _expensesInPeriod(day, next).totalAmount,
+          );
+        });
+      case _ActivityRange.month:
+        final points = <_TrendPoint>[];
+        var cursor = start;
+        var bucket = 1;
+        while (cursor.isBefore(end)) {
+          final next = cursor.add(const Duration(days: 7));
+          points.add(
+            _TrendPoint(
+              label: 'W$bucket',
+              value: _expensesInPeriod(cursor, next).totalAmount,
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
-            ),
-          ],
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.toString())));
-    } finally {
-      if (mounted) {
-        setState(() => _exporting = false);
-      }
+          );
+          cursor = next;
+          bucket += 1;
+        }
+        return points;
+      case _ActivityRange.year:
+        return List.generate(12, (index) {
+          final month = DateTime(start.year, index + 1);
+          final next = DateTime(start.year, index + 2);
+          return _TrendPoint(
+            label: _monthLabel(month),
+            value: _expensesInPeriod(month, next).totalAmount,
+          );
+        });
     }
+  }
+
+  List<_CategoryTotal> _categoryTotals(List<Expense> expenses) {
+    final totals = <String, _CategoryTotal>{};
+    for (final expense in expenses) {
+      final label = (expense.category ?? '').trim().isEmpty
+          ? 'Other'
+          : expense.category!.trim();
+      final current = totals[label] ?? _CategoryTotal.empty(label);
+      totals[label] = current.add(expense.amount);
+    }
+    final values = totals.values.toList(growable: false)
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+    return values;
+  }
+
+  String _weekdayLabel(DateTime day) {
+    return const ['M', 'T', 'W', 'T', 'F', 'S', 'S'][day.weekday - 1];
+  }
+
+  String _monthLabel(DateTime month) {
+    return const [
+      'J',
+      'F',
+      'M',
+      'A',
+      'M',
+      'J',
+      'J',
+      'A',
+      'S',
+      'O',
+      'N',
+      'D',
+    ][month.month - 1];
+  }
+
+  String _rangeLabel(_ActivityRange range) {
+    return switch (range) {
+      _ActivityRange.week => 'Week',
+      _ActivityRange.month => 'Month',
+      _ActivityRange.year => 'Year',
+    };
+  }
+
+  String _comparisonLabel(double current, double previous) {
+    final range = _rangeLabel(_range).toLowerCase();
+    if (previous <= 0 && current <= 0) {
+      return 'No change vs last $range';
+    }
+    if (previous <= 0) {
+      return '+100% vs last $range';
+    }
+    final delta = ((current - previous) / previous) * 100;
+    final sign = delta >= 0 ? '+' : '';
+    return '$sign${delta.toStringAsFixed(0)}% vs last $range';
   }
 
   @override
@@ -136,113 +192,445 @@ class _ActivityPageState extends State<ActivityPage> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        final filtered = _filteredItems(state.snapshot.activityItems);
+        final now = DateTime.now();
+        final start = _startForRange(_range, now);
+        final end = _periodEndForRange(_range, start);
+        final previousStart = _previousStartForRange(_range, start);
+        final periodExpenses = _expensesInPeriod(start, end);
+        final previousExpenses = _expensesInPeriod(previousStart, start);
+        final currentTotal = periodExpenses.totalAmount;
+        final previousTotal = previousExpenses.totalAmount;
+        final trend = _trendPoints(start, end);
+        final categories = _categoryTotals(periodExpenses).take(4).toList();
+        final comparison = _comparisonLabel(currentTotal, previousTotal);
+        final increasedSpend = currentTotal > previousTotal;
+
         return AppPageContainer(
           children: [
-            TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: 'Search activity',
-              ),
-              onChanged: (value) => setState(() => _query = value),
+            _SpendSummaryCard(
+              total: currentTotal,
+              comparison: comparison,
+              increasedSpend: increasedSpend,
+              loading: _loadingExpenses,
+              range: _range,
+              onRangeChanged: (range) => setState(() => _range = range),
+              trend: trend,
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: _exporting ? null : _exportCsv,
-                  icon: _exporting
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download_outlined),
-                  label: const Text('Export CSV'),
-                ),
-                ChoiceChip(
-                  label: const Text('All'),
-                  selected: _typeFilter == _ActivityTypeFilter.all,
-                  onSelected: (_) {
-                    setState(() => _typeFilter = _ActivityTypeFilter.all);
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Spent'),
-                  selected: _typeFilter == _ActivityTypeFilter.spent,
-                  onSelected: (_) {
-                    setState(() => _typeFilter = _ActivityTypeFilter.spent);
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Incoming'),
-                  selected: _typeFilter == _ActivityTypeFilter.incoming,
-                  onSelected: (_) {
-                    setState(() => _typeFilter = _ActivityTypeFilter.incoming);
-                  },
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Any time'),
-                  selected: _windowFilter == _ActivityWindowFilter.all,
-                  onSelected: (_) {
-                    setState(() => _windowFilter = _ActivityWindowFilter.all);
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Last 7d'),
-                  selected: _windowFilter == _ActivityWindowFilter.last7Days,
-                  onSelected: (_) {
-                    setState(
-                      () => _windowFilter = _ActivityWindowFilter.last7Days,
-                    );
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Last 30d'),
-                  selected: _windowFilter == _ActivityWindowFilter.last30Days,
-                  onSelected: (_) {
-                    setState(
-                      () => _windowFilter = _ActivityWindowFilter.last30Days,
-                    );
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (filtered.isEmpty)
-              const AppEmptyState(title: 'No activity matches your filters')
+            const SizedBox(height: 12),
+            _CategoryBreakdownCard(categories: categories),
+            const SizedBox(height: 20),
+            const AppSectionHeader(title: 'History'),
+            if (state.snapshot.activityItems.isEmpty)
+              const SizedBox.shrink()
             else
-              ...filtered.map((item) {
-                final isSpending = item.amountText.toLowerCase().startsWith(
-                  'you spent',
-                );
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: AppCard(
-                    child: ListTile(
-                      leading: const AppAvatar(
-                        icon: Icons.receipt_long_outlined,
-                      ),
-                      title: Text(item.title),
-                      subtitle: Text(
-                        AppMoney.normalizeDisplayText(item.subtitle),
-                      ),
-                      trailing: AppMoneyLabel(
-                        text: item.amountText,
-                        positive: item.positive,
-                        neutral: isSpending,
-                      ),
-                    ),
-                  ),
-                );
-              }),
+              ...state.snapshot.activityItems.map(
+                (item) => _ActivityTile(item: item),
+              ),
           ],
         );
       },
     );
   }
+}
+
+class _SpendSummaryCard extends StatelessWidget {
+  const _SpendSummaryCard({
+    required this.total,
+    required this.comparison,
+    required this.increasedSpend,
+    required this.loading,
+    required this.range,
+    required this.onRangeChanged,
+    required this.trend,
+  });
+
+  final double total;
+  final String comparison;
+  final bool increasedSpend;
+  final bool loading;
+  final _ActivityRange range;
+  final ValueChanged<_ActivityRange> onRangeChanged;
+  final List<_TrendPoint> trend;
+
+  @override
+  Widget build(BuildContext context) {
+    final comparisonColor = increasedSpend
+        ? Theme.of(context).colorScheme.error
+        : AppMoney.positiveColor;
+
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'You spent',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      AppMoney.format(total),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      comparison,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: comparisonColor),
+                    ),
+                  ],
+                ),
+              ),
+              if (loading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                SegmentedButton<_ActivityRange>(
+                  segments: _ActivityRange.values
+                      .map(
+                        (value) => ButtonSegment<_ActivityRange>(
+                          value: value,
+                          label: Text(_labelForRange(value)),
+                        ),
+                      )
+                      .toList(growable: false),
+                  selected: {range},
+                  onSelectionChanged: (selection) {
+                    onRangeChanged(selection.first);
+                  },
+                  showSelectedIcon: false,
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    textStyle: WidgetStatePropertyAll(
+                      Theme.of(context).textTheme.labelSmall,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _SpendChart(points: trend),
+        ],
+      ),
+    );
+  }
+
+  static String _labelForRange(_ActivityRange value) {
+    return switch (value) {
+      _ActivityRange.week => 'Week',
+      _ActivityRange.month => 'Month',
+      _ActivityRange.year => 'Year',
+    };
+  }
+}
+
+class _SpendChart extends StatelessWidget {
+  const _SpendChart({required this.points});
+
+  final List<_TrendPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 142,
+      child: CustomPaint(
+        painter: _SpendChartPainter(
+          points: points,
+          color: Theme.of(context).colorScheme.primary,
+          gridColor: Theme.of(context).colorScheme.outlineVariant,
+          labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _SpendChartPainter extends CustomPainter {
+  const _SpendChartPainter({
+    required this.points,
+    required this.color,
+    required this.gridColor,
+    required this.labelColor,
+  });
+
+  final List<_TrendPoint> points;
+  final Color color;
+  final Color gridColor;
+  final Color labelColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+
+    const bottomLabelHeight = 22.0;
+    const padding = 8.0;
+    final chartHeight = size.height - bottomLabelHeight;
+    final maxValue = math.max(
+      1,
+      points.map((point) => point.value).fold<double>(0, math.max) * 1.15,
+    );
+    final stepX = points.length == 1
+        ? 0.0
+        : (size.width - padding * 2) / (points.length - 1);
+    final offsets = points
+        .asMap()
+        .entries
+        .map((entry) {
+          final x = padding + stepX * entry.key;
+          final y =
+              chartHeight -
+              padding -
+              (entry.value.value / maxValue) * (chartHeight - padding * 2);
+          return Offset(x, y);
+        })
+        .toList(growable: false);
+
+    final gridPaint = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    for (final fraction in const [0.25, 0.5, 0.75]) {
+      final y = padding + (chartHeight - padding * 2) * fraction;
+      canvas.drawLine(
+        Offset(padding, y),
+        Offset(size.width - padding, y),
+        gridPaint,
+      );
+    }
+
+    final path = Path()..moveTo(offsets.first.dx, offsets.first.dy);
+    for (final offset in offsets.skip(1)) {
+      path.lineTo(offset.dx, offset.dy);
+    }
+
+    final fillPath = Path.from(path)
+      ..lineTo(offsets.last.dx, chartHeight - padding)
+      ..lineTo(offsets.first.dx, chartHeight - padding)
+      ..close();
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [color.withValues(alpha: 0.22), color.withValues(alpha: 0)],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, chartHeight));
+    canvas.drawPath(fillPath, fillPaint);
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(path, linePaint);
+
+    final peakValue = points
+        .map((point) => point.value)
+        .fold<double>(0, math.max);
+    for (var index = 0; index < offsets.length; index += 1) {
+      final point = points[index];
+      final offset = offsets[index];
+      final isPeak = point.value == peakValue && peakValue > 0;
+      canvas.drawCircle(
+        offset,
+        isPeak ? 4 : 2.5,
+        Paint()
+          ..color = isPeak ? color : Colors.white
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        offset,
+        isPeak ? 4 : 2.5,
+        Paint()
+          ..color = color
+          ..strokeWidth = 1.6
+          ..style = PaintingStyle.stroke,
+      );
+
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: point.label,
+          style: TextStyle(color: labelColor, fontSize: 11),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      textPainter.paint(
+        canvas,
+        Offset(offset.dx - textPainter.width / 2, chartHeight + 8),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SpendChartPainter oldDelegate) {
+    return oldDelegate.points != points ||
+        oldDelegate.color != color ||
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.labelColor != labelColor;
+  }
+}
+
+class _CategoryBreakdownCard extends StatelessWidget {
+  const _CategoryBreakdownCard({required this.categories});
+
+  final List<_CategoryTotal> categories;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = categories.fold<double>(
+      0,
+      (sum, category) => sum + category.amount,
+    );
+    final colors = [
+      Theme.of(context).colorScheme.primary,
+      Theme.of(context).colorScheme.primaryContainer,
+      Theme.of(context).colorScheme.secondaryContainer,
+      Theme.of(context).colorScheme.surfaceContainerHighest,
+    ];
+
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('By category', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          if (categories.isEmpty)
+            Text(
+              'No spending yet',
+              style: TextStyle(color: Theme.of(context).colorScheme.outline),
+            )
+          else ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: Row(
+                children: categories
+                    .asMap()
+                    .entries
+                    .map((entry) {
+                      final category = entry.value;
+                      final width = total <= 0 ? 0.0 : category.amount / total;
+                      return Expanded(
+                        flex: math.max(1, (width * 1000).round()),
+                        child: SizedBox(
+                          height: 10,
+                          child: ColoredBox(
+                            color: colors[entry.key % colors.length],
+                          ),
+                        ),
+                      );
+                    })
+                    .toList(growable: false),
+              ),
+            ),
+            const SizedBox(height: 14),
+            ...categories.asMap().entries.map((entry) {
+              final category = entry.value;
+              final percent = total <= 0
+                  ? 0
+                  : (category.amount / total * 100).round();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: colors[entry.key % colors.length],
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(category.label)),
+                    Text(
+                      '$percent%',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 86,
+                      child: Text(
+                        AppMoney.format(category.amount),
+                        textAlign: TextAlign.right,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityTile extends StatelessWidget {
+  const _ActivityTile({required this.item});
+
+  final ActivityItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: ListTile(
+        leading: const AppAvatar(icon: Icons.receipt_long_outlined),
+        title: Text(item.title),
+        subtitle: Text(AppMoney.normalizeDisplayText(item.subtitle)),
+        trailing: AppMoneyLabel(text: item.amountText, positive: item.positive),
+      ),
+    );
+  }
+}
+
+class _TrendPoint {
+  const _TrendPoint({required this.label, required this.value});
+
+  final String label;
+  final double value;
+}
+
+class _CategoryTotal {
+  const _CategoryTotal({
+    required this.label,
+    required this.amount,
+    required this.count,
+  });
+
+  factory _CategoryTotal.empty(String label) {
+    return _CategoryTotal(label: label, amount: 0, count: 0);
+  }
+
+  final String label;
+  final double amount;
+  final int count;
+
+  _CategoryTotal add(double value) {
+    return _CategoryTotal(
+      label: label,
+      amount: amount + value,
+      count: count + 1,
+    );
+  }
+}
+
+extension on List<Expense> {
+  double get totalAmount =>
+      fold<double>(0, (sum, expense) => sum + expense.amount);
 }

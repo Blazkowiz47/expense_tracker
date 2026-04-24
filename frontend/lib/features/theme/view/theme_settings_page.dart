@@ -100,7 +100,7 @@ class ThemeSettingsPage extends StatelessWidget {
     return switch (variant) {
       ThemeVariant.light => 'Light',
       ThemeVariant.dark => 'Dark',
-      ThemeVariant.highContrast => 'High Contrast',
+      ThemeVariant.highContrast => 'High contrast',
       ThemeVariant.custom => 'Custom',
     };
   }

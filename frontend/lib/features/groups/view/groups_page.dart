@@ -5,6 +5,7 @@ import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
+import 'package:expense_tracker/features/dashboard/view/dashboard_overall_summary_card.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
@@ -44,8 +45,6 @@ class _GroupsPageState extends State<GroupsPage> {
   String? _error;
 
   bool get _isFamily => widget.groupType == GroupType.family;
-
-  String get _summaryTitle => _isFamily ? 'Family groups' : 'Your groups';
 
   String get _sectionTitle => _isFamily ? 'Family' : 'Groups';
 
@@ -168,7 +167,7 @@ class _GroupsPageState extends State<GroupsPage> {
       children: [
         AppPageContainer(
           children: [
-            AppSummaryCard(title: _summaryTitle, amount: '${_groups.length}'),
+            const DashboardOverallSummaryCard(),
             const SizedBox(height: 16),
             AppSectionHeader(
               title: _sectionTitle,
@@ -872,7 +871,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       ),
                       decoration: const InputDecoration(
                         labelText: 'Amount',
-                        prefixText: 'INR ',
+                        prefixText: AppMoney.inputPrefix,
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -1957,7 +1956,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('$_memberCount member(s)'),
+                        Text(
+                          '$_memberCount member${_memberCount == 1 ? '' : 's'}',
+                        ),
                         if (_simplifyBalances) ...[
                           const SizedBox(height: 4),
                           Builder(
@@ -2256,7 +2257,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
                   ),
                   decoration: const InputDecoration(
                     labelText: 'Amount',
-                    prefixText: 'INR ',
+                    prefixText: AppMoney.inputPrefix,
                     hintText: '0.00',
                   ),
                   validator: (value) {
@@ -2403,23 +2404,18 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
         : const <GroupTransferSuggestion>[];
     return Scaffold(
       appBar: AppBar(title: const Text('Group settings')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: AppPageContainer(
         children: [
-          Card(
+          AppCard(
             child: ListTile(
               title: Text(widget.groupName),
-              subtitle: Text('${widget.members.length} member(s)'),
+              subtitle: Text(
+                '${widget.members.length} member${widget.members.length == 1 ? '' : 's'}',
+              ),
             ),
           ),
           const SizedBox(height: 12),
-          Text(
-            'Group members',
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
+          const AppSectionHeader(title: 'Group members'),
           if (_settlementLoading)
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
@@ -2437,15 +2433,9 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
                 : net > 0
                 ? AppMoney.positiveColor
                 : Theme.of(context).colorScheme.error;
-            return Card(
+            return AppCard(
               child: ListTile(
-                leading: CircleAvatar(
-                  child: Text(
-                    member.label.isNotEmpty
-                        ? member.label.substring(0, 1).toUpperCase()
-                        : '?',
-                  ),
-                ),
+                leading: AppAvatar(label: member.label),
                 title: Text(member.label),
                 subtitle: member.email.isNotEmpty
                     ? Text(member.email)
@@ -2480,14 +2470,8 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
             );
           }),
           const SizedBox(height: 16),
-          Text(
-            'Advanced settings',
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Card(
+          const AppSectionHeader(title: 'Advanced settings'),
+          AppCard(
             child: SwitchListTile(
               title: const Text('Simplify group debts'),
               subtitle: const Text(
@@ -2501,7 +2485,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
           ),
           if (_simplify) ...[
             const SizedBox(height: 8),
-            Card(
+            AppCard(
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -2720,10 +2704,6 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     });
   }
 
-  String _formatCurrency(double value) {
-    return value.toStringAsFixed(2).replaceAll('.', ',');
-  }
-
   double _parseLocalizedDouble(String raw) {
     final normalized = raw.trim().replaceAll(' ', '').replaceAll(',', '.');
     return double.tryParse(normalized) ?? 0;
@@ -2895,7 +2875,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '₹ ',
+              '₹',
               style: TextStyle(
                 color: showErrorForThisMember ? errorColor : Colors.grey,
               ),
@@ -2918,7 +2898,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                 ),
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: '0,00',
+                  hintText: '0.00',
                   border: const UnderlineInputBorder(),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
@@ -3054,7 +3034,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
                 ),
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: '0,00',
+                  hintText: '0.00',
                   border: const UnderlineInputBorder(),
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(
@@ -3099,16 +3079,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         ),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 20,
+            AppAvatar(
+              label: member,
               backgroundColor: avatarColor,
-              child: Text(
-                member.isNotEmpty ? member[0].toUpperCase() : '?',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              foregroundColor: Colors.white,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -3144,10 +3118,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     switch (_mode) {
       case 'exact':
         footerTitle =
-            '₹ ${_formatCurrency(enteredExact)} of ₹ ${_formatCurrency(widget.totalAmount)}';
+            '${AppMoney.format(enteredExact)} of ${AppMoney.format(widget.totalAmount)}';
         footerSubtitle = exactRemaining < 0
-            ? '₹ 0,00 left'
-            : '₹ ${_formatCurrency(exactRemaining)} left';
+            ? '${AppMoney.format(0)} left'
+            : '${AppMoney.format(exactRemaining)} left';
         footerError = exactRemaining.abs() > 0.005 && exactRemaining >= 0;
         break;
       case 'percent':
@@ -3164,16 +3138,16 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         break;
       case 'adjustment':
         footerTitle =
-            '₹ ${_formatCurrency(enteredAdjustment)} of ₹ ${_formatCurrency(widget.totalAmount)}';
+            '${AppMoney.format(enteredAdjustment)} of ${AppMoney.format(widget.totalAmount)}';
         footerSubtitle = adjustmentRemaining < 0
-            ? '₹ 0,00 left'
-            : '₹ ${_formatCurrency(adjustmentRemaining)} left';
+            ? '${AppMoney.format(0)} left'
+            : '${AppMoney.format(adjustmentRemaining)} left';
         footerError =
             adjustmentRemaining.abs() > 0.005 && adjustmentRemaining >= 0;
         break;
       case 'equally':
       default:
-        footerTitle = '₹ ${_formatCurrency(perPerson)}/person';
+        footerTitle = '${AppMoney.format(perPerson)}/person';
         footerSubtitle = '(${_selected.length} people)';
         footerError = false;
     }
@@ -3357,21 +3331,12 @@ class _ChoosePayerPage extends StatelessWidget {
         leadingWidth: 80,
         title: const Text('Choose payer'),
       ),
-      body: ListView(
+      body: AppPageContainer(
         children: [
           ...participants.map(
-            (name) => ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                child: Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              title: Text(name),
+            (name) => AppBalanceTile(
+              title: name,
+              leadingLabel: name,
               trailing: name == currentPayer
                   ? Icon(
                       Icons.check,
@@ -3395,11 +3360,12 @@ class _GroupTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final badge = group.groupType == GroupType.family ? 'Family' : 'Split';
     final icon = group.groupType == GroupType.family
         ? Icons.home_outlined
         : Icons.group_outlined;
-    final trailingText = '${group.memberCount} member(s)';
+    final subtitle = group.groupType == GroupType.family
+        ? '${group.memberCount} people · shared household'
+        : '${group.memberCount} people · split expenses';
     return AppCard(
       child: ListTile(
         onTap: onTap,
@@ -3408,28 +3374,9 @@ class _GroupTile extends StatelessWidget {
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
         ),
-        title: Row(
-          children: [
-            Expanded(child: Text(group.name)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(badge, style: Theme.of(context).textTheme.labelSmall),
-            ),
-          ],
-        ),
-        subtitle: Text(
-          group.groupType == GroupType.family
-              ? 'Family monthly tracking (no balances)'
-              : 'Split expenses with members',
-        ),
-        trailing: Text(
-          trailingText,
-          style: Theme.of(context).textTheme.labelLarge,
-        ),
+        title: Text(group.name),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
       ),
     );
   }

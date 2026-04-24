@@ -113,7 +113,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
   Widget _buildMaterial(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Add personal expense')),
+      appBar: AppBar(title: const Text('Add an expense')),
       body: AppPageContainer(
         maxWidth: 760,
         children: [
@@ -123,10 +123,16 @@ class _AddExpensePageState extends State<AddExpensePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Personal expense',
+                  'With you and',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                const Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [Chip(label: Text('Just you'))],
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _descriptionController,
                   decoration: const InputDecoration(
@@ -145,6 +151,21 @@ class _AddExpensePageState extends State<AddExpensePage> {
                     prefixText: AppMoney.inputPrefix,
                     border: OutlineInputBorder(),
                   ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ReadonlySelector(label: 'Paid by', value: 'You'),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: _ReadonlySelector(
+                        label: 'Split',
+                        value: 'Personal',
+                      ),
+                    ),
+                  ],
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 10),
@@ -172,7 +193,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   Widget _buildCupertino(BuildContext context) {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('Add personal expense'),
+        middle: const Text('Add an expense'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           minimumSize: const Size(30, 30),
@@ -181,55 +202,98 @@ class _AddExpensePageState extends State<AddExpensePage> {
         ),
       ),
       child: SafeArea(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: ListView(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              children: [
-                CupertinoFormSection.insetGrouped(
-                  children: [
-                    CupertinoFormRow(
-                      prefix: const Text('Description'),
-                      child: CupertinoTextField(
-                        controller: _descriptionController,
-                        placeholder: 'Enter a description',
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                    CupertinoFormRow(
-                      prefix: const Text('Amount'),
-                      child: CupertinoTextField(
-                        controller: _amountController,
-                        placeholder: 'INR 0.00',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
+        child: Material(
+          color: Colors.transparent,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: ListView(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                children: [
+                  Text(
+                    'With you and',
+                    style: CupertinoTheme.of(
+                      context,
+                    ).textTheme.navTitleTextStyle,
+                  ),
+                  const SizedBox(height: 10),
+                  const Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [Chip(label: Text('Just you'))],
+                  ),
+                  const SizedBox(height: 12),
+                  CupertinoFormSection.insetGrouped(
+                    children: [
+                      CupertinoFormRow(
+                        prefix: const Text('Description'),
+                        child: CupertinoTextField(
+                          controller: _descriptionController,
+                          placeholder: 'Enter a description',
+                          textAlign: TextAlign.end,
                         ),
-                        textAlign: TextAlign.end,
+                      ),
+                      CupertinoFormRow(
+                        prefix: const Text('Amount'),
+                        child: CupertinoTextField(
+                          controller: _amountController,
+                          placeholder: 'INR 0.00',
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
+                      const CupertinoFormRow(
+                        prefix: Text('Paid by'),
+                        child: Text('You', textAlign: TextAlign.end),
+                      ),
+                      const CupertinoFormRow(
+                        prefix: Text('Split'),
+                        child: Text('Personal', textAlign: TextAlign.end),
+                      ),
+                    ],
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: CupertinoTheme.of(context).primaryColor,
                       ),
                     ),
                   ],
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _error!,
-                    style: TextStyle(
-                      color: CupertinoTheme.of(context).primaryColor,
-                    ),
+                  const SizedBox(height: AppSpacing.md),
+                  CupertinoButton.filled(
+                    onPressed: _saving ? null : _save,
+                    child: const Text('Save expense'),
                   ),
                 ],
-                const SizedBox(height: AppSpacing.md),
-                CupertinoButton.filled(
-                  onPressed: _saving ? null : _save,
-                  child: const Text('Save expense'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ReadonlySelector extends StatelessWidget {
+  const _ReadonlySelector({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        suffixIcon: const Icon(Icons.chevron_right),
+      ),
+      child: Text(value),
     );
   }
 }

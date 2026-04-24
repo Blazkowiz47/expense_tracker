@@ -1,5 +1,7 @@
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/family/view/family_page.dart';
+import 'package:expense_tracker/features/groups/models/group_expense.dart';
+import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
@@ -19,6 +21,26 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
 
   @override
   Future<List<GroupSummary>> fetchGroups() async => groups;
+
+  @override
+  Future<List<GroupMember>> getCachedMembers(String groupId) async => const [];
+
+  @override
+  Future<List<GroupExpense>> getCachedExpenses(String groupId) async =>
+      const [];
+
+  @override
+  Future<List<GroupMember>> fetchMembers(String groupId) async => const [
+    GroupMember(
+      uid: 'member-1',
+      displayName: 'Nisha',
+      email: 'nisha@example.com',
+      phone: '',
+    ),
+  ];
+
+  @override
+  Future<List<GroupExpense>> fetchExpenses(String groupId) async => const [];
 }
 
 void main() {

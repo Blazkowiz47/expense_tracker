@@ -5,5 +5,6 @@ export 'app_empty_state.dart';
 export 'app_money.dart';
 export 'app_money_label.dart';
 export 'app_page_container.dart';
+export 'app_progress_bar.dart';
 export 'app_section_header.dart';
 export 'app_summary_card.dart';
