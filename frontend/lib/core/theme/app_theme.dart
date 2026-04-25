@@ -60,7 +60,6 @@ class AppThemeFactory {
 
   static ThemePack _packForFamily(ThemeFamily family) {
     return switch (family) {
-      ThemeFamily.splitwise => ThemePackCatalog.splitwise,
       ThemeFamily.tokyoNight => ThemePackCatalog.tokyoNight,
       ThemeFamily.mint => ThemePackCatalog.mint,
     };

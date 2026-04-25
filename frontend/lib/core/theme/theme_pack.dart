@@ -31,9 +31,9 @@ class ThemePack {
     return ThemePack(
       familyId: (json['familyId'] ?? 'custom').toString(),
       displayName: (json['displayName'] ?? 'Custom').toString(),
-      lightAccent: Color(parseColor('lightAccent', 0xFF26A17B)),
+      lightAccent: Color(parseColor('lightAccent', 0xFF7AA2F7)),
       darkAccent: Color(parseColor('darkAccent', 0xFF7AA2F7)),
-      highContrastAccent: Color(parseColor('highContrastAccent', 0xFF000000)),
+      highContrastAccent: Color(parseColor('highContrastAccent', 0xFF1D1D1D)),
     );
   }
 
@@ -49,14 +49,6 @@ class ThemePack {
 }
 
 class ThemePackCatalog {
-  static const splitwise = ThemePack(
-    familyId: 'splitwise',
-    displayName: 'Splitwise',
-    lightAccent: Color(0xFF26A17B),
-    darkAccent: Color(0xFF1A8F6C),
-    highContrastAccent: Color(0xFF000000),
-  );
-
   static const tokyoNight = ThemePack(
     familyId: 'tokyoNight',
     displayName: 'Tokyo Night',

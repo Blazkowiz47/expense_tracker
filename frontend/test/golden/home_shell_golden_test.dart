@@ -42,18 +42,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('home shell mobile splitwise light golden', (tester) async {
+  testWidgets('home shell mobile tokyo light golden', (tester) async {
     await pumpShell(
       tester,
       size: const Size(430, 932),
       themeState: const ThemeState(
-        family: ThemeFamily.splitwise,
+        family: ThemeFamily.tokyoNight,
         variant: ThemeVariant.light,
       ),
     );
     await expectLater(
       find.byType(HomeShellPage),
-      matchesGoldenFile('goldens/home_shell_mobile_splitwise_light.png'),
+      matchesGoldenFile('goldens/home_shell_mobile_tokyo_light.png'),
     );
   });
 
@@ -103,18 +103,18 @@ void main() {
     );
   });
 
-  testWidgets('home shell desktop splitwise light golden', (tester) async {
+  testWidgets('home shell desktop tokyo light golden', (tester) async {
     await pumpShell(
       tester,
       size: const Size(1366, 900),
       themeState: const ThemeState(
-        family: ThemeFamily.splitwise,
+        family: ThemeFamily.tokyoNight,
         variant: ThemeVariant.light,
       ),
     );
     await expectLater(
       find.byType(HomeShellPage),
-      matchesGoldenFile('goldens/home_shell_desktop_splitwise_light.png'),
+      matchesGoldenFile('goldens/home_shell_desktop_tokyo_light.png'),
     );
   });
 

@@ -1,14 +1,14 @@
 part of 'theme_cubit.dart';
 
-enum ThemeFamily { splitwise, tokyoNight, mint }
+enum ThemeFamily { tokyoNight, mint }
 
 enum ThemeVariant { light, dark, highContrast, custom }
 
 class ThemeState extends Equatable {
   const ThemeState({
-    this.family = ThemeFamily.splitwise,
+    this.family = ThemeFamily.tokyoNight,
     this.variant = ThemeVariant.light,
-    this.customAccentValue = 0xFF26A17B,
+    this.customAccentValue = 0xFF7AA2F7,
   });
 
   final ThemeFamily family;

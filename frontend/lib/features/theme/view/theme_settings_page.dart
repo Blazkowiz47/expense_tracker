@@ -73,8 +73,9 @@ class ThemeSettingsPage extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 10,
                   children: const [
-                    _AccentButton(Color(0xFF26A17B)),
                     _AccentButton(Color(0xFF7AA2F7)),
+                    _AccentButton(Color(0xFF3B7FE0)),
+                    _AccentButton(Color(0xFF3FBF9B)),
                     _AccentButton(Color(0xFFFF6B6B)),
                     _AccentButton(Color(0xFFE8A317)),
                     _AccentButton(Color(0xFF9D7CFF)),
@@ -90,7 +91,6 @@ class ThemeSettingsPage extends StatelessWidget {
 
   static String _familyLabel(ThemeFamily family) {
     return switch (family) {
-      ThemeFamily.splitwise => 'Splitwise',
       ThemeFamily.tokyoNight => 'Tokyo Night',
       ThemeFamily.mint => 'Mint',
     };
