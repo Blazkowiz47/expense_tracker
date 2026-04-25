@@ -3,12 +3,17 @@ import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
+import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
+import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
+import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
+import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,10 +37,12 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   _FakeGroupsRepository({
     this.groups = const [],
     this.expensesByGroup = const {},
+    this.membersByGroup = const {},
   }) : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   final List<GroupSummary> groups;
   final Map<String, List<GroupExpense>> expensesByGroup;
+  final Map<String, List<GroupMember>> membersByGroup;
 
   @override
   Future<List<GroupSummary>> getCachedGroups() async => groups;
@@ -50,6 +57,25 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   @override
   Future<List<GroupExpense>> fetchExpenses(String groupId) async =>
       expensesByGroup[groupId] ?? const [];
+
+  @override
+  Future<List<GroupMember>> getCachedMembers(String groupId) async =>
+      membersByGroup[groupId] ?? const [];
+
+  @override
+  Future<List<GroupMember>> fetchMembers(String groupId) async =>
+      membersByGroup[groupId] ?? const [];
+}
+
+class _FakeAuthRepository implements AuthRepository {
+  @override
+  Stream<User?> authStateChanges() => Stream<User?>.value(null);
+
+  @override
+  Future<void> signInWithGoogle() async {}
+
+  @override
+  Future<void> signOut() async {}
 }
 
 void main() {
@@ -147,6 +173,11 @@ void main() {
     );
     addTearDown(expensesBloc.close);
     addTearDown(dashboardCubit.close);
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: UserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
 
     await tester.pumpWidget(
       RepositoryProvider<ExpenseRepository>.value(
@@ -155,6 +186,7 @@ void main() {
           providers: [
             BlocProvider.value(value: expensesBloc),
             BlocProvider.value(value: dashboardCubit),
+            BlocProvider.value(value: authCubit),
           ],
           child: MaterialApp(
             theme: ThemeData(splashFactory: InkRipple.splashFactory),
@@ -176,6 +208,74 @@ void main() {
 
     expect(find.text('Groceries'), findsOneWidget);
     expect(find.text('Family · Home · 2026-04-24'), findsOneWidget);
+  });
+
+  testWidgets('opens split group expense edit mode from activity', (
+    tester,
+  ) async {
+    final expenseRepository = _FakeExpenseRepository();
+    final expensesBloc = ExpensesBloc(repository: expenseRepository);
+    final dashboardCubit = DashboardSnapshotCubit(
+      repository: const MockDashboardSnapshotRepository(),
+    )..load();
+    final groupsRepository = _FakeGroupsRepository(
+      groups: const [
+        GroupSummary(
+          id: 'group-1',
+          name: 'Ski trip',
+          groupType: GroupType.split,
+          memberCount: 2,
+        ),
+      ],
+      membersByGroup: const {
+        'group-1': [
+          GroupMember(uid: 'user-1', displayName: 'You', email: '', phone: ''),
+          GroupMember(uid: 'user-2', displayName: 'Alex', email: '', phone: ''),
+        ],
+      },
+      expensesByGroup: {
+        'group-1': [
+          _groupExpense(
+            id: 'group-expense-1',
+            groupId: 'group-1',
+            description: 'Dinner',
+            amount: 1500,
+            date: DateTime(2026, 4, 25),
+          ),
+        ],
+      },
+    );
+    addTearDown(expensesBloc.close);
+    addTearDown(dashboardCubit.close);
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: UserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+
+    await tester.pumpWidget(
+      RepositoryProvider<ExpenseRepository>.value(
+        value: expenseRepository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: expensesBloc),
+            BlocProvider.value(value: dashboardCubit),
+            BlocProvider.value(value: authCubit),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: InkRipple.splashFactory),
+            home: ActivityPage(groupsRepository: groupsRepository),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Dinner'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit group expense'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Dinner'), findsOneWidget);
   });
 }
 

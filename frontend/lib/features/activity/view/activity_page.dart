@@ -10,6 +10,7 @@ import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
+import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
@@ -283,6 +284,21 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
+  Future<void> _editGroupExpense(_GroupExpenseEntry entry) async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => GroupDetailsPage(
+          group: entry.group,
+          repository: _groupsRepository,
+          initialExpenseId: entry.expense.id,
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _refreshActivityData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardSnapshotCubit, DashboardSnapshotState>(
@@ -331,9 +347,15 @@ class _ActivityPageState extends State<ActivityPage> {
               ...activityEntries.map(
                 (entry) => _ExpenseActivityTile(
                   entry: entry,
-                  onTap: entry.personalExpense == null
-                      ? null
-                      : () => _editExpense(entry.personalExpense!),
+                  onTap: () {
+                    final personalExpense = entry.personalExpense;
+                    final groupExpense = entry.groupExpense;
+                    if (personalExpense != null) {
+                      _editExpense(personalExpense);
+                    } else if (groupExpense != null) {
+                      _editGroupExpense(groupExpense);
+                    }
+                  },
                 ),
               )
             else if (state.snapshot.activityItems.isEmpty)
@@ -391,6 +413,7 @@ class _ActivityExpenseEntry {
     required this.date,
     required this.icon,
     this.personalExpense,
+    this.groupExpense,
   });
 
   factory _ActivityExpenseEntry.personal(Expense expense) {
@@ -418,6 +441,7 @@ class _ActivityExpenseEntry {
       icon: entry.group.groupType == GroupType.family
           ? Icons.home_outlined
           : Icons.group_outlined,
+      groupExpense: entry,
     );
   }
 
@@ -427,6 +451,7 @@ class _ActivityExpenseEntry {
   final DateTime date;
   final IconData icon;
   final Expense? personalExpense;
+  final _GroupExpenseEntry? groupExpense;
 }
 
 class _SpendSummaryCard extends StatelessWidget {

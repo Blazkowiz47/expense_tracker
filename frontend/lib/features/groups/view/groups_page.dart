@@ -391,11 +391,13 @@ class GroupDetailsPage extends StatefulWidget {
   const GroupDetailsPage({
     required this.group,
     required this.repository,
+    this.initialExpenseId,
     super.key,
   });
 
   final GroupSummary group;
   final ApiGroupsRepository repository;
+  final String? initialExpenseId;
 
   @override
   State<GroupDetailsPage> createState() => _GroupDetailsPageState();
@@ -408,6 +410,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   bool _simplifyBalances = true;
   _GroupBusyAction _busyAction = _GroupBusyAction.none;
   bool _didMutateGroupData = false;
+  bool _didOpenInitialExpense = false;
   late int _memberCount;
   String? _error;
 
@@ -537,6 +540,20 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   Future<void> _loadData() async {
     await Future.wait([_loadMembers(), _loadExpenses()]);
+    _openInitialExpenseEditor();
+  }
+
+  void _openInitialExpenseEditor() {
+    if (_didOpenInitialExpense) return;
+    final expenseId = widget.initialExpenseId?.trim();
+    if (expenseId == null || expenseId.isEmpty) return;
+    final expense = _expenses.where((item) => item.id == expenseId).firstOrNull;
+    if (expense == null) return;
+    _didOpenInitialExpense = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _editExpense(expense);
+    });
   }
 
   Future<bool> _loadMembers() async {
