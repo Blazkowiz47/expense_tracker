@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/expense.dart';
@@ -86,25 +84,25 @@ class _ActivityPageState extends State<ActivityPage> {
         .toList(growable: false);
   }
 
-  List<_TrendPoint> _trendPoints(DateTime start, DateTime end) {
+  List<AppChartPoint> _trendPoints(DateTime start, DateTime end) {
     switch (_range) {
       case _ActivityRange.week:
         return List.generate(7, (index) {
           final day = start.add(Duration(days: index));
           final next = day.add(const Duration(days: 1));
-          return _TrendPoint(
+          return AppChartPoint(
             label: _weekdayLabel(day),
             value: _expensesInPeriod(day, next).totalAmount,
           );
         });
       case _ActivityRange.month:
-        final points = <_TrendPoint>[];
+        final points = <AppChartPoint>[];
         var cursor = start;
         var bucket = 1;
         while (cursor.isBefore(end)) {
           final next = cursor.add(const Duration(days: 7));
           points.add(
-            _TrendPoint(
+            AppChartPoint(
               label: 'W$bucket',
               value: _expensesInPeriod(cursor, next).totalAmount,
             ),
@@ -117,7 +115,7 @@ class _ActivityPageState extends State<ActivityPage> {
         return List.generate(12, (index) {
           final month = DateTime(start.year, index + 1);
           final next = DateTime(start.year, index + 2);
-          return _TrendPoint(
+          return AppChartPoint(
             label: _monthLabel(month),
             value: _expensesInPeriod(month, next).totalAmount,
           );
@@ -250,7 +248,7 @@ class _SpendSummaryCard extends StatelessWidget {
   final bool loading;
   final _ActivityRange range;
   final ValueChanged<_ActivityRange> onRangeChanged;
-  final List<_TrendPoint> trend;
+  final List<AppChartPoint> trend;
 
   @override
   Widget build(BuildContext context) {
@@ -324,7 +322,7 @@ class _SpendSummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          _SpendChart(points: trend),
+          AppLineChart(points: trend),
         ],
       ),
     );
@@ -336,151 +334,6 @@ class _SpendSummaryCard extends StatelessWidget {
       _ActivityRange.month => 'Month',
       _ActivityRange.year => 'Year',
     };
-  }
-}
-
-class _SpendChart extends StatelessWidget {
-  const _SpendChart({required this.points});
-
-  final List<_TrendPoint> points;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 142,
-      child: CustomPaint(
-        painter: _SpendChartPainter(
-          points: points,
-          color: Theme.of(context).colorScheme.primary,
-          gridColor: Theme.of(context).colorScheme.outlineVariant,
-          labelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-        child: const SizedBox.expand(),
-      ),
-    );
-  }
-}
-
-class _SpendChartPainter extends CustomPainter {
-  const _SpendChartPainter({
-    required this.points,
-    required this.color,
-    required this.gridColor,
-    required this.labelColor,
-  });
-
-  final List<_TrendPoint> points;
-  final Color color;
-  final Color gridColor;
-  final Color labelColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.isEmpty) return;
-
-    const bottomLabelHeight = 22.0;
-    const padding = 8.0;
-    final chartHeight = size.height - bottomLabelHeight;
-    final maxValue = math.max(
-      1,
-      points.map((point) => point.value).fold<double>(0, math.max) * 1.15,
-    );
-    final stepX = points.length == 1
-        ? 0.0
-        : (size.width - padding * 2) / (points.length - 1);
-    final offsets = points
-        .asMap()
-        .entries
-        .map((entry) {
-          final x = padding + stepX * entry.key;
-          final y =
-              chartHeight -
-              padding -
-              (entry.value.value / maxValue) * (chartHeight - padding * 2);
-          return Offset(x, y);
-        })
-        .toList(growable: false);
-
-    final gridPaint = Paint()
-      ..color = gridColor
-      ..strokeWidth = 1;
-    for (final fraction in const [0.25, 0.5, 0.75]) {
-      final y = padding + (chartHeight - padding * 2) * fraction;
-      canvas.drawLine(
-        Offset(padding, y),
-        Offset(size.width - padding, y),
-        gridPaint,
-      );
-    }
-
-    final path = Path()..moveTo(offsets.first.dx, offsets.first.dy);
-    for (final offset in offsets.skip(1)) {
-      path.lineTo(offset.dx, offset.dy);
-    }
-
-    final fillPath = Path.from(path)
-      ..lineTo(offsets.last.dx, chartHeight - padding)
-      ..lineTo(offsets.first.dx, chartHeight - padding)
-      ..close();
-    final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [color.withValues(alpha: 0.22), color.withValues(alpha: 0)],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, chartHeight));
-    canvas.drawPath(fillPath, fillPaint);
-
-    final linePaint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(path, linePaint);
-
-    final peakValue = points
-        .map((point) => point.value)
-        .fold<double>(0, math.max);
-    for (var index = 0; index < offsets.length; index += 1) {
-      final point = points[index];
-      final offset = offsets[index];
-      final isPeak = point.value == peakValue && peakValue > 0;
-      canvas.drawCircle(
-        offset,
-        isPeak ? 4 : 2.5,
-        Paint()
-          ..color = isPeak ? color : Colors.white
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawCircle(
-        offset,
-        isPeak ? 4 : 2.5,
-        Paint()
-          ..color = color
-          ..strokeWidth = 1.6
-          ..style = PaintingStyle.stroke,
-      );
-
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: point.label,
-          style: TextStyle(color: labelColor, fontSize: 11),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      textPainter.paint(
-        canvas,
-        Offset(offset.dx - textPainter.width / 2, chartHeight + 8),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SpendChartPainter oldDelegate) {
-    return oldDelegate.points != points ||
-        oldDelegate.color != color ||
-        oldDelegate.gridColor != gridColor ||
-        oldDelegate.labelColor != labelColor;
   }
 }
 
@@ -501,6 +354,17 @@ class _CategoryBreakdownCard extends StatelessWidget {
       Theme.of(context).colorScheme.secondaryContainer,
       Theme.of(context).colorScheme.surfaceContainerHighest,
     ];
+    final segments = categories
+        .asMap()
+        .entries
+        .map((entry) {
+          return AppChartSegment(
+            label: entry.value.label,
+            value: entry.value.amount,
+            color: colors[entry.key % colors.length],
+          );
+        })
+        .toList(growable: false);
 
     return AppCard(
       padding: const EdgeInsets.all(16),
@@ -515,28 +379,7 @@ class _CategoryBreakdownCard extends StatelessWidget {
               style: TextStyle(color: Theme.of(context).colorScheme.outline),
             )
           else ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: Row(
-                children: categories
-                    .asMap()
-                    .entries
-                    .map((entry) {
-                      final category = entry.value;
-                      final width = total <= 0 ? 0.0 : category.amount / total;
-                      return Expanded(
-                        flex: math.max(1, (width * 1000).round()),
-                        child: SizedBox(
-                          height: 10,
-                          child: ColoredBox(
-                            color: colors[entry.key % colors.length],
-                          ),
-                        ),
-                      );
-                    })
-                    .toList(growable: false),
-              ),
-            ),
+            AppSegmentedBar(segments: segments),
             const SizedBox(height: 14),
             ...categories.asMap().entries.map((entry) {
               final category = entry.value;
@@ -597,13 +440,6 @@ class _ActivityTile extends StatelessWidget {
       ),
     );
   }
-}
-
-class _TrendPoint {
-  const _TrendPoint({required this.label, required this.value});
-
-  final String label;
-  final double value;
 }
 
 class _CategoryTotal {
