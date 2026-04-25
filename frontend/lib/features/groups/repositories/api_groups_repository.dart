@@ -21,26 +21,28 @@ class ApiGroupsRepository {
 
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;
-  static const String _cacheBoxName = 'api_groups_cache_v1';
+  static const String cacheBoxName = 'api_groups_cache_v1';
   static const String _groupsKey = 'groups';
 
-  Future<Box<String>> _cacheBox() async {
-    if (Hive.isBoxOpen(_cacheBoxName)) {
-      return Hive.box<String>(_cacheBoxName);
+  Box<String>? _cacheBox() {
+    if (Hive.isBoxOpen(cacheBoxName)) {
+      return Hive.box<String>(cacheBoxName);
     }
-    return Hive.openBox<String>(_cacheBoxName);
+    return null;
   }
 
   Future<void> _saveListCache(
     String key,
     List<Map<String, dynamic>> items,
   ) async {
-    final box = await _cacheBox();
+    final box = _cacheBox();
+    if (box == null) return;
     await box.put(key, jsonEncode(items));
   }
 
   Future<List<Map<String, dynamic>>> _readListCache(String key) async {
-    final box = await _cacheBox();
+    final box = _cacheBox();
+    if (box == null) return const [];
     final raw = box.get(key);
     if (raw == null || raw.isEmpty) {
       return const [];

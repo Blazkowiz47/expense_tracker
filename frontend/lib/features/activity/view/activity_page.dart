@@ -1,16 +1,24 @@
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/expense.dart';
+import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
+import 'package:expense_tracker/features/groups/models/group_expense.dart';
+import 'package:expense_tracker/features/groups/models/group_summary.dart';
+import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:http/http.dart' as http;
 
 class ActivityPage extends StatefulWidget {
-  const ActivityPage({super.key});
+  const ActivityPage({this.groupsRepository, this.groupsClient, super.key});
+
+  final ApiGroupsRepository? groupsRepository;
+  final http.Client? groupsClient;
 
   @override
   State<ActivityPage> createState() => _ActivityPageState();
@@ -20,10 +28,30 @@ enum _ActivityRange { week, month, year }
 
 class _ActivityPageState extends State<ActivityPage> {
   ExpenseRepository? _repository;
+  http.Client? _ownedGroupsClient;
+  late final ApiGroupsRepository _groupsRepository;
   List<Expense> _expenses = const [];
+  List<_GroupExpenseEntry> _groupExpenses = const [];
   _ActivityRange _range = _ActivityRange.week;
   bool _loadedRepository = false;
   bool _loadingExpenses = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final client = widget.groupsClient ?? http.Client();
+    if (widget.groupsRepository == null && widget.groupsClient == null) {
+      _ownedGroupsClient = client;
+    }
+    _groupsRepository =
+        widget.groupsRepository ?? ApiGroupsRepository(client: client);
+  }
+
+  @override
+  void dispose() {
+    _ownedGroupsClient?.close();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -31,25 +59,65 @@ class _ActivityPageState extends State<ActivityPage> {
     if (_loadedRepository) return;
     _loadedRepository = true;
     _repository = context.read<ExpenseRepository?>();
-    _refreshExpenses();
+    _refreshActivityData();
   }
 
-  Future<void> _refreshExpenses() async {
-    final repository = _repository;
-    if (repository == null) return;
+  Future<void> _refreshActivityData() async {
     setState(() => _loadingExpenses = true);
+    final personalFuture = _loadPersonalExpenses();
+    final groupFuture = _loadGroupExpenses();
+    final personalExpenses = await personalFuture;
+    final groupExpenses = await groupFuture;
+    if (!mounted) return;
+    setState(() {
+      _expenses = personalExpenses;
+      _groupExpenses = groupExpenses;
+      _loadingExpenses = false;
+    });
+  }
+
+  Future<List<Expense>> _loadPersonalExpenses() async {
+    final repository = _repository;
+    if (repository == null) return const [];
     try {
       await repository.refresh();
-      if (!mounted) return;
-      setState(() => _expenses = repository.getExpenses());
+      return repository.getExpenses();
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _expenses = repository.getExpenses());
-    } finally {
-      if (mounted) {
-        setState(() => _loadingExpenses = false);
+      return repository.getExpenses();
+    }
+  }
+
+  Future<List<_GroupExpenseEntry>> _loadGroupExpenses() async {
+    var groups = await _groupsRepository.getCachedGroups();
+    var entries = await _groupExpenseEntriesFrom(groups, cached: true);
+    try {
+      groups = await _groupsRepository.fetchGroups();
+      entries = await _groupExpenseEntriesFrom(groups, cached: false);
+    } catch (_) {
+      if (entries.isEmpty && groups.isEmpty) {
+        groups = await _groupsRepository.getCachedGroups();
+        entries = await _groupExpenseEntriesFrom(groups, cached: true);
       }
     }
+    return entries;
+  }
+
+  Future<List<_GroupExpenseEntry>> _groupExpenseEntriesFrom(
+    List<GroupSummary> groups, {
+    required bool cached,
+  }) async {
+    final entries = <_GroupExpenseEntry>[];
+    for (final group in groups) {
+      final expenses = cached
+          ? await _groupsRepository.getCachedExpenses(group.id)
+          : await _groupsRepository.fetchExpenses(group.id);
+      entries.addAll(
+        expenses.map((expense) {
+          return _GroupExpenseEntry(group: group, expense: expense);
+        }),
+      );
+    }
+    return entries;
   }
 
   DateTime _startForRange(_ActivityRange range, DateTime now) {
@@ -77,16 +145,34 @@ class _ActivityPageState extends State<ActivityPage> {
     };
   }
 
-  List<Expense> _expensesInPeriod(DateTime start, DateTime end) {
-    return _expenses
-        .where((expense) {
-          final date = expense.createdAt;
+  List<_ActivityExpenseEntry> _activityEntries() {
+    final entries = [
+      ..._expenses
+          .where((expense) => !expense.deleted)
+          .map(_ActivityExpenseEntry.personal),
+      ..._groupExpenses.map(_ActivityExpenseEntry.group),
+    ]..sort((a, b) => b.date.compareTo(a.date));
+    return entries;
+  }
+
+  List<_ActivityExpenseEntry> _entriesInPeriod(
+    List<_ActivityExpenseEntry> entries,
+    DateTime start,
+    DateTime end,
+  ) {
+    return entries
+        .where((entry) {
+          final date = entry.date;
           return !date.isBefore(start) && date.isBefore(end);
         })
         .toList(growable: false);
   }
 
-  List<AppChartPoint> _trendPoints(DateTime start, DateTime end) {
+  List<AppChartPoint> _trendPoints(
+    List<_ActivityExpenseEntry> entries,
+    DateTime start,
+    DateTime end,
+  ) {
     switch (_range) {
       case _ActivityRange.week:
         return List.generate(7, (index) {
@@ -94,7 +180,7 @@ class _ActivityPageState extends State<ActivityPage> {
           final next = day.add(const Duration(days: 1));
           return AppChartPoint(
             label: _weekdayLabel(day),
-            value: _expensesInPeriod(day, next).totalAmount,
+            value: _entriesInPeriod(entries, day, next).totalAmount,
           );
         });
       case _ActivityRange.month:
@@ -106,7 +192,7 @@ class _ActivityPageState extends State<ActivityPage> {
           points.add(
             AppChartPoint(
               label: 'W$bucket',
-              value: _expensesInPeriod(cursor, next).totalAmount,
+              value: _entriesInPeriod(entries, cursor, next).totalAmount,
             ),
           );
           cursor = next;
@@ -119,18 +205,18 @@ class _ActivityPageState extends State<ActivityPage> {
           final next = DateTime(start.year, index + 2);
           return AppChartPoint(
             label: _monthLabel(month),
-            value: _expensesInPeriod(month, next).totalAmount,
+            value: _entriesInPeriod(entries, month, next).totalAmount,
           );
         });
     }
   }
 
-  List<_CategoryTotal> _categoryTotals(List<Expense> expenses) {
+  List<_CategoryTotal> _categoryTotals(List<_ActivityExpenseEntry> expenses) {
     final totals = <String, _CategoryTotal>{};
     for (final expense in expenses) {
-      final label = (expense.category ?? '').trim().isEmpty
+      final label = expense.category.trim().isEmpty
           ? 'Other'
-          : expense.category!.trim();
+          : expense.category.trim();
       final current = totals[label] ?? _CategoryTotal.empty(label);
       totals[label] = current.add(expense.amount);
     }
@@ -193,7 +279,7 @@ class _ActivityPageState extends State<ActivityPage> {
       ),
     );
     if (changed == true && mounted) {
-      await _refreshExpenses();
+      await _refreshActivityData();
     }
   }
 
@@ -212,17 +298,19 @@ class _ActivityPageState extends State<ActivityPage> {
         final start = _startForRange(_range, now);
         final end = _periodEndForRange(_range, start);
         final previousStart = _previousStartForRange(_range, start);
-        final periodExpenses = _expensesInPeriod(start, end);
-        final previousExpenses = _expensesInPeriod(previousStart, start);
+        final activityEntries = _activityEntries();
+        final periodExpenses = _entriesInPeriod(activityEntries, start, end);
+        final previousExpenses = _entriesInPeriod(
+          activityEntries,
+          previousStart,
+          start,
+        );
         final currentTotal = periodExpenses.totalAmount;
         final previousTotal = previousExpenses.totalAmount;
-        final trend = _trendPoints(start, end);
+        final trend = _trendPoints(activityEntries, start, end);
         final categories = _categoryTotals(periodExpenses).take(4).toList();
         final comparison = _comparisonLabel(currentTotal, previousTotal);
         final increasedSpend = currentTotal > previousTotal;
-        final expenseHistory =
-            _expenses.where((expense) => !expense.deleted).toList()
-              ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
         return AppPageContainer(
           children: [
@@ -239,11 +327,13 @@ class _ActivityPageState extends State<ActivityPage> {
             _CategoryBreakdownCard(categories: categories),
             const SizedBox(height: 20),
             const AppSectionHeader(title: 'History'),
-            if (expenseHistory.isNotEmpty)
-              ...expenseHistory.map(
-                (expense) => _ExpenseActivityTile(
-                  expense: expense,
-                  onTap: () => _editExpense(expense),
+            if (activityEntries.isNotEmpty)
+              ...activityEntries.map(
+                (entry) => _ExpenseActivityTile(
+                  entry: entry,
+                  onTap: entry.personalExpense == null
+                      ? null
+                      : () => _editExpense(entry.personalExpense!),
                 ),
               )
             else if (state.snapshot.activityItems.isEmpty)
@@ -260,30 +350,83 @@ class _ActivityPageState extends State<ActivityPage> {
 }
 
 class _ExpenseActivityTile extends StatelessWidget {
-  const _ExpenseActivityTile({required this.expense, required this.onTap});
+  const _ExpenseActivityTile({required this.entry, required this.onTap});
 
-  final Expense expense;
-  final VoidCallback onTap;
+  final _ActivityExpenseEntry entry;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final category = (expense.category ?? '').trim();
-    final date = expense.createdAt.toLocal().toString().split(' ').first;
+    final category = entry.category.trim();
+    final date = entry.date.toLocal().toString().split(' ').first;
 
     return AppCard(
       child: ListTile(
         onTap: onTap,
-        leading: const AppAvatar(icon: Icons.receipt_long_outlined),
-        title: Text(expense.title),
+        leading: AppAvatar(icon: entry.icon),
+        title: Text(entry.title),
         subtitle: Text(category.isEmpty ? date : '$category · $date'),
         trailing: AppMoneyLabel(
-          text: AppMoney.format(expense.amount),
+          text: AppMoney.format(entry.amount),
           positive: false,
           neutral: true,
         ),
       ),
     );
   }
+}
+
+class _GroupExpenseEntry {
+  const _GroupExpenseEntry({required this.group, required this.expense});
+
+  final GroupSummary group;
+  final GroupExpense expense;
+}
+
+class _ActivityExpenseEntry {
+  const _ActivityExpenseEntry({
+    required this.title,
+    required this.category,
+    required this.amount,
+    required this.date,
+    required this.icon,
+    this.personalExpense,
+  });
+
+  factory _ActivityExpenseEntry.personal(Expense expense) {
+    return _ActivityExpenseEntry(
+      title: expense.title,
+      category: (expense.category ?? '').trim(),
+      amount: expense.amount,
+      date: expense.createdAt,
+      icon: Icons.receipt_long_outlined,
+      personalExpense: expense,
+    );
+  }
+
+  factory _ActivityExpenseEntry.group(_GroupExpenseEntry entry) {
+    final groupLabel = switch (entry.group.groupType) {
+      GroupType.family => 'Family',
+      GroupType.split => 'Group',
+    };
+    final description = entry.expense.description.trim();
+    return _ActivityExpenseEntry(
+      title: description.isEmpty ? entry.group.name : description,
+      category: '$groupLabel · ${entry.group.name}',
+      amount: entry.expense.amount,
+      date: entry.expense.date,
+      icon: entry.group.groupType == GroupType.family
+          ? Icons.home_outlined
+          : Icons.group_outlined,
+    );
+  }
+
+  final String title;
+  final String category;
+  final double amount;
+  final DateTime date;
+  final IconData icon;
+  final Expense? personalExpense;
 }
 
 class _SpendSummaryCard extends StatelessWidget {
@@ -521,7 +664,7 @@ class _CategoryTotal {
   }
 }
 
-extension on List<Expense> {
+extension on List<_ActivityExpenseEntry> {
   double get totalAmount =>
       fold<double>(0, (sum, expense) => sum + expense.amount);
 }
