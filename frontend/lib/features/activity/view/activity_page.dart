@@ -4,6 +4,8 @@ import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
+import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
+import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -179,6 +181,22 @@ class _ActivityPageState extends State<ActivityPage> {
     return '$sign${delta.toStringAsFixed(0)}% vs last $range';
   }
 
+  Future<void> _editExpense(Expense expense) async {
+    final bloc = context.read<ExpensesBloc?>();
+    if (bloc == null) return;
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(expense: expense),
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _refreshExpenses();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardSnapshotCubit, DashboardSnapshotState>(
@@ -202,6 +220,9 @@ class _ActivityPageState extends State<ActivityPage> {
         final categories = _categoryTotals(periodExpenses).take(4).toList();
         final comparison = _comparisonLabel(currentTotal, previousTotal);
         final increasedSpend = currentTotal > previousTotal;
+        final expenseHistory =
+            _expenses.where((expense) => !expense.deleted).toList()
+              ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
         return AppPageContainer(
           children: [
@@ -218,7 +239,14 @@ class _ActivityPageState extends State<ActivityPage> {
             _CategoryBreakdownCard(categories: categories),
             const SizedBox(height: 20),
             const AppSectionHeader(title: 'History'),
-            if (state.snapshot.activityItems.isEmpty)
+            if (expenseHistory.isNotEmpty)
+              ...expenseHistory.map(
+                (expense) => _ExpenseActivityTile(
+                  expense: expense,
+                  onTap: () => _editExpense(expense),
+                ),
+              )
+            else if (state.snapshot.activityItems.isEmpty)
               const SizedBox.shrink()
             else
               ...state.snapshot.activityItems.map(
@@ -227,6 +255,33 @@ class _ActivityPageState extends State<ActivityPage> {
           ],
         );
       },
+    );
+  }
+}
+
+class _ExpenseActivityTile extends StatelessWidget {
+  const _ExpenseActivityTile({required this.expense, required this.onTap});
+
+  final Expense expense;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final category = (expense.category ?? '').trim();
+    final date = expense.createdAt.toLocal().toString().split(' ').first;
+
+    return AppCard(
+      child: ListTile(
+        onTap: onTap,
+        leading: const AppAvatar(icon: Icons.receipt_long_outlined),
+        title: Text(expense.title),
+        subtitle: Text(category.isEmpty ? date : '$category · $date'),
+        trailing: AppMoneyLabel(
+          text: AppMoney.format(expense.amount),
+          positive: false,
+          neutral: true,
+        ),
+      ),
     );
   }
 }

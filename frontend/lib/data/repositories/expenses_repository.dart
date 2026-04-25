@@ -129,8 +129,9 @@ class ExpenseRepository {
     if (query != null && query.trim().isNotEmpty) {
       params['q'] = query.trim();
     }
-    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses-export.csv')
-        .replace(queryParameters: params.isEmpty ? null : params);
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/expenses-export.csv',
+    ).replace(queryParameters: params.isEmpty ? null : params);
     final token = await _authTokenProvider.getBearerToken();
     final response = await _client
         .get(

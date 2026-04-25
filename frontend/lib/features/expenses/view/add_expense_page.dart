@@ -11,7 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class AddExpensePage extends StatefulWidget {
-  const AddExpensePage({super.key});
+  const AddExpensePage({this.expense, super.key});
+
+  final Expense? expense;
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
@@ -22,6 +24,18 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final _amountController = TextEditingController();
   bool _saving = false;
   String? _error;
+
+  bool get _editing => widget.expense != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final expense = widget.expense;
+    if (expense != null) {
+      _descriptionController.text = expense.description ?? expense.title;
+      _amountController.text = expense.amount.toStringAsFixed(2);
+    }
+  }
 
   @override
   void dispose() {
@@ -44,20 +58,21 @@ class _AddExpensePageState extends State<AddExpensePage> {
       return;
     }
 
+    final existing = widget.expense;
     final expense = Expense(
       core: ExpenseCore(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         title: description,
         amount: amount,
-        currency: 'INR',
-        category: 'Personal',
-        createdAt: DateTime.now(),
+        currency: existing?.currency ?? 'INR',
+        category: existing?.category ?? 'Personal',
+        createdAt: existing?.createdAt ?? DateTime.now(),
       ),
       description: description,
-      paymentMethod: 'cash',
+      paymentMethod: existing?.paymentMethod ?? 'cash',
       updatedAt: DateTime.now(),
       isSynced: false,
-      deleted: false,
+      deleted: existing?.deleted ?? false,
     );
 
     setState(() {
@@ -67,7 +82,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
     try {
       final bloc = context.read<ExpensesBloc>();
-      bloc.add(CreateExpense(expense: expense));
+      if (_editing) {
+        bloc.add(UpdateExpense(expense: expense));
+      } else {
+        bloc.add(CreateExpense(expense: expense));
+      }
 
       final resultState = await bloc.stream
           .firstWhere(
@@ -112,8 +131,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   Widget _buildMaterial(BuildContext context) {
+    final title = _editing ? 'Edit expense' : 'Add an expense';
     return Scaffold(
-      appBar: AppBar(title: const Text('Add an expense')),
+      appBar: AppBar(title: Text(title)),
       body: AppPageContainer(
         maxWidth: 760,
         children: [
@@ -191,9 +211,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   Widget _buildCupertino(BuildContext context) {
+    final title = _editing ? 'Edit expense' : 'Add an expense';
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('Add an expense'),
+        middle: Text(title),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           minimumSize: const Size(30, 30),
