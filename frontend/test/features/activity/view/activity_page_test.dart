@@ -137,6 +137,9 @@ void main() {
   testWidgets('shows family and split group expenses in history', (
     tester,
   ) async {
+    final today = DateTime.now();
+    final todayLabel =
+        '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
     final expenseRepository = _FakeExpenseRepository();
     final expensesBloc = ExpensesBloc(repository: expenseRepository);
     final dashboardCubit = DashboardSnapshotCubit(
@@ -164,7 +167,7 @@ void main() {
             groupId: 'family-1',
             description: 'Groceries',
             amount: 900,
-            date: DateTime(2026, 4, 24),
+            date: today,
           ),
         ],
         'group-1': [
@@ -173,7 +176,7 @@ void main() {
             groupId: 'group-1',
             description: 'Dinner',
             amount: 1500,
-            date: DateTime(2026, 4, 25),
+            date: today,
           ),
         ],
       },
@@ -203,9 +206,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Dinner'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Dinner'), findsOneWidget);
-    expect(find.text('Group · Ski trip · 2026-04-25'), findsOneWidget);
+    expect(find.text('Group · Ski trip · $todayLabel'), findsOneWidget);
 
     await tester.scrollUntilVisible(
       find.text('Groceries'),
@@ -214,12 +224,13 @@ void main() {
     );
 
     expect(find.text('Groceries'), findsOneWidget);
-    expect(find.text('Family · Home · 2026-04-24'), findsOneWidget);
+    expect(find.text('Family · Home · $todayLabel'), findsOneWidget);
   });
 
   testWidgets('opens split group expense edit mode from activity', (
     tester,
   ) async {
+    final today = DateTime.now();
     final expenseRepository = _FakeExpenseRepository();
     final expensesBloc = ExpensesBloc(repository: expenseRepository);
     final dashboardCubit = DashboardSnapshotCubit(
@@ -247,7 +258,7 @@ void main() {
             groupId: 'group-1',
             description: 'Dinner',
             amount: 1500,
-            date: DateTime(2026, 4, 25),
+            date: today,
           ),
         ],
       },
@@ -276,6 +287,8 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 50));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Dinner'));

@@ -454,6 +454,42 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             by_month[dt.strftime("%Y-%m")] = by_month.get(dt.strftime("%Y-%m"), 0) + amount
         return {"totalAmount": total, "byCategory": by_category, "byMonth": by_month}
 
+    @app.get("/api/v1/planning/monthly")
+    def get_monthly_plan(
+        month: str = "",
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        plan_month = normalize_month(month)
+        return monthly_plan_out(app.state.db, user["uid"], plan_month)
+
+    @app.put("/api/v1/planning/monthly")
+    def save_monthly_plan(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        plan_month = normalize_month(str(body.get("month") or ""))
+        raw_budgets = body.get("budgets") if isinstance(body.get("budgets"), dict) else {}
+        budgets: dict[str, float] = {}
+        for category, amount in raw_budgets.items():
+            label = str(category).strip()
+            if not label:
+                continue
+            try:
+                value = max(0.0, float(amount or 0))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "budget amounts must be numbers")) from None
+            budgets[label] = value
+        doc = {
+            "uid": user["uid"],
+            "month": plan_month,
+            "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
+            "budgets": budgets,
+            "updatedAt": now(),
+        }
+        app.state.db.monthly_plans.update_one(
+            {"uid": user["uid"], "month": plan_month},
+            {"$set": doc, "$setOnInsert": {"createdAt": now()}},
+            upsert=True,
+        )
+        return monthly_plan_out(app.state.db, user["uid"], plan_month)
+
     @app.get("/api/v1/dashboard/snapshot")
     def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         docs = [expense_out(doc) for doc in app.state.db.expenses.find({"uid": user["uid"]}).sort("date", -1).limit(20)]
@@ -718,6 +754,7 @@ def ensure_indexes(db: Any) -> None:
     db.sessions.create_index("tokenHash", unique=True)
     db.sessions.create_index("expiresAt")
     db.expenses.create_index([("uid", ASCENDING), ("date", ASCENDING)])
+    db.monthly_plans.create_index([("uid", ASCENDING), ("month", ASCENDING)], unique=True)
     db.friendships.create_index("key", unique=True)
     db.groups.create_index("memberUids")
     db.group_expenses.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
@@ -778,6 +815,64 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "createdAt",
             "updatedAt",
         ]
+    })
+
+
+def normalize_month(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        current = now()
+        return f"{current.year:04d}-{current.month:02d}"
+    if not re.fullmatch(r"\d{4}-\d{2}", raw):
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "month must be YYYY-MM"))
+    year, month_number = [int(part) for part in raw.split("-")]
+    if month_number < 1 or month_number > 12:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "month must be YYYY-MM"))
+    return f"{year:04d}-{month_number:02d}"
+
+
+def month_range(month: str) -> tuple[datetime, datetime]:
+    year, month_number = [int(part) for part in month.split("-")]
+    start = datetime(year, month_number, 1, tzinfo=UTC)
+    if month_number == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=UTC)
+    else:
+        end = datetime(year, month_number + 1, 1, tzinfo=UTC)
+    return start, end
+
+
+def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
+    plan = db.monthly_plans.find_one({"uid": uid, "month": month}) or {}
+    raw_budgets = plan.get("budgets") if isinstance(plan.get("budgets"), dict) else {}
+    budgets = {str(key): float(value or 0) for key, value in raw_budgets.items()}
+    start, end = month_range(month)
+    expenses = db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}})
+    actuals: dict[str, float] = {}
+    for expense in expenses:
+        category = str(expense.get("category") or "Personal").strip() or "Personal"
+        actuals[category] = actuals.get(category, 0.0) + float(expense.get("amount") or 0)
+    rows = []
+    for category in sorted(set(budgets.keys()) | set(actuals.keys())):
+        budget = budgets.get(category, 0.0)
+        actual = actuals.get(category, 0.0)
+        rows.append({
+            "category": category,
+            "budget": budget,
+            "actual": actual,
+            "remaining": budget - actual,
+            "progress": 0 if budget <= 0 else min(actual / budget, 1.5),
+            "overBudget": budget > 0 and actual > budget,
+        })
+    total_budget = sum(budgets.values())
+    total_actual = sum(actuals.values())
+    return json_ready({
+        "month": month,
+        "currency": plan.get("currency") or "INR",
+        "totalBudget": total_budget,
+        "totalActual": total_actual,
+        "totalRemaining": total_budget - total_actual,
+        "categories": rows,
+        "updatedAt": plan.get("updatedAt"),
     })
 
 

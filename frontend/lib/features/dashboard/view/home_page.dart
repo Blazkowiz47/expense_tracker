@@ -2,6 +2,7 @@ import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/view/dashboard_overall_summary_card.dart';
+import 'package:expense_tracker/features/planning/view/monthly_planning_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -29,6 +30,8 @@ class HomePage extends StatelessWidget {
     return AppPageContainer(
       children: [
         const DashboardOverallSummaryCard(),
+        const SizedBox(height: 16),
+        const MonthlyPlanningCard(),
         const SizedBox(height: 16),
         Row(
           children: [

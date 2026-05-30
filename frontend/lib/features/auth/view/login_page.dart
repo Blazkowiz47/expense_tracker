@@ -17,6 +17,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _nameController = TextEditingController();
   bool _registerMode = false;
   bool _passwordVisible = false;
@@ -26,6 +27,7 @@ class _LoginPageState extends State<LoginPage> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _nameController.dispose();
     super.dispose();
   }
@@ -45,6 +47,10 @@ class _LoginPageState extends State<LoginPage> {
     }
     if (_registerMode && _nameController.text.trim().isEmpty) {
       setState(() => _validationMessage = 'Enter your name.');
+      return;
+    }
+    if (_registerMode && password != _confirmPasswordController.text) {
+      setState(() => _validationMessage = 'Passwords do not match.');
       return;
     }
     setState(() => _validationMessage = null);
@@ -82,6 +88,7 @@ class _LoginPageState extends State<LoginPage> {
                   registerMode: _registerMode,
                   emailController: _emailController,
                   passwordController: _passwordController,
+                  confirmPasswordController: _confirmPasswordController,
                   nameController: _nameController,
                   passwordVisible: _passwordVisible,
                   onModeChanged: (value) => setState(() {
@@ -102,6 +109,7 @@ class _LoginPageState extends State<LoginPage> {
                 registerMode: _registerMode,
                 emailController: _emailController,
                 passwordController: _passwordController,
+                confirmPasswordController: _confirmPasswordController,
                 nameController: _nameController,
                 passwordVisible: _passwordVisible,
                 onModeChanged: (value) => setState(() {
@@ -121,6 +129,7 @@ class _LoginPageState extends State<LoginPage> {
                 registerMode: _registerMode,
                 emailController: _emailController,
                 passwordController: _passwordController,
+                confirmPasswordController: _confirmPasswordController,
                 nameController: _nameController,
                 passwordVisible: _passwordVisible,
                 onModeChanged: (value) => setState(() {
@@ -147,6 +156,7 @@ class _LoginBody extends StatelessWidget {
     required this.registerMode,
     required this.emailController,
     required this.passwordController,
+    required this.confirmPasswordController,
     required this.nameController,
     required this.passwordVisible,
     required this.onModeChanged,
@@ -160,6 +170,7 @@ class _LoginBody extends StatelessWidget {
   final bool registerMode;
   final TextEditingController emailController;
   final TextEditingController passwordController;
+  final TextEditingController confirmPasswordController;
   final TextEditingController nameController;
   final bool passwordVisible;
   final ValueChanged<bool> onModeChanged;
@@ -184,8 +195,8 @@ class _LoginBody extends StatelessWidget {
             const SizedBox(height: 12),
             SmartText(
               registerMode
-                  ? 'Create a backend account on this machine'
-                  : 'Sign in with your backend account',
+                  ? 'Create your expense account'
+                  : 'Sign in to track spending and plans',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -231,6 +242,19 @@ class _LoginBody extends StatelessWidget {
                 border: const OutlineInputBorder(),
               ),
             ),
+            if (registerMode) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmPasswordController,
+                enabled: !isLoading,
+                obscureText: !passwordVisible,
+                onSubmitted: (_) => isLoading ? null : onSubmit(),
+                decoration: const InputDecoration(
+                  labelText: 'Confirm password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
             const SizedBox(height: 20),
             if (useCupertino)
               CupertinoButton.filled(
@@ -265,6 +289,21 @@ class _LoginBody extends StatelessWidget {
                     : 'Need an account? Register',
               ),
             ),
+            if (!registerMode)
+              TextButton(
+                onPressed: isLoading
+                    ? null
+                    : () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Password reset is not available yet.',
+                            ),
+                          ),
+                        );
+                      },
+                child: const Text('Forgot password?'),
+              ),
             if (message != null) ...[
               const SizedBox(height: 12),
               SmartText(

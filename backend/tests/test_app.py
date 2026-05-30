@@ -122,3 +122,35 @@ def test_parse_model_json_handles_wrapped_json():
 
     parsed = parse_model_json('Result: {"merchant": "Bakery", "amount": "8.5"}')
     assert parsed["merchant"] == "Bakery"
+
+
+def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 200,
+            "category": "Food",
+            "description": "Groceries",
+            "date": "2026-05-10T12:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers,
+        json={"month": "2026-05", "currency": "INR", "budgets": {"Food": 500, "Travel": 300}},
+    )
+    assert saved.status_code == 200, saved.text
+    payload = saved.json()
+    assert payload["totalBudget"] == 800
+    assert payload["totalActual"] == 200
+
+    food = next(item for item in payload["categories"] if item["category"] == "Food")
+    assert food["budget"] == 500
+    assert food["actual"] == 200
+    assert food["remaining"] == 300

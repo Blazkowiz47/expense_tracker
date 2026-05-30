@@ -343,8 +343,8 @@ class _ActivityPageState extends State<ActivityPage> {
             _CategoryBreakdownCard(categories: categories),
             const SizedBox(height: 20),
             const AppSectionHeader(title: 'History'),
-            if (activityEntries.isNotEmpty)
-              ...activityEntries.map(
+            if (periodExpenses.isNotEmpty)
+              ...periodExpenses.map(
                 (entry) => _ExpenseActivityTile(
                   entry: entry,
                   onTap: () {
@@ -358,11 +358,32 @@ class _ActivityPageState extends State<ActivityPage> {
                   },
                 ),
               )
-            else if (state.snapshot.activityItems.isEmpty)
+            else if (activityEntries.isNotEmpty) ...[
+              const AppEmptyState(
+                title: 'No activity in this period',
+                subtitle: 'Older expenses are shown below for context.',
+              ),
+              const SizedBox(height: 12),
+              const AppSectionHeader(title: 'Older history'),
+              ...activityEntries.map(
+                (entry) => _ExpenseActivityTile(
+                  entry: entry,
+                  onTap: () {
+                    final personalExpense = entry.personalExpense;
+                    final groupExpense = entry.groupExpense;
+                    if (personalExpense != null) {
+                      _editExpense(personalExpense);
+                    } else if (groupExpense != null) {
+                      _editGroupExpense(groupExpense);
+                    }
+                  },
+                ),
+              ),
+            ] else if (state.snapshot.activityItems.isEmpty)
               const AppEmptyState(
                 title: 'No activity yet',
                 subtitle:
-                    'Saved expenses and group updates will appear here once you start tracking.',
+                    'Saved expenses and group updates for this period will appear here.',
               )
             else
               ...state.snapshot.activityItems.map(

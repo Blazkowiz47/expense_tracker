@@ -90,7 +90,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     super.dispose();
   }
 
-  Future<void> _save() async {
+  Future<void> _save({bool addAnother = false}) async {
     final description = _descriptionController.text.trim();
     final amountText = _amountController.text.trim();
     final amount = double.tryParse(amountText);
@@ -147,6 +147,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
         setState(() {
           _saving = false;
           _error = resultState.message;
+        });
+        return;
+      }
+
+      if (addAnother && !_editing) {
+        setState(() {
+          _saving = false;
+          _descriptionController.clear();
+          _amountController.clear();
+          _notesController.clear();
+          _billResult = null;
+          _billMessage = 'Saved. Ready for the next expense.';
+          _expenseDate = DateTime.now();
         });
         return;
       }
@@ -355,6 +368,21 @@ class _AddExpensePageState extends State<AddExpensePage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _categories
+                      .map(
+                        (category) => ChoiceChip(
+                          label: Text(category),
+                          selected: _category == category,
+                          onSelected: (_) =>
+                              setState(() => _category = category),
+                        ),
+                      )
+                      .toList(growable: false),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -405,16 +433,32 @@ class _AddExpensePageState extends State<AddExpensePage> {
         minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    height: 16,
-                    width: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check),
-            label: const Text('Save expense'),
+          child: Row(
+            children: [
+              if (!_editing) ...[
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _saving ? null : () => _save(addAnother: true),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Save + another'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check),
+                  label: const Text('Save expense'),
+                ),
+              ),
+            ],
           ),
         ),
       ),
