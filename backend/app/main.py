@@ -497,7 +497,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "overallLabel": "You are all settled up",
             "overallAmountText": "INR 0.00",
             "overallPositive": True,
-            "friendItems": [],
+            "friendItems": friend_balance_items(app.state.db, user["uid"]),
             "groupItems": [],
             "activityItems": [
                 {"title": doc["description"] or doc["category"], "subtitle": doc["date"], "amountText": f"You spent INR {doc['amount']:.2f}", "positive": False}
@@ -531,6 +531,45 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         pair = sorted([user["uid"], target["uid"]])
         app.state.db.friendships.update_one({"key": "_".join(pair)}, {"$set": {"key": "_".join(pair), "uids": pair, "updatedAt": now()}, "$setOnInsert": {"createdAt": now()}}, upsert=True)
         return {"added": True, "uid": target["uid"]}
+
+    @app.get("/api/v1/friends/balances")
+    def friend_balances(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        return {"balances": friend_balance_map(app.state.db, user["uid"])}
+
+    @app.post("/api/v1/friends/settlements", status_code=201)
+    def create_friend_settlement(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        friend_uid = str(body.get("friendUid") or "").strip()
+        if not friend_uid:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "friendUid is required"))
+        if friend_uid == user["uid"]:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "cannot settle with yourself"))
+        friend = app.state.db.users.find_one({"uid": friend_uid})
+        if not friend:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "friend not found"))
+        pair = sorted([user["uid"], friend_uid])
+        if not app.state.db.friendships.find_one({"key": "_".join(pair)}):
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "friendship not found"))
+        direction = str(body.get("direction") or "paid").strip().lower()
+        if direction not in {"paid", "received"}:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "direction must be paid or received"))
+        amount = float(body.get("amount") or 0)
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "amount must be positive"))
+        payer_uid = user["uid"] if direction == "paid" else friend_uid
+        receiver_uid = friend_uid if direction == "paid" else user["uid"]
+        doc = {
+            "id": uuid.uuid4().hex,
+            "uids": pair,
+            "payerUid": payer_uid,
+            "receiverUid": receiver_uid,
+            "amount": amount,
+            "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
+            "note": str(body.get("note") or "").strip(),
+            "createdBy": user["uid"],
+            "createdAt": now(),
+        }
+        app.state.db.friend_settlements.insert_one(doc)
+        return json_ready(friend_settlement_out(doc))
 
     @app.post("/api/v1/friends/remove")
     def remove_friend(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -596,7 +635,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             return {"expenses": [group_expense_out(doc) for doc in app.state.db.group_expenses.find({"groupId": group_id}).sort("date", -1)]}
         if parts == ["expenses"] and request.method == "POST":
             body = await request.json()
-            doc = build_group_expense(body, group_id, user["uid"])
+            doc = build_group_expense(body, group, app.state.db, user["uid"])
             app.state.db.group_expenses.insert_one(doc)
             touch_group(app.state.db, group_id)
             return JSONResponse(status_code=201, content=json_ready(group_expense_out(doc)))
@@ -605,7 +644,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             existing = app.state.db.group_expenses.find_one({"groupId": group_id, "id": parts[1]})
             if not existing:
                 raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "group or expense not found"))
-            updated = build_group_expense(body, group_id, user["uid"], expense_id=parts[1], created_by=existing["createdBy"], created_at=existing["createdAt"])
+            updated = build_group_expense(body, group, app.state.db, user["uid"], expense_id=parts[1], created_by=existing["createdBy"], created_at=existing["createdAt"])
             app.state.db.group_expenses.replace_one({"groupId": group_id, "id": parts[1]}, updated)
             touch_group(app.state.db, group_id)
             return group_expense_out(updated)
@@ -617,7 +656,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             form = await request.form()
             file = form.get("file")
             expense_id = str(form.get("expenseId") or "")
-            if not isinstance(file, UploadFile) or not expense_id:
+            if not expense_id or not hasattr(file, "filename") or not hasattr(file, "read"):
                 raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "file and expenseId are required"))
             if not app.state.db.group_expenses.find_one({"groupId": group_id, "id": expense_id}):
                 raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
@@ -756,6 +795,7 @@ def ensure_indexes(db: Any) -> None:
     db.expenses.create_index([("uid", ASCENDING), ("date", ASCENDING)])
     db.monthly_plans.create_index([("uid", ASCENDING), ("month", ASCENDING)], unique=True)
     db.friendships.create_index("key", unique=True)
+    db.friend_settlements.create_index([("uids", ASCENDING), ("createdAt", ASCENDING)])
     db.groups.create_index("memberUids")
     db.group_expenses.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
@@ -876,6 +916,56 @@ def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
     })
 
 
+def friend_settlement_out(doc: dict[str, Any]) -> dict[str, Any]:
+    return json_ready({
+        key: doc.get(key)
+        for key in [
+            "id",
+            "uids",
+            "payerUid",
+            "receiverUid",
+            "amount",
+            "currency",
+            "note",
+            "createdBy",
+            "createdAt",
+        ]
+    })
+
+
+def friend_balance_map(db: Any, uid: str) -> dict[str, float]:
+    balances: dict[str, float] = {}
+    for settlement in db.friend_settlements.find({"uids": uid}):
+        payer_uid = settlement.get("payerUid")
+        receiver_uid = settlement.get("receiverUid")
+        amount = float(settlement.get("amount") or 0)
+        if payer_uid == uid and receiver_uid:
+            balances[receiver_uid] = balances.get(receiver_uid, 0.0) + amount
+        elif receiver_uid == uid and payer_uid:
+            balances[payer_uid] = balances.get(payer_uid, 0.0) - amount
+    return balances
+
+
+def friend_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
+    balances = friend_balance_map(db, uid)
+    if not balances:
+        return []
+    users = {doc["uid"]: doc for doc in db.users.find({"uid": {"$in": list(balances.keys())}})}
+    items = []
+    for friend_uid, amount in sorted(balances.items(), key=lambda item: abs(item[1]), reverse=True):
+        if abs(amount) <= 0.005:
+            continue
+        friend = users.get(friend_uid, {"uid": friend_uid, "displayName": "Friend", "email": ""})
+        label = user_public(friend)["displayName"]
+        items.append({
+            "title": label,
+            "subtitle": "owes you" if amount > 0 else "you owe",
+            "amountText": f"INR {abs(amount):.2f}",
+            "positive": amount > 0,
+        })
+    return items
+
+
 def add_date_filter(filters: dict[str, Any], from_value: str | None, to_value: str | None) -> None:
     date_filter: dict[str, Any] = {}
     if from_value:
@@ -906,21 +996,56 @@ def require_group_member(db: Any, group_id: str, uid: str) -> dict[str, Any]:
 
 def group_out(db: Any, group: dict[str, Any]) -> dict[str, Any]:
     expenses = list(db.group_expenses.find({"groupId": group["id"]}))
-    display_data = compute_display_data(group.get("memberUids", []), expenses)
+    member_uids = group.get("memberUids", [])
+    users = list(db.users.find({"uid": {"$in": member_uids}}))
+    display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users))
     return json_ready({**group, "memberCount": len(group.get("memberUids", [])), "displayData": display_data})
 
 
-def compute_display_data(member_uids: list[str], expenses: list[dict[str, Any]]) -> dict[str, Any]:
+def group_member_aliases(member_uids: list[str], users: list[dict[str, Any]]) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    users_by_uid = {user.get("uid"): user for user in users}
+    for uid in member_uids:
+        user = users_by_uid.get(uid, {})
+        for value in [uid, user.get("displayName"), user.get("email"), user.get("phone")]:
+            key = str(value or "").strip().lower()
+            if key:
+                aliases[key] = uid
+    return aliases
+
+
+def normalize_group_member_ref(raw: Any, member_uids: list[str], aliases: dict[str, str]) -> str | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    if value in member_uids:
+        return value
+    return aliases.get(value.lower())
+
+
+def compute_display_data(
+    member_uids: list[str],
+    expenses: list[dict[str, Any]],
+    aliases: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    aliases = aliases or {}
     balances = {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids}
+    member_set = set(member_uids)
     total = 0.0
     attachments = 0
     for expense in expenses:
         amount = float(expense.get("amount") or 0)
         total += amount
-        split_with = expense.get("splitWith") or member_uids
+        split_with = [
+            uid
+            for uid in (normalize_group_member_ref(item, member_uids, aliases) for item in (expense.get("splitWith") or []))
+            if uid in member_set
+        ] or member_uids
         share = amount / max(len(split_with), 1)
-        paid_by = expense.get("paidBy")
+        paid_by = normalize_group_member_ref(expense.get("paidBy") or expense.get("createdBy"), member_uids, aliases)
         attachments += len(expense.get("attachments") or [])
+        if not paid_by:
+            continue
         for uid in split_with:
             balances.setdefault(uid, {"owes": 0.0, "owed": 0.0, "net": 0.0})
             if uid != paid_by:
@@ -941,7 +1066,8 @@ def member_out(uid: str, users: list[dict[str, Any]]) -> dict[str, Any]:
 
 def build_group_expense(
     body: dict[str, Any],
-    group_id: str,
+    group: dict[str, Any],
+    db: Any,
     uid: str,
     expense_id: str | None = None,
     created_by: str | None = None,
@@ -955,13 +1081,27 @@ def build_group_expense(
     split_mode = str(body.get("splitMode") or "equally").strip().lower()
     if split_mode not in {"equally", "custom"}:
         split_mode = "equally"
-    split_with = [str(item).strip() for item in body.get("splitWith") or [] if str(item).strip()]
+    member_uids = [str(item) for item in group.get("memberUids", []) if str(item)]
+    aliases = group_member_aliases(member_uids, list(db.users.find({"uid": {"$in": member_uids}})))
+    paid_by = normalize_group_member_ref(body.get("paidBy") or uid, member_uids, aliases)
+    if not paid_by:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "paidBy must be a group member"))
+    raw_split_with = body.get("splitWith") or member_uids
+    split_with: list[str] = []
+    for item in raw_split_with:
+        member_uid = normalize_group_member_ref(item, member_uids, aliases)
+        if not member_uid:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "splitWith must contain only group members"))
+        if member_uid not in split_with:
+            split_with.append(member_uid)
+    if not split_with:
+        split_with = member_uids
     return {
         "id": expense_id or str(body.get("id") or "").strip() or uuid.uuid4().hex,
-        "groupId": group_id,
+        "groupId": group["id"],
         "createdBy": created_by or uid,
         "updatedBy": uid,
-        "paidBy": str(body.get("paidBy") or uid).strip() or uid,
+        "paidBy": paid_by,
         "splitMode": split_mode,
         "splitWith": split_with,
         "amount": amount,

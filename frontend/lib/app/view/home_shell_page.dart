@@ -4,6 +4,7 @@ import 'package:expense_tracker/core/utils/platform_page_route.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/core/utils/responsive_layout.dart';
 import 'package:expense_tracker/core/widgets/smart_selection_area.dart';
+import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/account/view/account_page.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
@@ -115,6 +116,14 @@ class _HomeShellPageState extends State<HomeShellPage> {
   }
 
   void _openAddExpense() {
+    if (_destinations[_selectedIndex].label == 'Family') {
+      Navigator.of(context).push<void>(
+        platformPageRoute(
+          builder: (_) => const GroupsPage(groupType: GroupType.family),
+        ),
+      );
+      return;
+    }
     final expensesBloc = context.read<ExpensesBloc>();
     Navigator.of(context).push<void>(
       platformPageRoute(

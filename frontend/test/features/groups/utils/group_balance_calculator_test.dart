@@ -7,6 +7,7 @@ void main() {
     required String id,
     required String createdBy,
     required double amount,
+    List<String> splitWith = const [],
   }) {
     final now = DateTime(2026, 2, 28);
     return GroupExpense(
@@ -16,7 +17,7 @@ void main() {
       updatedBy: createdBy,
       paidBy: createdBy,
       splitMode: 'equally',
-      splitWith: const [],
+      splitWith: splitWith,
       amount: amount,
       description: id,
       attachments: const [],
@@ -85,5 +86,19 @@ void main() {
 
     expect(result.lent, 100);
     expect(result.borrowed, 30);
+  });
+
+  test('honors custom split participants', () {
+    final result = calculateGroupLentBorrowed(
+      expenses: [
+        expense(id: 'e1', createdBy: 'u2', amount: 90, splitWith: const ['u1']),
+        expense(id: 'e2', createdBy: 'u1', amount: 60, splitWith: const ['u2']),
+      ],
+      memberCount: 3,
+      userIdentifiers: const {'u1'},
+    );
+
+    expect(result.lent, 60);
+    expect(result.borrowed, 90);
   });
 }

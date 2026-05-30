@@ -23,14 +23,24 @@ GroupLentBorrowed calculateGroupLentBorrowed({
   var borrowed = 0.0;
   for (final expense in expenses) {
     if (expense.amount <= 0) continue;
-    final splitShare = expense.amount / memberCount;
+    final splitParticipants = expense.splitWith
+        .map((id) => id.trim().toLowerCase())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final splitCount = splitParticipants.isEmpty
+        ? memberCount
+        : splitParticipants.length;
+    final splitShare = expense.amount / splitCount;
+    final userIsInSplit =
+        splitParticipants.isEmpty ||
+        splitParticipants.any((id) => normalizedIds.contains(id));
     final paidBy =
         (expense.paidBy.isNotEmpty ? expense.paidBy : expense.createdBy)
             .trim()
             .toLowerCase();
     if (normalizedIds.contains(paidBy)) {
-      lent += (expense.amount - splitShare);
-    } else {
+      lent += expense.amount - (userIsInSplit ? splitShare : 0);
+    } else if (userIsInSplit) {
       borrowed += splitShare;
     }
   }

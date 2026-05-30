@@ -154,3 +154,103 @@ def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
     assert food["budget"] == 500
     assert food["actual"] == 200
     assert food["remaining"] == 300
+
+
+def test_friend_settlement_is_visible_to_both_users(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+
+    added = client.post(
+        "/api/v1/friends/add",
+        headers=headers_a,
+        json={"emailOrPhone": "bob@example.com"},
+    )
+    assert added.status_code == 200, added.text
+
+    settlement = client.post(
+        "/api/v1/friends/settlements",
+        headers=headers_a,
+        json={"friendUid": added.json()["uid"], "direction": "paid", "amount": 120},
+    )
+    assert settlement.status_code == 201, settlement.text
+
+    balances_a = client.get("/api/v1/friends/balances", headers=headers_a)
+    balances_b = client.get("/api/v1/friends/balances", headers=headers_b)
+    assert balances_a.status_code == 200
+    assert balances_b.status_code == 200
+    bob_uid = added.json()["uid"]
+    alice_uid = client.get("/api/v1/auth/me", headers=headers_a).json()["user"]["uid"]
+    assert balances_a.json()["balances"][bob_uid] == 120
+    assert balances_b.json()["balances"][alice_uid] == -120
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
+    assert dashboard.status_code == 200
+    assert dashboard.json()["friendItems"][0]["title"] == "User"
+    assert dashboard.json()["friendItems"][0]["subtitle"] == "owes you"
+
+
+def test_group_expense_normalizes_member_aliases_and_custom_split(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+    alice_uid = client.get("/api/v1/auth/me", headers=headers_a).json()["user"]["uid"]
+    bob_uid = client.get("/api/v1/auth/me", headers=headers_b).json()["user"]["uid"]
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Family", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    created = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Pharmacy",
+            "paidBy": "bob@example.com",
+            "splitMode": "custom",
+            "splitWith": ["alice@example.com"],
+            "amount": 90,
+            "date": "2026-05-20T10:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["paidBy"] == bob_uid
+    assert created.json()["splitWith"] == [alice_uid]
+
+    groups = client.get("/api/v1/groups", headers=headers_a)
+    balances = groups.json()["groups"][0]["displayData"]["memberBalances"]
+    assert balances[alice_uid]["net"] == -90
+    assert balances[bob_uid]["net"] == 90
+
+
+def test_group_attachment_upload_accepts_multipart_file(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    group = client.post("/api/v1/groups", headers=headers, json={"name": "Trip"})
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    expense = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers,
+        json={
+            "description": "Taxi",
+            "amount": 35,
+            "date": "2026-05-20T10:00:00Z",
+        },
+    )
+    assert expense.status_code == 201, expense.text
+
+    upload = client.post(
+        f"/api/v1/groups/{group_id}/attachments",
+        headers=headers,
+        data={"expenseId": expense.json()["id"]},
+        files={"file": ("receipt.jpg", b"receipt-bytes", "image/jpeg")},
+    )
+    assert upload.status_code == 201, upload.text
+    assert upload.json()["url"].endswith("receipt.jpg")

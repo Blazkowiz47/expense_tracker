@@ -148,6 +148,19 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
+  Future<void> _openFamilyGroups() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) =>
+            GroupsPage(groupType: GroupType.family, repository: _repository),
+      ),
+    );
+    if (!mounted) return;
+    if (changed == true || _families.isEmpty) {
+      await _loadFamilies();
+    }
+  }
+
   List<GroupExpense> get _currentMonthExpenses {
     final now = DateTime.now();
     return _expenses
@@ -254,11 +267,13 @@ class _FamilyPageState extends State<FamilyPage> {
     }
 
     if (family == null) {
-      return const AppPageContainer(
+      return AppPageContainer(
         children: [
           AppEmptyState(
             title: 'No family group yet',
             subtitle: 'Create a family group to track household spending.',
+            actionLabel: 'Create family group',
+            onAction: _openFamilyGroups,
           ),
         ],
       );
@@ -285,6 +300,7 @@ class _FamilyPageState extends State<FamilyPage> {
           trackedTotal: trackedTotal,
           progress: progress,
           loading: _loadingDetails,
+          onOpen: _openSelectedFamily,
         ),
         if (_families.length > 1) ...[
           const SizedBox(height: 8),
@@ -308,7 +324,7 @@ class _FamilyPageState extends State<FamilyPage> {
         const SizedBox(height: 16),
         AppSectionHeader(
           title: 'Members',
-          actionLabel: 'Invite',
+          actionLabel: 'Manage',
           onAction: _openSelectedFamily,
         ),
         if (_loadingDetails && _members.isEmpty)
@@ -334,7 +350,7 @@ class _FamilyPageState extends State<FamilyPage> {
         const SizedBox(height: 16),
         AppSectionHeader(
           title: 'Categories',
-          actionLabel: 'Manage',
+          actionLabel: 'Open expenses',
           onAction: _openSelectedFamily,
         ),
         if (_loadingDetails && categories.isEmpty)
@@ -371,6 +387,7 @@ class _HouseholdCard extends StatelessWidget {
     required this.trackedTotal,
     required this.progress,
     required this.loading,
+    required this.onOpen,
   });
 
   final GroupSummary family;
@@ -379,6 +396,7 @@ class _HouseholdCard extends StatelessWidget {
   final double trackedTotal;
   final double progress;
   final bool loading;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -420,6 +438,12 @@ class _HouseholdCard extends StatelessWidget {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                IconButton(
+                  tooltip: 'Open family expenses',
+                  onPressed: onOpen,
+                  icon: const Icon(Icons.arrow_forward),
                 ),
             ],
           ),

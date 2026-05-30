@@ -31,6 +31,9 @@ class _FakeFriendsRepository extends ApiFriendsRepository {
       phone: '',
     ),
   ];
+  final List<({String friendUid, String direction, double amount})>
+  recordedSettlements = [];
+  Map<String, double> balances = const {};
 
   @override
   Future<List<FriendContact>> fetchFriends() async => friends;
@@ -45,6 +48,24 @@ class _FakeFriendsRepository extends ApiFriendsRepository {
 
   @override
   Future<void> removeFriend(String _) async {}
+
+  @override
+  Future<Map<String, double>> fetchBalances() async => balances;
+
+  @override
+  Future<void> recordSettlement({
+    required String friendUid,
+    required String direction,
+    required double amount,
+    String currency = 'INR',
+  }) async {
+    recordedSettlements.add((
+      friendUid: friendUid,
+      direction: direction,
+      amount: amount,
+    ));
+    balances = {friendUid: amount};
+  }
 }
 
 class _FakeExpenseRepository extends ExpenseRepository {
@@ -68,39 +89,41 @@ class _FakeExpenseRepository extends ExpenseRepository {
 }
 
 void main() {
-  testWidgets('settle up records settlement expense with metadata', (
-    tester,
-  ) async {
-    final friendsRepository = _FakeFriendsRepository();
-    final expenseRepository = _FakeExpenseRepository();
+  testWidgets(
+    'settle up records backend settlement visible in friend balance',
+    (tester) async {
+      final friendsRepository = _FakeFriendsRepository();
+      final expenseRepository = _FakeExpenseRepository();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(splashFactory: InkRipple.splashFactory),
-        home: Scaffold(
-          body: FriendsPage(
-            friendsRepository: friendsRepository,
-            expenseRepository: expenseRepository,
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(splashFactory: InkRipple.splashFactory),
+          home: Scaffold(
+            body: FriendsPage(
+              friendsRepository: friendsRepository,
+              expenseRepository: expenseRepository,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Test Friend'), findsOneWidget);
+      expect(find.text('Test Friend'), findsOneWidget);
 
-    await tester.tap(find.text('Test Friend'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Test Friend'));
+      await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField).first, '120');
-    await tester.tap(find.text('Record'));
-    await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).first, '120');
+      await tester.tap(find.text('Record'));
+      await tester.pumpAndSettle();
 
-    expect(expenseRepository.created, hasLength(1));
-    final created = expenseRepository.created.first;
-    expect(created.category, 'Settlement');
-    expect(created.description, contains('[uid:friend-uid-1]'));
-    expect(created.description, contains('[dir:paid]'));
-    expect(created.amount, 120);
-  });
+      expect(friendsRepository.recordedSettlements, hasLength(1));
+      final settlement = friendsRepository.recordedSettlements.single;
+      expect(settlement.friendUid, 'friend-uid-1');
+      expect(settlement.direction, 'paid');
+      expect(settlement.amount, 120);
+      expect(expenseRepository.created, isEmpty);
+      expect(find.text('owes you'), findsOneWidget);
+    },
+  );
 }

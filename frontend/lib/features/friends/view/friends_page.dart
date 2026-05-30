@@ -2,8 +2,6 @@ import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/friends/utils/settlement_balance_calculator.dart';
-import 'package:expense_tracker/data/models/expense.dart';
-import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -92,9 +90,13 @@ class _FriendsPageState extends State<FriendsPage> {
   }
 
   Future<Map<String, double>> _loadSettlementBalances() async {
-    await _expenseRepository.refresh();
-    final expenses = _expenseRepository.getExpenses();
-    return calculateFriendSettlementNetByUid(expenses);
+    try {
+      return await _repository.fetchBalances();
+    } catch (_) {
+      await _expenseRepository.refresh();
+      final expenses = _expenseRepository.getExpenses();
+      return calculateFriendSettlementNetByUid(expenses);
+    }
   }
 
   Future<void> _addFriendFlow() async {
@@ -191,23 +193,10 @@ class _FriendsPageState extends State<FriendsPage> {
 
     setState(() => _removingFriendUid = friend.uid);
     try {
-      final title = input.direction == 'received'
-          ? 'Settlement received'
-          : 'Settlement paid';
-      final description =
-          'Settle up with ${friend.label} [uid:${friend.uid}][dir:${input.direction}]';
-      await _expenseRepository.createExpense(
-        Expense(
-          core: ExpenseCore(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            title: title,
-            amount: input.amount,
-            currency: 'INR',
-            category: 'Settlement',
-            createdAt: DateTime.now(),
-          ),
-          description: description,
-        ),
+      await _repository.recordSettlement(
+        friendUid: friend.uid,
+        direction: input.direction,
+        amount: input.amount,
       );
       final settlementMap = await _loadSettlementBalances();
       if (!mounted) return;
@@ -215,7 +204,7 @@ class _FriendsPageState extends State<FriendsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Settlement of ${AppMoney.format(input.amount)} recorded with ${friend.label}.',
+            'Settlement of ${AppMoney.format(input.amount)} recorded for both accounts.',
           ),
         ),
       );
@@ -247,10 +236,13 @@ class _FriendsPageState extends State<FriendsPage> {
               children: [
                 SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment<String>(value: 'paid', label: Text('I paid')),
+                    ButtonSegment<String>(
+                      value: 'paid',
+                      label: Text('I paid them'),
+                    ),
                     ButtonSegment<String>(
                       value: 'received',
-                      label: Text('I received'),
+                      label: Text('They paid me'),
                     ),
                   ],
                   selected: {direction},
@@ -265,10 +257,13 @@ class _FriendsPageState extends State<FriendsPage> {
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Amount',
                     prefixText: AppMoney.inputPrefix,
                     hintText: '0.00',
+                    helperText: direction == 'paid'
+                        ? '${friend.label} will owe you this amount.'
+                        : 'You will owe ${friend.label} this amount.',
                   ),
                   validator: (value) {
                     final amount = double.tryParse((value ?? '').trim());
@@ -312,8 +307,8 @@ class _FriendsPageState extends State<FriendsPage> {
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            labelText: 'Email or phone',
-            hintText: 'friend@example.com or +15551234567',
+            labelText: 'Email',
+            hintText: 'friend@example.com',
           ),
         ),
         actions: [

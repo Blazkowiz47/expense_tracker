@@ -50,6 +50,37 @@ class ApiFriendsRepository {
     );
   }
 
+  Future<Map<String, double>> fetchBalances() async {
+    final response = await _request(
+      method: 'GET',
+      path: '/api/v1/friends/balances',
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawBalances =
+        payload['balances'] as Map<String, dynamic>? ?? const {};
+    return rawBalances.map(
+      (key, value) => MapEntry(key, (value as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  Future<void> recordSettlement({
+    required String friendUid,
+    required String direction,
+    required double amount,
+    String currency = 'INR',
+  }) async {
+    await _request(
+      method: 'POST',
+      path: '/api/v1/friends/settlements',
+      body: <String, dynamic>{
+        'friendUid': friendUid,
+        'direction': direction,
+        'amount': amount,
+        'currency': currency,
+      },
+    );
+  }
+
   Future<http.Response> _request({
     required String method,
     required String path,

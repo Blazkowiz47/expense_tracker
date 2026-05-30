@@ -413,6 +413,30 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   bool get _busy => _busyAction != _GroupBusyAction.none;
 
+  List<String> _expenseParticipantKeys() {
+    if (_members.isEmpty) {
+      return List<String>.generate(
+        _memberCount,
+        (index) => index == 0 ? 'You' : 'Member ${index + 1}',
+      );
+    }
+    final labelCounts = <String, int>{};
+    for (final member in _members) {
+      final label = member.label.trim();
+      labelCounts[label] = (labelCounts[label] ?? 0) + 1;
+    }
+    return _members
+        .map((member) {
+          final label = member.label.trim();
+          final labelIsAmbiguous = (labelCounts[label] ?? 0) > 1;
+          if (labelIsAmbiguous && member.email.trim().isNotEmpty) {
+            return member.email.trim();
+          }
+          return label.isNotEmpty ? label : member.uid;
+        })
+        .toList(growable: false);
+  }
+
   Set<String> _currentUserIdentifiers({
     required String uid,
     String? email,
@@ -461,11 +485,21 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         (expense.paidBy.isNotEmpty ? expense.paidBy : expense.createdBy)
             .trim()
             .toLowerCase();
-    final share = expense.amount / memberCount;
+    final splitParticipants = expense.splitWith
+        .map((id) => id.trim().toLowerCase())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final splitCount = splitParticipants.isEmpty
+        ? memberCount
+        : splitParticipants.length;
+    final userIsInSplit =
+        splitParticipants.isEmpty ||
+        splitParticipants.any((id) => userIdentifiers.contains(id));
+    final share = expense.amount / splitCount;
     if (userIdentifiers.contains(paidBy)) {
-      return (owed: expense.amount - share, owe: 0);
+      return (owed: expense.amount - (userIsInSplit ? share : 0), owe: 0);
     }
-    return (owed: 0, owe: share);
+    return (owed: 0, owe: userIsInSplit ? share : 0);
   }
 
   Future<void> _openSettings() async {
@@ -499,6 +533,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         member.label.trim().toLowerCase(),
       }..removeWhere((v) => v.isEmpty);
       if (candidates.contains(normalized)) {
+        for (final participant in participants) {
+          if (candidates.contains(participant.trim().toLowerCase())) {
+            return participant;
+          }
+        }
         return member.label;
       }
     }
@@ -1620,12 +1659,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       await _loadMembers();
       if (!mounted) return;
     }
-    final participants = _members.isNotEmpty
-        ? _members.map((m) => m.label).toList(growable: false)
-        : List<String>.generate(
-            _memberCount,
-            (index) => index == 0 ? 'You' : 'Member ${index + 1}',
-          );
+    final participants = _expenseParticipantKeys();
     final payload = await _showExpenseForm(
       title: 'Add group expense',
       expenseId: '',
@@ -1718,12 +1752,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       await _loadMembers();
       if (!mounted) return;
     }
-    final participants = _members.isNotEmpty
-        ? _members.map((m) => m.label).toList(growable: false)
-        : List<String>.generate(
-            _memberCount,
-            (index) => index == 0 ? 'You' : 'Member ${index + 1}',
-          );
+    final participants = _expenseParticipantKeys();
     final payload = await _showExpenseForm(
       title: 'Edit group expense',
       expenseId: expense.id,
@@ -1736,7 +1765,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           ? expense.splitMode
           : 'equally',
       initialSplitWith: expense.splitWith.isNotEmpty
-          ? expense.splitWith.toSet()
+          ? expense.splitWith
+                .map((member) => _resolvePayerLabel(member, participants))
+                .toSet()
           : participants.toSet(),
       initialAttachments: expense.attachments,
       initialUpdatedAt: expense.updatedAt,
@@ -1781,7 +1812,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         ? expense.splitMode
         : 'equally';
     final originalSplitWith = expense.splitWith.isNotEmpty
-        ? expense.splitWith.toSet()
+        ? expense.splitWith
+              .map((member) => _resolvePayerLabel(member, participants))
+              .toSet()
         : participants.toSet();
     final fieldChanged =
         description != expense.description ||
@@ -2361,14 +2394,9 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       netByUid[member.uid] = 0;
     }
 
-    for (final expense in widget.expenses) {
-      if (expense.amount <= 0) continue;
-      final payerKey = expense.paidBy.isNotEmpty
-          ? expense.paidBy
-          : expense.createdBy;
-      final share = expense.amount / memberCount;
-
-      String? payerUid;
+    String? resolveMemberUid(String key) {
+      final normalizedKey = key.trim().toLowerCase();
+      if (normalizedKey.isEmpty) return null;
       for (final member in widget.members) {
         final candidates = <String>{
           member.uid.trim().toLowerCase(),
@@ -2377,14 +2405,30 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
           member.phone.trim().toLowerCase(),
           member.label.trim().toLowerCase(),
         }..removeWhere((v) => v.isEmpty);
-        if (candidates.contains(payerKey.trim().toLowerCase())) {
-          payerUid = member.uid;
-          break;
+        if (candidates.contains(normalizedKey)) {
+          return member.uid;
         }
       }
+      return null;
+    }
 
-      for (final member in widget.members) {
-        netByUid[member.uid] = (netByUid[member.uid] ?? 0) - share;
+    for (final expense in widget.expenses) {
+      if (expense.amount <= 0) continue;
+      final payerKey = expense.paidBy.isNotEmpty
+          ? expense.paidBy
+          : expense.createdBy;
+      final payerUid = resolveMemberUid(payerKey);
+      final splitUids = expense.splitWith
+          .map(resolveMemberUid)
+          .whereType<String>()
+          .toSet();
+      final effectiveSplitUids = splitUids.isEmpty
+          ? widget.members.map((member) => member.uid).toSet()
+          : splitUids;
+      final share = expense.amount / effectiveSplitUids.length;
+
+      for (final uid in effectiveSplitUids) {
+        netByUid[uid] = (netByUid[uid] ?? 0) - share;
       }
       if (payerUid != null) {
         netByUid[payerUid] = (netByUid[payerUid] ?? 0) + expense.amount;
