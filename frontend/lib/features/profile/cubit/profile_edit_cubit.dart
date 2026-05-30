@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/profile/cubit/profile_edit_state.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class ProfileEditCubit extends Cubit<ProfileEditState> {
@@ -15,7 +15,7 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
   final UserProfileRepository _repository;
 
   Future<void> uploadPhoto({
-    required User user,
+    required AuthUser user,
     required Uint8List bytes,
     required String fileNameHint,
     String? previewPath,
@@ -56,17 +56,6 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
           clearError: true,
         ),
       );
-    } on FirebaseException catch (error) {
-      emit(
-        state.copyWith(
-          status: ProfileEditStatus.failure,
-          action: ProfileEditAction.none,
-          clearUploadProgress: true,
-          clearMessage: true,
-          error:
-              'Failed to upload photo (${error.code}): ${error.message ?? 'Unknown Firebase error'}',
-        ),
-      );
     } catch (error) {
       emit(
         state.copyWith(
@@ -93,7 +82,7 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
   }
 
   Future<void> saveDisplayName({
-    required User user,
+    required AuthUser user,
     required String displayName,
     required String initialDisplayName,
   }) async {
@@ -128,16 +117,6 @@ class ProfileEditCubit extends Cubit<ProfileEditState> {
           action: ProfileEditAction.profileSaved,
           message: 'Profile updated successfully.',
           clearError: true,
-        ),
-      );
-    } on FirebaseException catch (error) {
-      emit(
-        state.copyWith(
-          status: ProfileEditStatus.failure,
-          action: ProfileEditAction.none,
-          clearMessage: true,
-          error:
-              'Failed to save profile (${error.code}): ${error.message ?? 'Unknown Firebase error'}',
         ),
       );
     } catch (error) {

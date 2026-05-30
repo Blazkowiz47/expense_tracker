@@ -1904,7 +1904,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             uid: authUser.uid,
             email: authUser.email,
             displayName: authUser.displayName,
-            phone: authUser.phoneNumber,
+            phone: authUser.phone,
           );
     final balance = authUser == null
         ? (lent: 0.0, borrowed: 0.0)

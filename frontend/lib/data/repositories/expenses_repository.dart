@@ -10,7 +10,7 @@ class ExpenseRepository {
   ExpenseRepository({http.Client? client, AuthTokenProvider? authTokenProvider})
     : _client = client ?? http.Client(),
       _authTokenProvider =
-          authTokenProvider ?? const FirebaseAuthTokenProvider();
+          authTokenProvider ?? const SessionAuthTokenProvider();
 
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;

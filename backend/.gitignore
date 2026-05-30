@@ -21,6 +21,10 @@ mem.prof
 .env
 .env.*
 .gocache/
+.pytest_cache/
+.venv/
+__pycache__/
+data/
 
 # IDE / OS files
 .DS_Store

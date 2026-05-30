@@ -1,151 +1,125 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:expense_tracker/core/auth/auth_token_provider.dart';
+import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
+import 'package:expense_tracker/features/auth/repositories/auth_session_store.dart';
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart';
-import 'package:mime/mime.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 class UserProfileRepository {
   UserProfileRepository({
-    FirebaseFirestore? firestore,
-    FirebaseStorage? storage,
-  }) : _firestoreOverride = firestore,
-       _storageOverride = storage;
+    http.Client? client,
+    AuthTokenProvider? authTokenProvider,
+    AuthSessionStore sessionStore = const AuthSessionStore(),
+  }) : _client = client ?? http.Client(),
+       _authTokenProvider =
+           authTokenProvider ?? const SessionAuthTokenProvider(),
+       _sessionStore = sessionStore;
 
-  final FirebaseFirestore? _firestoreOverride;
-  final FirebaseStorage? _storageOverride;
+  final http.Client _client;
+  final AuthTokenProvider _authTokenProvider;
+  final AuthSessionStore _sessionStore;
 
-  FirebaseFirestore get _firestore =>
-      _firestoreOverride ?? FirebaseFirestore.instance;
-  FirebaseStorage get _storage => _storageOverride ?? FirebaseStorage.instance;
-
-  Future<void> ensureUserDocument(User user) async {
-    await _upsertUserDoc(
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName?.trim().isNotEmpty == true
-          ? user.displayName!.trim()
-          : 'User',
-      photoUrl: user.photoURL,
-    );
+  Future<void> ensureUserDocument(AuthUser user) async {
+    await _sessionStore.saveUser(user);
   }
 
-  Stream<UserProfile> watchProfile(User user) {
-    final docRef = _firestore.collection('users').doc(user.uid);
-    return docRef.snapshots().asyncMap((snapshot) async {
-      final data = snapshot.data();
-      final displayName =
-          (data?['display_name'] as String?)?.trim().isNotEmpty == true
-          ? (data?['display_name'] as String).trim()
-          : (user.displayName?.trim().isNotEmpty == true
-                ? user.displayName!.trim()
-                : 'User');
-      final email = (data?['email'] as String?) ?? (user.email ?? '');
-      final photoUrl = (data?['photo_url'] as String?) ?? user.photoURL;
+  Stream<UserProfile> watchProfile(AuthUser user) async* {
+    yield await fetchProfile(fallback: user);
+  }
 
-      if (!snapshot.exists) {
-        await ensureUserDocument(user);
-      }
-
+  Future<UserProfile> fetchProfile({required AuthUser fallback}) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/api/v1/profile'),
+      headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200) {
       return UserProfile(
-        uid: user.uid,
-        displayName: displayName,
-        email: email,
-        photoUrl: photoUrl,
+        uid: fallback.uid,
+        displayName: fallback.displayName,
+        email: fallback.email,
+        photoUrl: fallback.photoUrl,
       );
-    });
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return UserProfile(
+      uid: (json['uid'] as String?) ?? fallback.uid,
+      displayName: (json['displayName'] as String?) ?? fallback.displayName,
+      email: (json['email'] as String?) ?? fallback.email,
+      photoUrl: json['photoUrl'] as String?,
+    );
   }
 
   Future<void> updateDisplayName({
-    required User user,
+    required AuthUser user,
     required String displayName,
   }) async {
-    final trimmed = displayName.trim();
-    if (trimmed.isEmpty) return;
-
-    await _upsertUserDoc(
-      uid: user.uid,
-      email: user.email,
-      displayName: trimmed,
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.put(
+      Uri.parse('${ApiConfig.baseUrl}/api/v1/profile'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'displayName': displayName.trim()}),
     );
-    await user.updateDisplayName(trimmed);
-    await user.reload();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Failed to save profile (${response.statusCode}): ${response.body}',
+      );
+    }
+    await _sessionStore.saveUser(
+      user.copyWith(displayName: displayName.trim()),
+    );
   }
 
   Future<String> uploadProfilePhoto({
-    required User user,
+    required AuthUser user,
     required Uint8List bytes,
     String fileNameHint = 'profile_photo.jpg',
     void Function(double progress)? onProgress,
   }) async {
-    final path = 'users/${user.uid}/profile_photo.jpg';
-    final contentType = lookupMimeType(fileNameHint) ?? 'image/jpeg';
-    final ref = _storage.ref().child(path);
-    debugPrint(
-      'PROFILE: upload start uid=${user.uid} path=$path contentType=$contentType bytes=${bytes.length}',
-    );
-
-    try {
-      final task = ref.putData(
-        bytes,
-        SettableMetadata(
-          contentType: contentType,
-          cacheControl: 'public,max-age=300',
-        ),
+    final token = await _authTokenProvider.getBearerToken();
+    final request =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse('${ApiConfig.baseUrl}/api/v1/profile/photo'),
+          )
+          ..headers['Accept'] = 'application/json'
+          ..headers['Authorization'] = 'Bearer $token'
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'file',
+              bytes,
+              filename: fileNameHint,
+              contentType: MediaType.parse(_contentType(fileNameHint)),
+            ),
+          );
+    onProgress?.call(0.5);
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Failed to upload photo (${response.statusCode}): ${response.body}',
       );
-      task.snapshotEvents.listen((snapshot) {
-        final total = snapshot.totalBytes;
-        if (total <= 0) return;
-        onProgress?.call(snapshot.bytesTransferred / total);
-      });
-      await task;
-      final downloadUrl = await ref.getDownloadURL();
-      debugPrint('PROFILE: upload success uid=${user.uid} url=$downloadUrl');
-
-      await _upsertUserDoc(
-        uid: user.uid,
-        email: user.email,
-        photoUrl: downloadUrl,
-      );
-      await user.updatePhotoURL(downloadUrl);
-      await user.reload();
-      return downloadUrl;
-    } on FirebaseException catch (error) {
-      debugPrint(
-        'PROFILE: upload failed uid=${user.uid} code=${error.code} message=${error.message}',
-      );
-      rethrow;
     }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final url = (payload['url'] as String?) ?? '';
+    await _sessionStore.saveUser(user.copyWith(photoUrl: url));
+    onProgress?.call(1);
+    return '${ApiConfig.baseUrl}$url';
   }
 
-  Future<void> _upsertUserDoc({
-    required String uid,
-    String? email,
-    String? displayName,
-    String? photoUrl,
-  }) async {
-    final docRef = _firestore.collection('users').doc(uid);
-    await _firestore.runTransaction((txn) async {
-      final snap = await txn.get(docRef);
-      final now = FieldValue.serverTimestamp();
-      final data = <String, dynamic>{'uid': uid, 'updated_at': now};
-
-      if (!snap.exists) {
-        data['created_at'] = now;
-      }
-      if (email != null && email.isNotEmpty) {
-        data['email'] = email;
-      }
-      data['email_normalized'] = FieldValue.delete();
-      data['emails'] = FieldValue.delete();
-      if (displayName != null) {
-        data['display_name'] = displayName;
-      }
-      if (photoUrl != null) {
-        data['photo_url'] = photoUrl;
-      }
-
-      txn.set(docRef, data, SetOptions(merge: true));
-    });
+  String _contentType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
   }
 }

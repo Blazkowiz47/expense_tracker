@@ -1,8 +1,8 @@
 import 'package:expense_tracker/features/profile/cubit/profile_edit_cubit.dart';
 import 'package:expense_tracker/features/profile/cubit/profile_edit_state.dart';
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -16,7 +16,7 @@ class ProfileEditPage extends StatefulWidget {
     super.key,
   });
 
-  final User user;
+  final AuthUser user;
   final UserProfile profile;
   final UserProfileRepository repository;
 

@@ -4,6 +4,7 @@ import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
@@ -13,7 +14,6 @@ import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -69,10 +69,17 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
 
 class _FakeAuthRepository implements AuthRepository {
   @override
-  Stream<User?> authStateChanges() => Stream<User?>.value(null);
+  Stream<AuthUser?> authStateChanges() => Stream<AuthUser?>.value(null);
 
   @override
-  Future<void> signInWithGoogle() async {}
+  Future<void> login({required String email, required String password}) async {}
+
+  @override
+  Future<void> register({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {}
 
   @override
   Future<void> signOut() async {}

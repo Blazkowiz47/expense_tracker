@@ -1,6 +1,6 @@
 # Expense Tracker — Design System
 
-A design system extracted from the **expense_tracker** codebase: a Splitwise-inspired expense and balance tracker built with Flutter (iOS / Android / Web) and a Go + Firestore backend.
+A design system extracted from the **expense_tracker** codebase: a Splitwise-inspired expense and balance tracker built with Flutter (iOS / Android / Web) and a Python/FastAPI + MongoDB backend.
 
 ## Source & references
 
@@ -11,7 +11,7 @@ All source truth lives in the attached repo: **Blazkowiz47/expense_tracker** (`m
 - Spacing + breakpoints: `frontend/lib/core/constants/`
 - Screens: `frontend/lib/features/{friends,groups,activity,account,expenses,theme}/view/`
 - Execution plan: `plans/plan.md`
-- Backend API (Go + Gin + Firebase Auth): `backend/` — not part of the visual system but defines the data model (expense: `amount`, `category`, `description`, `date`).
+- Backend API (Python + FastAPI + local auth): `backend/` — not part of the visual system but defines the data model (expense: `amount`, `category`, `description`, `date`).
 
 No Figma file was provided.
 

@@ -2,9 +2,9 @@
   <title>Expense Tracker Repository Guidelines</title>
 
   <project_structure>
-    <rule>Repository has two applications: <code>frontend/</code> (Flutter) and <code>backend/</code> (Go).</rule>
+    <rule>Repository has two applications: <code>frontend/</code> (Flutter) and <code>backend/</code> (Python/FastAPI).</rule>
     <rule>Frontend source is in <code>frontend/lib/</code>; tests are in <code>frontend/test/</code>; platform folders include <code>android/</code>, <code>ios/</code>, and <code>web/</code>.</rule>
-    <rule>Backend entrypoint is <code>backend/cmd/server/main.go</code>; core packages are under <code>backend/internal/</code> (<code>auth</code>, <code>config</code>, <code>expense</code>, <code>httpapi</code>, <code>middleware</code>, <code>server</code>).</rule>
+    <rule>Backend entrypoint is <code>backend/app/main.py</code>; tests are in <code>backend/tests/</code>.</rule>
     <rule><code>plan.md</code> contains execution milestones.</rule>
   </project_structure>
 
@@ -22,7 +22,7 @@
     <rule>After any code change, ensure both backend and frontend processes are healthy before asking user to reload.</rule>
     <rule>The agent must execute tmux lifecycle commands itself (start/restart/health checks) and not delegate that verification to the user.</rule>
     <rule>Default full-session restart command is <code>scripts/start_expense_dev_tmux.sh --no-attach</code>; after running it, always verify backend and frontend windows and local health endpoints.</rule>
-    <rule>No user approval is required for project-scoped <code>flutter</code>, <code>dart</code>, <code>tmux</code>, and <code>go</code> commands.</rule>
+    <rule>No user approval is required for project-scoped <code>flutter</code>, <code>dart</code>, <code>tmux</code>, <code>python</code>, <code>pip</code>, and <code>pytest</code> commands.</rule>
     <rule>No user approval is required for <code>curl</code> to localhost/current project URLs (for example <code>127.0.0.1</code>, <code>localhost</code>, <code>8080</code>, <code>7357</code>).</rule>
     <rule>After code or documentation edits, run <code>git add</code> and create a concise commit.</rule>
     <rule>If rollback is needed, prefer safe git operations over manual large-scale file re-editing.</rule>
@@ -30,10 +30,8 @@
 
   <commands>
     <backend path="backend/">
-      <command name="run_server">go run ./cmd/server</command>
-      <command name="test_all">go test ./...</command>
-      <command name="test_internal_verbose">go test -v ./internal/...</command>
-      <command name="format_go">gofmt -w $(rg --files -g '*.go')</command>
+      <command name="run_server">uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload</command>
+      <command name="test_all">pytest</command>
     </backend>
     <frontend path="frontend/">
       <command name="install_deps">flutter pub get</command>
@@ -44,10 +42,10 @@
   </commands>
 
   <coding_style>
-    <go>
-      <rule>Use <code>gofmt</code> formatting (tabs).</rule>
-      <rule>Use lowercase package names and <code>CamelCase</code> for exported symbols.</rule>
-    </go>
+    <python>
+      <rule>Use typed FastAPI route handlers and keep response envelopes consistent.</rule>
+      <rule>Prefer local MongoDB repositories and backend-owned filesystem uploads.</rule>
+    </python>
     <dart_flutter>
       <rule>Use 2-space indentation and <code>dart format .</code>.</rule>
       <rule>Use <code>lowerCamelCase</code> for members and <code>UpperCamelCase</code> for classes.</rule>
@@ -59,20 +57,20 @@
   <architecture_rules>
     <rule>Frontend is a presentation/API client for expense/group data only.</rule>
     <rule>Frontend must use backend CRUD APIs for expense/group operations.</rule>
-    <rule>Backend is the canonical owner of writes/reads to Firebase Firestore/Storage.</rule>
-    <rule>Do not add direct frontend canonical persistence via Firestore, Storage, or local databases.</rule>
-    <rule>Keep HTTP error responses consistent with <code>backend/internal/httpapi/response.go</code>.</rule>
+    <rule>Backend is the canonical owner of writes/reads to MongoDB and local upload storage.</rule>
+    <rule>Do not add direct frontend canonical persistence via MongoDB, filesystem uploads, or local databases.</rule>
+    <rule>Keep HTTP error responses shaped as <code>{"error":{"code":"...","message":"..."}}</code>.</rule>
   </architecture_rules>
 
   <testing_guidelines>
-    <rule>Backend tests use Go <code>testing</code>; place <code>*_test.go</code> beside source files.</rule>
-    <rule>Prefer table-driven tests for service and handler edge cases.</rule>
+    <rule>Backend tests use <code>pytest</code>; place tests under <code>backend/tests/</code>.</rule>
+    <rule>Prefer focused route/repository tests for service and handler edge cases.</rule>
     <rule>Frontend tests live in <code>frontend/test/</code> and should cover blocs, repositories, and key widgets.</rule>
     <rule>Run module-local test suites before opening a PR.</rule>
   </testing_guidelines>
 
   <git_and_pr_guidelines>
-    <rule>Use clear, imperative commit messages (example: <code>backend: add auth middleware tests</code>).</rule>
+    <rule>Use clear, imperative commit messages (example: <code>backend: add local auth tests</code>).</rule>
     <rule>Assume multiple agents may edit in parallel.</rule>
     <rule>If a file changes while being edited, do not panic; another agent may be updating it concurrently.</rule>
     <rule>When concurrent edits are detected, re-read the latest file content and integrate changes safely.</rule>
@@ -82,9 +80,9 @@
   </git_and_pr_guidelines>
 
   <security_and_config>
-    <rule>Never commit secrets such as <code>serviceAccountKey.json</code>, API keys, or tokens.</rule>
-    <rule>Use environment variables for backend runtime configuration: <code>PORT</code>, <code>APP_ENV</code>, <code>DEV_AUTH_TOKEN</code>, <code>DEV_AUTH_UID</code>.</rule>
-    <rule>Current backend auth verifier is local-development oriented; production Firebase setup is pending.</rule>
+    <rule>Never commit secrets such as API keys, tokens, or local model credentials.</rule>
+    <rule>Use environment variables for backend runtime configuration: <code>MONGO_URI</code>, <code>MONGO_DB</code>, <code>DATA_DIR</code>, <code>AI_BASE_URL</code>, <code>AI_MODEL</code>.</rule>
+    <rule>AI processing must run on the backend machine only; do not add on-device model runtimes to Flutter.</rule>
   </security_and_config>
   <agent_behavior>
         <agentic_workflow_predictability>

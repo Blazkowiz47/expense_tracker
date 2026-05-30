@@ -27,7 +27,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
         BlocProvider(create: (_) => ThemeCubit()),
         BlocProvider(
           create: (_) => AuthCubit(
-            repository: authRepository ?? FirebaseAuthRepository(),
+            repository: authRepository ?? ApiAuthRepository(),
             userProfileRepository: profileRepository,
           ),
         ),

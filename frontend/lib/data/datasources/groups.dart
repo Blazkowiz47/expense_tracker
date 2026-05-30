@@ -3,9 +3,9 @@ import '../models/group.dart';
 /// Abstract interface for Groups data sources.
 ///
 /// Implementations of this interface provide access to group data
-/// from either local storage (Hive) or remote storage (Firebase).
+/// from either local storage (Hive) or remote API storage.
 abstract class GroupsDatasource {
-  /// Initialize the datasource (e.g., open Hive box, setup Firebase listeners)
+  /// Initialize the datasource (for example, open a Hive box).
   Future<void> initialize();
 
   /// Close the datasource and clean up resources

@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/profile/cubit/profile_edit_cubit.dart';
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/profile_edit_page.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,13 +13,15 @@ import 'package:mocktail/mocktail.dart';
 class _MockUserProfileRepository extends Mock
     implements UserProfileRepository {}
 
-class _MockUser extends Mock implements User {}
-
-class _FakeUser extends Fake implements User {}
-
 void main() {
   setUpAll(() {
-    registerFallbackValue(_FakeUser());
+    registerFallbackValue(
+      const AuthUser(
+        uid: 'uid-1',
+        email: 'user@example.com',
+        displayName: 'User',
+      ),
+    );
     registerFallbackValue(Uint8List.fromList(<int>[]));
   });
 
@@ -27,7 +29,11 @@ void main() {
     tester,
   ) async {
     final repository = _MockUserProfileRepository();
-    final user = _MockUser();
+    const user = AuthUser(
+      uid: 'uid-1',
+      email: 'user@example.com',
+      displayName: 'User',
+    );
     const profile = UserProfile(
       uid: 'uid-1',
       displayName: 'User',

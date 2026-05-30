@@ -5,24 +5,25 @@ SESSION="${SESSION:-expense-dev}"
 ROOT="/Users/sushrutpatwardhan/1Projects/expense_tracker"
 BACKEND_DIR="$ROOT/backend"
 FRONTEND_DIR="$ROOT/frontend"
-FIREBASE_CREDS_DEFAULT="$ROOT/firebase_config/expense-tracker-275c3-firebase-adminsdk-fbsvc-0c1a8a9132.json"
 
-FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-expense-tracker-275c3}"
-FIREBASE_CREDENTIALS_FILE="${FIREBASE_CREDENTIALS_FILE:-$FIREBASE_CREDS_DEFAULT}"
-FIREBASE_STORAGE_BUCKET="${FIREBASE_STORAGE_BUCKET:-$FIREBASE_PROJECT_ID.firebasestorage.app}"
+AUTH_MODE_USED="${AUTH_MODE:-local}"
+MONGO_URI_USED="${MONGO_URI:-mongodb://127.0.0.1:27017}"
+MONGO_DB_USED="${MONGO_DB:-expense_tracker_local}"
 
-AUTH_MODE_USED="${AUTH_MODE:-dev}"
-if [[ -f "$FIREBASE_CREDENTIALS_FILE" ]]; then
-  AUTH_MODE_USED="${AUTH_MODE:-firebase}"
+if ! nc -z 127.0.0.1 27017 >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    docker start expense-tracker-mongo >/dev/null 2>&1 || \
+      docker run -d --name expense-tracker-mongo -p 127.0.0.1:27017:27017 mongo:7 >/dev/null
+  else
+    echo "MongoDB is not listening on 127.0.0.1:27017 and Docker is unavailable."
+    echo "Start MongoDB locally, or start Docker and rerun this script."
+    exit 1
+  fi
 fi
 
-BACKEND_CMD="cd \"$BACKEND_DIR\" && AUTH_MODE=$AUTH_MODE_USED DEV_AUTH_TOKEN=dev-token DEV_AUTH_UID=local-user"
-if [[ -f "$FIREBASE_CREDENTIALS_FILE" ]]; then
-  BACKEND_CMD="$BACKEND_CMD FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID FIREBASE_CREDENTIALS_FILE=\"$FIREBASE_CREDENTIALS_FILE\" FIREBASE_STORAGE_BUCKET=$FIREBASE_STORAGE_BUCKET"
-fi
-BACKEND_CMD="$BACKEND_CMD go run ./cmd/server"
+BACKEND_CMD="cd \"$BACKEND_DIR\" && AUTH_MODE=$AUTH_MODE_USED MONGO_URI=\"$MONGO_URI_USED\" MONGO_DB=\"$MONGO_DB_USED\" DATA_DIR=\"$BACKEND_DIR/data\" uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload"
 
-FRONTEND_CMD="cd \"$FRONTEND_DIR\" && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 7357 --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=DEV_AUTH_TOKEN=dev-token --dart-define=AUTH_MODE=$AUTH_MODE_USED"
+FRONTEND_CMD="cd \"$FRONTEND_DIR\" && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 7357 --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=AUTH_MODE=$AUTH_MODE_USED"
 
 ATTACH=1
 if [[ "${1:-}" == "--no-attach" ]]; then

@@ -1,33 +1,39 @@
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/profile/cubit/profile_edit_cubit.dart';
 import 'package:expense_tracker/features/profile/cubit/profile_edit_state.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 class _MockUserProfileRepository extends Mock
     implements UserProfileRepository {}
 
-class _MockUser extends Mock implements User {}
-
-class _FakeUser extends Fake implements User {}
-
 void main() {
   setUpAll(() {
-    registerFallbackValue(_FakeUser());
+    registerFallbackValue(
+      const AuthUser(
+        uid: 'uid-1',
+        email: 'user@example.com',
+        displayName: 'User',
+      ),
+    );
     registerFallbackValue(Uint8List.fromList(<int>[]));
   });
 
   group('ProfileEditCubit', () {
     late UserProfileRepository repository;
-    late User user;
+    late AuthUser user;
 
     setUp(() {
       repository = _MockUserProfileRepository();
-      user = _MockUser();
+      user = const AuthUser(
+        uid: 'uid-1',
+        email: 'user@example.com',
+        displayName: 'User',
+      );
     });
 
     test('has initial photo url when provided', () {

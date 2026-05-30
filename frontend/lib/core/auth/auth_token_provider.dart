@@ -1,30 +1,32 @@
 import 'package:expense_tracker/core/config/api_config.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:expense_tracker/features/auth/repositories/auth_session_store.dart';
 
 abstract class AuthTokenProvider {
   Future<String> getBearerToken();
 }
 
-class FirebaseAuthTokenProvider implements AuthTokenProvider {
-  const FirebaseAuthTokenProvider({FirebaseAuth? firebaseAuth})
-    : _firebaseAuth = firebaseAuth;
+class SessionAuthTokenProvider implements AuthTokenProvider {
+  const SessionAuthTokenProvider({
+    AuthSessionStore store = const AuthSessionStore(),
+  }) : _store = store;
 
-  final FirebaseAuth? _firebaseAuth;
+  final AuthSessionStore _store;
 
   @override
   Future<String> getBearerToken() async {
     final mode = ApiConfig.authMode.toLowerCase();
-    if (mode != 'firebase') {
+    if (mode == 'dev') {
       return ApiConfig.devAuthToken;
     }
 
-    final auth = _firebaseAuth ?? FirebaseAuth.instance;
-    final user = auth.currentUser;
-    if (user != null) {
-      final idToken = await user.getIdToken();
-      if (idToken != null && idToken.isNotEmpty) {
-        return idToken;
-      }
+    String? token;
+    try {
+      token = await _store.readToken();
+    } catch (_) {
+      return ApiConfig.devAuthToken;
+    }
+    if (token != null && token.isNotEmpty) {
+      return token;
     }
     return ApiConfig.devAuthToken;
   }

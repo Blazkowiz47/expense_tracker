@@ -122,7 +122,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
   @override
   Widget build(BuildContext context) {
     final accountPhotoUrl = context.select(
-      (AuthCubit? cubit) => cubit?.state.user?.photoURL,
+      (AuthCubit? cubit) => cubit?.state.user?.photoUrl,
     );
     return BlocProvider.value(
       value: _dashboardCubit,

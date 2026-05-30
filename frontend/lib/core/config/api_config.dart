@@ -11,7 +11,7 @@ class ApiConfig {
 
   static const String authMode = String.fromEnvironment(
     'AUTH_MODE',
-    defaultValue: 'dev',
+    defaultValue: 'local',
   );
 
   static const String accountName = String.fromEnvironment(

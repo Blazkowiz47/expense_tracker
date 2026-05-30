@@ -1,14 +1,21 @@
 import 'package:expense_tracker/app/app.dart';
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeAuthRepository implements AuthRepository {
   @override
-  Stream<User?> authStateChanges() => Stream<User?>.value(null);
+  Stream<AuthUser?> authStateChanges() => Stream<AuthUser?>.value(null);
 
   @override
-  Future<void> signInWithGoogle() async {}
+  Future<void> login({required String email, required String password}) async {}
+
+  @override
+  Future<void> register({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {}
 
   @override
   Future<void> signOut() async {}
@@ -24,6 +31,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Expense Tracker'), findsOneWidget);
-    expect(find.text('Continue with Google'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
   });
 }

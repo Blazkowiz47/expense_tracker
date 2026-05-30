@@ -6,9 +6,11 @@ import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
+import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
 
 class AddExpensePage extends StatefulWidget {
   const AddExpensePage({this.expense, super.key});
@@ -22,8 +24,12 @@ class AddExpensePage extends StatefulWidget {
 class _AddExpensePageState extends State<AddExpensePage> {
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
+  final _billRepository = BillAiRepository();
+  final _picker = ImagePicker();
   bool _saving = false;
+  bool _extractingBill = false;
   String? _error;
+  String? _billMessage;
 
   bool get _editing => widget.expense != null;
 
@@ -121,6 +127,58 @@ class _AddExpensePageState extends State<AddExpensePage> {
     }
   }
 
+  Future<void> _uploadBill() async {
+    setState(() {
+      _extractingBill = true;
+      _error = null;
+      _billMessage = 'Extracting bill on the backend...';
+    });
+    try {
+      final picked = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (picked == null) {
+        setState(() {
+          _extractingBill = false;
+          _billMessage = null;
+        });
+        return;
+      }
+      final result = await _billRepository.uploadAndWait(
+        bytes: await picked.readAsBytes(),
+        fileName: picked.name,
+        contentType: _contentTypeFor(picked.name),
+      );
+      if (!mounted) return;
+      _descriptionController.text = result.merchant.isNotEmpty
+          ? result.merchant
+          : result.notes;
+      if (result.amount > 0) {
+        _amountController.text = result.amount.toStringAsFixed(2);
+      }
+      setState(() {
+        _extractingBill = false;
+        _billMessage =
+            'Bill autofill ready (${(result.confidence * 100).toStringAsFixed(0)}% confidence).';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _extractingBill = false;
+        _error = 'Bill extraction failed: $error';
+        _billMessage = null;
+      });
+    }
+  }
+
+  String _contentTypeFor(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
   @override
   Widget build(BuildContext context) {
     return PlatformWidget(
@@ -152,6 +210,22 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   runSpacing: 8,
                   children: [Chip(label: Text('Just you'))],
                 ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _saving || _extractingBill ? null : _uploadBill,
+                  icon: _extractingBill
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.receipt_long),
+                  label: const Text('Upload bill'),
+                ),
+                if (_billMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_billMessage!),
+                ],
                 const SizedBox(height: 16),
                 TextField(
                   controller: _descriptionController,
@@ -276,6 +350,16 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       ),
                     ],
                   ),
+                  CupertinoButton(
+                    onPressed: _saving || _extractingBill ? null : _uploadBill,
+                    child: _extractingBill
+                        ? const CupertinoActivityIndicator()
+                        : const Text('Upload bill'),
+                  ),
+                  if (_billMessage != null) ...[
+                    const SizedBox(height: 8),
+                    Text(_billMessage!),
+                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 8),
                     Text(

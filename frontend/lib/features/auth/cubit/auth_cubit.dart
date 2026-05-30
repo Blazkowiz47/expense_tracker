@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:expense_tracker/features/auth/cubit/auth_state.dart';
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -19,26 +19,39 @@ class AuthCubit extends Cubit<AuthState> {
 
   final AuthRepository _repository;
   final UserProfileRepository _userProfileRepository;
-  StreamSubscription<User?>? _subscription;
+  StreamSubscription<AuthUser?>? _subscription;
 
-  Future<void> signInWithGoogle() async {
+  Future<void> login({required String email, required String password}) async {
     emit(state.copyWith(status: AuthStatus.loading, message: null));
     try {
-      await _repository.signInWithGoogle();
-    } on FirebaseAuthException catch (error) {
+      await _repository.login(email: email, password: password);
+    } catch (error) {
       emit(
         state.copyWith(
           status: AuthStatus.failure,
-          message:
-              'Google sign-in failed (${error.code}). ${error.message ?? ''}'
-                  .trim(),
+          message: 'Sign in failed. Please try again. ($error)',
         ),
+      );
+    }
+  }
+
+  Future<void> register({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {
+    emit(state.copyWith(status: AuthStatus.loading, message: null));
+    try {
+      await _repository.register(
+        email: email,
+        password: password,
+        displayName: displayName,
       );
     } catch (error) {
       emit(
         state.copyWith(
           status: AuthStatus.failure,
-          message: 'Google sign-in failed. Please try again. ($error)',
+          message: 'Registration failed. Please try again. ($error)',
         ),
       );
     }
@@ -57,38 +70,14 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  void _onAuthChanged(User? user) {
+  void _onAuthChanged(AuthUser? user) {
     if (user == null) {
       emit(const AuthState(status: AuthStatus.unauthenticated));
       return;
     }
     debugPrint('AUTH: signed in uid=${user.uid} email=${user.email}');
     emit(AuthState(status: AuthStatus.authenticated, user: user));
-    unawaited(_bootstrapUserDocument(user));
-  }
-
-  Future<void> _bootstrapUserDocument(User user) async {
-    try {
-      debugPrint('AUTH: bootstrapping Firestore user doc for uid=${user.uid}');
-      await _userProfileRepository.ensureUserDocument(user);
-      debugPrint(
-        'AUTH: Firestore user doc upsert succeeded for uid=${user.uid}',
-      );
-    } on FirebaseException catch (error) {
-      debugPrint(
-        'AUTH: Firestore user doc upsert failed (${error.code}): ${error.message}',
-      );
-      emit(
-        state.copyWith(
-          message:
-              'Profile bootstrap failed (${error.code}). ${error.message ?? ''}'
-                  .trim(),
-        ),
-      );
-    } catch (error) {
-      debugPrint('AUTH: Firestore user doc upsert failed: $error');
-      emit(state.copyWith(message: 'Profile bootstrap failed: $error'));
-    }
+    unawaited(_userProfileRepository.ensureUserDocument(user));
   }
 
   @override

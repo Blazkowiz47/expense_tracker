@@ -39,9 +39,9 @@ class AccountPage extends StatelessWidget {
                 profileSnapshot.data ??
                 UserProfile(
                   uid: user.uid,
-                  displayName: user.displayName ?? 'User',
-                  email: user.email ?? '',
-                  photoUrl: user.photoURL,
+                  displayName: user.displayName,
+                  email: user.email,
+                  photoUrl: user.photoUrl,
                 );
 
             return AppPageContainer(

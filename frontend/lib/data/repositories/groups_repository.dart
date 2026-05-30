@@ -8,7 +8,7 @@ import '../models/group.dart';
 /// Provides a single source of truth for group data with:
 /// - In-memory cache for fast access
 /// - Local persistence for offline support
-/// - Remote sync with Firebase
+/// - Remote sync through the backend API
 class GroupsRepository {
   final GroupsDatasource localDatasource;
   final GroupsDatasource remoteDatasource;

@@ -12,7 +12,7 @@ class ApiDashboardSnapshotRepository implements DashboardSnapshotRepository {
     AuthTokenProvider? authTokenProvider,
   }) : _client = client,
        _authTokenProvider =
-           authTokenProvider ?? const FirebaseAuthTokenProvider();
+           authTokenProvider ?? const SessionAuthTokenProvider();
 
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;

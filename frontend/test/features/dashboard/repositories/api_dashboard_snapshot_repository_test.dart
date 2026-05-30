@@ -17,7 +17,7 @@ void main() {
   test('maps backend snapshot payload into dashboard snapshot', () async {
     final client = MockClient((request) async {
       if (request.url.path.endsWith('/api/v1/dashboard/snapshot')) {
-        expect(request.headers['authorization'], 'Bearer firebase-id-token');
+        expect(request.headers['authorization'], 'Bearer session-token');
         return http.Response(
           '{"overallLabel":"Overall, you are owed","overallAmountText":"INR 113.33","overallPositive":true,"friendItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"groupItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"activityItems":[{"title":"Groceries 1","subtitle":"2026-02-24T11:00:00Z","amountText":"You owe INR 50.00","positive":false}],"accountName":"Local User","accountEmail":"uid-1@local"}',
           200,
@@ -28,7 +28,7 @@ void main() {
 
     final repository = ApiDashboardSnapshotRepository(
       client: client,
-      authTokenProvider: const _FakeAuthTokenProvider('firebase-id-token'),
+      authTokenProvider: const _FakeAuthTokenProvider('session-token'),
     );
     final snapshot = await repository.fetchSnapshot();
 
