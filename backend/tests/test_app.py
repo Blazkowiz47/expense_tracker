@@ -254,3 +254,33 @@ def test_group_attachment_upload_accepts_multipart_file(tmp_path):
     )
     assert upload.status_code == 201, upload.text
     assert upload.json()["url"].endswith("receipt.jpg")
+
+
+def test_dashboard_includes_split_group_balance_items(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    register(client, "bob@example.com")
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Weekend Trip", "groupType": "split", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    created = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Dinner",
+            "amount": 100,
+            "date": "2026-05-20T10:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["groupItems"][0]["title"] == "Weekend Trip"
+    assert dashboard.json()["groupItems"][0]["subtitle"] == "you are owed"

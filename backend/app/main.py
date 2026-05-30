@@ -498,7 +498,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "overallAmountText": "INR 0.00",
             "overallPositive": True,
             "friendItems": friend_balance_items(app.state.db, user["uid"]),
-            "groupItems": [],
+            "groupItems": group_balance_items(app.state.db, user["uid"]),
             "activityItems": [
                 {"title": doc["description"] or doc["category"], "subtitle": doc["date"], "amountText": f"You spent INR {doc['amount']:.2f}", "positive": False}
                 for doc in docs
@@ -964,6 +964,31 @@ def friend_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "positive": amount > 0,
         })
     return items
+
+
+def group_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    groups = db.groups.find({"memberUids": uid, "groupType": {"$ne": "family"}}).sort("updatedAt", -1)
+    for group in groups:
+        expenses = list(db.group_expenses.find({"groupId": group["id"]}))
+        if not expenses:
+            continue
+        member_uids = group.get("memberUids", [])
+        users = list(db.users.find({"uid": {"$in": member_uids}}))
+        display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users))
+        member_balance = display_data.get("memberBalances", {}).get(uid, {})
+        amount = float(member_balance.get("net") or 0)
+        if abs(amount) <= 0.005:
+            subtitle = "settled up"
+        else:
+            subtitle = "you are owed" if amount > 0 else "you owe"
+        items.append({
+            "title": group.get("name") or "Group",
+            "subtitle": subtitle,
+            "amountText": f"INR {abs(amount):.2f}",
+            "positive": amount >= 0,
+        })
+    return items[:5]
 
 
 def add_date_filter(filters: dict[str, Any], from_value: str | None, to_value: str | None) -> None:
