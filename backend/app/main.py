@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import csv
+import calendar
 import base64
+import csv
 import hashlib
 import io
 import json
@@ -682,36 +683,91 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         frequency = str(body["frequency"]).strip().lower()
         if frequency not in {"daily", "weekly", "monthly"}:
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly or monthly"))
+        kind = str(body.get("kind") or "expense").strip().lower()
+        if kind not in {"expense", "income"}:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "kind must be expense or income"))
+        amount = float(body.get("amount") or body.get("expectedAmount") or 0)
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "amount must be positive"))
         start = parse_dt(str(body["startDate"]))
+        day_of_month = int(body.get("dayOfMonth") or start.day)
+        if day_of_month < 1 or day_of_month > 31:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "dayOfMonth must be between 1 and 31"))
         doc = {
             "id": uuid.uuid4().hex,
             "uid": user["uid"],
             "title": str(body["title"]).strip(),
-            "amount": float(body.get("amount") or 0),
+            "kind": kind,
+            "amount": amount,
+            "expectedAmount": amount,
+            "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
             "category": str(body["category"]).strip(),
             "frequency": frequency,
+            "dayOfMonth": day_of_month,
             "startDate": start,
-            "nextDueDate": next_due(start, frequency),
+            "nextDueDate": recurring_due_date_for_month(
+                {"startDate": start, "dayOfMonth": day_of_month, "frequency": frequency},
+                max(current_month(), f"{start.year:04d}-{start.month:02d}"),
+            ),
             "active": True,
             "createdAt": now(),
             "updatedAt": now(),
         }
         app.state.db.recurring_templates.insert_one(doc)
+        ensure_recurring_occurrences(app.state.db, user["uid"], current_month())
         return json_ready(doc)
+
+    @app.get("/api/v1/recurring/occurrences")
+    def recurring_occurrences(month: str = Query(default=""), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        period = normalize_month(month)
+        ensure_recurring_occurrences(app.state.db, user["uid"], period)
+        docs = app.state.db.recurring_occurrences.find({"uid": user["uid"], "period": period}).sort("dueDate", ASCENDING)
+        return {"occurrences": [recurring_occurrence_out(doc) for doc in docs]}
+
+    @app.post("/api/v1/recurring/occurrences/{occurrence_id}/confirm")
+    def confirm_recurring_occurrence(occurrence_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        occurrence = app.state.db.recurring_occurrences.find_one({"id": occurrence_id, "uid": user["uid"]})
+        if not occurrence:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "recurring occurrence not found"))
+        actual_amount = float(body.get("actualAmount") or 0)
+        if actual_amount <= 0:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "actualAmount must be positive"))
+        actual_date = parse_dt(str(body.get("actualDate") or iso(occurrence.get("dueDate") or now())))
+        updates: dict[str, Any] = {
+            "actualAmount": actual_amount,
+            "actualDate": actual_date,
+            "status": "confirmed",
+            "updatedAt": now(),
+        }
+        if "notes" in body:
+            updates["notes"] = str(body.get("notes") or "").strip()
+        if occurrence.get("kind") == "expense":
+            expense_body = {
+                "amount": actual_amount,
+                "currency": occurrence.get("currency") or "INR",
+                "category": occurrence.get("category") or "Personal",
+                "description": f"Recurring: {occurrence.get('title') or 'Payment'}",
+                "date": iso(actual_date),
+                "paymentMethod": body.get("paymentMethod") or "recurring",
+            }
+            existing_expense = None
+            if occurrence.get("expenseId"):
+                existing_expense = app.state.db.expenses.find_one({"id": occurrence["expenseId"], "uid": user["uid"]})
+            expense = build_expense(
+                expense_body,
+                user["uid"],
+                expense_id=(existing_expense or {}).get("id") or uuid.uuid4().hex,
+                created_at=(existing_expense or {}).get("createdAt"),
+            )
+            app.state.db.expenses.replace_one({"id": expense["id"], "uid": user["uid"]}, expense, upsert=True)
+            updates["expenseId"] = expense["id"]
+        app.state.db.recurring_occurrences.update_one({"id": occurrence_id, "uid": user["uid"]}, {"$set": updates})
+        updated = app.state.db.recurring_occurrences.find_one({"id": occurrence_id, "uid": user["uid"]})
+        return recurring_occurrence_out(updated)
 
     @app.post("/api/v1/recurring/process-due")
     def process_due(user: dict[str, Any] = Depends(current_user)) -> dict[str, int]:
-        count = 0
-        current = now()
-        for template in app.state.db.recurring_templates.find({"uid": user["uid"], "active": True, "nextDueDate": {"$lte": current}}):
-            expense = build_expense(
-                {"amount": template["amount"], "category": template["category"], "description": "Recurring: " + template["title"], "date": iso(template["nextDueDate"])},
-                user["uid"],
-            )
-            app.state.db.expenses.insert_one(expense)
-            app.state.db.recurring_templates.update_one({"id": template["id"]}, {"$set": {"nextDueDate": next_due(template["nextDueDate"], template["frequency"]), "updatedAt": current}})
-            count += 1
-        return {"created": count}
+        return {"created": ensure_recurring_occurrences(app.state.db, user["uid"], current_month())}
 
     @app.post("/api/v1/bills", status_code=201)
     async def upload_bill(background_tasks: BackgroundTasks, file: UploadFile = File(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -799,6 +855,9 @@ def ensure_indexes(db: Any) -> None:
     db.groups.create_index("memberUids")
     db.group_expenses.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
+    db.recurring_templates.create_index([("uid", ASCENDING), ("active", ASCENDING)])
+    db.recurring_occurrences.create_index([("uid", ASCENDING), ("period", ASCENDING)])
+    db.recurring_occurrences.create_index([("uid", ASCENDING), ("templateId", ASCENDING), ("period", ASCENDING)], unique=True)
 
 
 def create_user_doc(uid: str, email: str, display_name: str, password_hash: str) -> dict[str, Any]:
@@ -871,6 +930,11 @@ def normalize_month(value: str) -> str:
     return f"{year:04d}-{month_number:02d}"
 
 
+def current_month() -> str:
+    current = now()
+    return f"{current.year:04d}-{current.month:02d}"
+
+
 def month_range(month: str) -> tuple[datetime, datetime]:
     year, month_number = [int(part) for part in month.split("-")]
     start = datetime(year, month_number, 1, tzinfo=UTC)
@@ -879,6 +943,60 @@ def month_range(month: str) -> tuple[datetime, datetime]:
     else:
         end = datetime(year, month_number + 1, 1, tzinfo=UTC)
     return start, end
+
+
+def recurring_due_date_for_month(template: dict[str, Any], month: str) -> datetime:
+    year, month_number = [int(part) for part in month.split("-")]
+    frequency = str(template.get("frequency") or "monthly").lower()
+    start = aware(template.get("startDate") or now())
+    if frequency != "monthly":
+        return next_due(start, frequency)
+    last_day = calendar.monthrange(year, month_number)[1]
+    day = int(template.get("dayOfMonth") or start.day)
+    return datetime(year, month_number, min(day, last_day), tzinfo=UTC)
+
+
+def ensure_recurring_occurrences(db: Any, uid: str, month: str) -> int:
+    period = normalize_month(month)
+    start, end = month_range(period)
+    created = 0
+    for template in db.recurring_templates.find({"uid": uid, "active": True}):
+        template_start = aware(template.get("startDate") or start)
+        if template_start >= end:
+            continue
+        due_date = recurring_due_date_for_month(template, period)
+        if due_date < start or due_date >= end or due_date < template_start:
+            continue
+        doc = {
+            "id": uuid.uuid4().hex,
+            "uid": uid,
+            "templateId": template["id"],
+            "period": period,
+            "kind": template.get("kind") or "expense",
+            "title": template.get("title") or "Recurring item",
+            "category": template.get("category") or "Personal",
+            "currency": template.get("currency") or "INR",
+            "expectedAmount": float(template.get("expectedAmount") or template.get("amount") or 0),
+            "actualAmount": None,
+            "actualDate": None,
+            "dueDate": due_date,
+            "status": "expected",
+            "notes": "",
+            "createdAt": now(),
+            "updatedAt": now(),
+        }
+        result = db.recurring_occurrences.update_one(
+            {"uid": uid, "templateId": template["id"], "period": period},
+            {"$setOnInsert": doc},
+            upsert=True,
+        )
+        if getattr(result, "upserted_id", None) is not None:
+            created += 1
+    return created
+
+
+def recurring_occurrence_out(doc: dict[str, Any] | None) -> dict[str, Any]:
+    return json_ready(doc or {})
 
 
 def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:

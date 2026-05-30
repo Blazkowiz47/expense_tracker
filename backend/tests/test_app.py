@@ -156,6 +156,91 @@ def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
     assert food["remaining"] == 300
 
 
+def test_recurring_income_can_be_confirmed_with_actual_amount(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Salary",
+            "kind": "income",
+            "amount": 31000,
+            "currency": "INR",
+            "category": "Salary",
+            "frequency": "monthly",
+            "dayOfMonth": 15,
+            "startDate": "2026-05-01T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["kind"] == "income"
+
+    listed = client.get("/api/v1/recurring/occurrences?month=2026-05", headers=headers)
+    assert listed.status_code == 200, listed.text
+    occurrence = listed.json()["occurrences"][0]
+    assert occurrence["expectedAmount"] == 31000
+    assert occurrence["actualAmount"] is None
+
+    confirmed = client.post(
+        f"/api/v1/recurring/occurrences/{occurrence['id']}/confirm",
+        headers=headers,
+        json={"actualAmount": 30500, "actualDate": "2026-05-16T10:00:00Z"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["status"] == "confirmed"
+    assert confirmed.json()["actualAmount"] == 30500
+
+    expenses = client.get("/api/v1/expenses", headers=headers)
+    assert expenses.status_code == 200
+    assert expenses.json()["expenses"] == []
+
+
+def test_recurring_payment_confirmation_creates_or_updates_expense(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Rent",
+            "kind": "expense",
+            "amount": 12000,
+            "category": "Rent",
+            "frequency": "monthly",
+            "dayOfMonth": 5,
+            "startDate": "2026-05-01T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    occurrence = client.get(
+        "/api/v1/recurring/occurrences?month=2026-05",
+        headers=headers,
+    ).json()["occurrences"][0]
+
+    confirmed = client.post(
+        f"/api/v1/recurring/occurrences/{occurrence['id']}/confirm",
+        headers=headers,
+        json={"actualAmount": 12500, "actualDate": "2026-05-05T10:00:00Z"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    expense_id = confirmed.json()["expenseId"]
+
+    edited = client.post(
+        f"/api/v1/recurring/occurrences/{occurrence['id']}/confirm",
+        headers=headers,
+        json={"actualAmount": 12400, "actualDate": "2026-05-06T10:00:00Z"},
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["expenseId"] == expense_id
+
+    expenses = client.get("/api/v1/expenses", headers=headers).json()["expenses"]
+    assert len(expenses) == 1
+    assert expenses[0]["amount"] == 12400
+
+
 def test_friend_settlement_is_visible_to_both_users(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")

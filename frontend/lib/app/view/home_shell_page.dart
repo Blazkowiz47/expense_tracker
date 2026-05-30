@@ -17,6 +17,7 @@ import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
+import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -172,6 +173,12 @@ class _HomeShellPageState extends State<HomeShellPage>
     Navigator.of(
       context,
     ).push<void>(platformPageRoute(builder: (_) => const FriendsPage()));
+  }
+
+  void _openRecurringPage() {
+    Navigator.of(
+      context,
+    ).push<void>(platformPageRoute(builder: (_) => const RecurringPage()));
   }
 
   Widget _pageForDestination(_ShellDestination destination) {
@@ -437,6 +444,11 @@ class _HomeShellPageState extends State<HomeShellPage>
         onTap: () => _runAction(
           () => _openAddExpense(initialBillUpload: true, forcePersonal: true),
         ),
+      ),
+      _QuickAction(
+        label: 'Recurring',
+        icon: Icons.event_repeat,
+        onTap: () => _runAction(_openRecurringPage),
       ),
       _QuickAction(
         label: 'Settle up',

@@ -5,6 +5,7 @@ class AppRoutes {
   static const friends = '/friends';
   static const family = '/family';
   static const groups = '/groups';
+  static const recurring = '/recurring';
   static const activity = '/activity';
   static const account = '/account';
   static const accountEdit = '/account/edit';

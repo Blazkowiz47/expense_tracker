@@ -41,9 +41,12 @@ class ApiRecurringRepository {
 
   Future<RecurringTemplate> createTemplate({
     required String title,
+    required String kind,
     required double amount,
     required String category,
+    required String currency,
     required String frequency,
+    required int dayOfMonth,
     required DateTime startDate,
   }) async {
     final token = await _authTokenProvider.getBearerToken();
@@ -57,9 +60,12 @@ class ApiRecurringRepository {
       },
       body: jsonEncode(<String, dynamic>{
         'title': title,
+        'kind': kind,
         'amount': amount,
+        'currency': currency,
         'category': category,
         'frequency': frequency,
+        'dayOfMonth': dayOfMonth,
         'startDate': startDate.toUtc().toIso8601String(),
       }),
     );
@@ -70,6 +76,63 @@ class ApiRecurringRepository {
     }
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     return RecurringTemplate.fromJson(payload);
+  }
+
+  Future<List<RecurringOccurrence>> fetchOccurrences({
+    required String month,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/recurring/occurrences',
+    ).replace(queryParameters: <String, String>{'month': month});
+    final response = await _client.get(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'recurring occurrences request failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final occurrences = (payload['occurrences'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(RecurringOccurrence.fromJson)
+        .toList(growable: false);
+    return occurrences;
+  }
+
+  Future<RecurringOccurrence> confirmOccurrence({
+    required String occurrenceId,
+    required double actualAmount,
+    required DateTime actualDate,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/recurring/occurrences/$occurrenceId/confirm',
+    );
+    final response = await _client.post(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(<String, dynamic>{
+        'actualAmount': actualAmount,
+        'actualDate': actualDate.toUtc().toIso8601String(),
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'confirm recurring occurrence failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return RecurringOccurrence.fromJson(payload);
   }
 
   Future<int> processDueTemplates() async {

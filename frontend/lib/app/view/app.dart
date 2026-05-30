@@ -10,6 +10,7 @@ import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/account_edit_route_page.dart';
+import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:flutter/foundation.dart';
@@ -91,6 +92,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
       case AppRoutes.friends:
       case AppRoutes.family:
       case AppRoutes.groups:
+      case AppRoutes.recurring:
       case AppRoutes.activity:
       case AppRoutes.account:
       case AppRoutes.accountEdit:
@@ -128,6 +130,7 @@ class _AuthGuardedRoute extends StatelessWidget {
           AppRoutes.friends => const FriendsPage(),
           AppRoutes.family => const HomeShellPage(initialIndex: 1),
           AppRoutes.groups => const GroupsPage(),
+          AppRoutes.recurring => const RecurringPage(),
           AppRoutes.activity => const HomeShellPage(initialIndex: 2),
           AppRoutes.account => const HomeShellPage(initialIndex: 3),
           AppRoutes.accountEdit => AccountEditRoutePage(
