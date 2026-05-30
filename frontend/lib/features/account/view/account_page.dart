@@ -55,8 +55,16 @@ class AccountPage extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 16),
-                const _SettingsTile(title: 'Notifications'),
-                const _SettingsTile(title: 'Security'),
+                _SettingsTile(
+                  title: 'Notifications',
+                  subtitle: 'Reminders are not configured yet.',
+                  onTap: () => _showUnavailable(context, 'Notifications'),
+                ),
+                _SettingsTile(
+                  title: 'Security',
+                  subtitle: 'Password and sessions are managed by the backend.',
+                  onTap: () => _showUnavailable(context, 'Security'),
+                ),
                 _SettingsTile(
                   title: 'Theme',
                   onTap: () {
@@ -67,7 +75,11 @@ class AccountPage extends StatelessWidget {
                     );
                   },
                 ),
-                const _SettingsTile(title: 'Help and feedback'),
+                _SettingsTile(
+                  title: 'Help and feedback',
+                  subtitle: 'Local support options will land later.',
+                  onTap: () => _showUnavailable(context, 'Help and feedback'),
+                ),
                 _SettingsTile(
                   title: 'Logout',
                   onTap: context.read<AuthCubit?>() == null
@@ -80,6 +92,12 @@ class AccountPage extends StatelessWidget {
         );
       },
     );
+  }
+
+  void _showUnavailable(BuildContext context, String title) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$title is not available yet.')));
   }
 }
 
@@ -132,9 +150,10 @@ class _AccountAvatarFallback extends StatelessWidget {
 }
 
 class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({required this.title, this.onTap});
+  const _SettingsTile({required this.title, this.subtitle, this.onTap});
 
   final String title;
+  final String? subtitle;
   final VoidCallback? onTap;
 
   @override
@@ -142,7 +161,8 @@ class _SettingsTile extends StatelessWidget {
     return AppCard(
       child: ListTile(
         title: Text(title),
-        trailing: const Icon(Icons.chevron_right),
+        subtitle: subtitle == null ? null : Text(subtitle!),
+        trailing: onTap == null ? null : const Icon(Icons.chevron_right),
         onTap: onTap,
       ),
     );

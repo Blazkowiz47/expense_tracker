@@ -1,6 +1,6 @@
 # Expense Tracker — Design System
 
-A design system extracted from the **expense_tracker** codebase: a Splitwise-inspired expense and balance tracker built with Flutter (iOS / Android / Web) and a Python/FastAPI + MongoDB backend.
+A design system extracted from the **expense_tracker** codebase: a personal expense and balance tracker built with Flutter (iOS / Android / Web) and a Python/FastAPI + MongoDB backend.
 
 ## Source & references
 
@@ -51,7 +51,7 @@ A single-product consumer expense tracker — splits bills between friends and g
 
 ## VISUAL FOUNDATIONS
 
-**Color**: Accent-driven Material 3. One seed color (green `#26A17B` in the default Splitwise family) drives the full `ColorScheme.fromSeed()` palette. Three theme families exist — Splitwise (green), Tokyo Night (blue `#7AA2F7`), Mint (`#3FBF9B`) — each with light / dark / high-contrast / custom variants. **Positive money** is always `#1B8C67` (a single hardcoded green, not theme-linked). **Negative money** uses `ColorScheme.error`.
+**Color**: Accent-driven Material 3. One seed color drives the full `ColorScheme.fromSeed()` palette. Two theme families exist in code — Tokyo Night (blue `#7AA2F7`) and Mint (`#3FBF9B`) — each with light / dark / high-contrast / custom variants. **Positive money** is always `#1B8C67` (a single hardcoded green, not theme-linked). **Negative money** uses `ColorScheme.error`.
 
 **Backgrounds**: Solid. No gradients, no images, no textures, no patterns.
 - Light scaffold: `#F7F8F9` (warm neutral off-white)
@@ -86,7 +86,7 @@ Cards sit on top as pure `#FFFFFF` (light) surfaces.
 - Tablet/Desktop: centered column, `maxWidth: 900` (pages) or `760` (add-expense form).
 - Breakpoints: mobile `<600` / tablet `<1024` / desktop `≥1024`.
 - Desktop shell swaps `NavigationBar` (bottom) for `NavigationRail` (left, label-type: `all`).
-- FAB (`Add expense`) sits bottom-right; hidden on the Account tab (`_showAddExpenseButton = _selectedIndex < 3`).
+- FAB (`Add expense`) sits bottom-right; hidden on the Account tab.
 
 **Icon vibe**: Outlined by default, filled when selected (e.g. `Icons.person_outline` → `Icons.person` on active tab). On iOS, these map to Cupertino equivalents (`CupertinoIcons.person` / `person_fill`).
 
@@ -112,7 +112,6 @@ Cards sit on top as pure `#FFFFFF` (light) surfaces.
 
 | Family | Light | Dark | High-contrast |
 |---|---|---|---|
-| Splitwise (default) | `#26A17B` | `#1A8F6C` | `#000000` |
 | Tokyo Night | `#7AA2F7` | `#7DCFFF` | `#1D1D1D` |
 | Mint | `#3FBF9B` | `#2FAE8E` | `#0B3D2E` |
 

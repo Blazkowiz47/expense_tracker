@@ -12,8 +12,10 @@ class BillExtractionResult {
     required this.merchant,
     required this.amount,
     required this.date,
+    required this.currency,
     required this.category,
     required this.notes,
+    required this.lineItems,
     required this.confidence,
     required this.warnings,
   });
@@ -21,8 +23,10 @@ class BillExtractionResult {
   final String merchant;
   final double amount;
   final DateTime date;
+  final String currency;
   final String category;
   final String notes;
+  final List<BillLineItem> lineItems;
   final double confidence;
   final List<String> warnings;
 
@@ -32,12 +36,33 @@ class BillExtractionResult {
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       date:
           DateTime.tryParse((json['date'] as String?) ?? '') ?? DateTime.now(),
+      currency: (json['currency'] as String?) ?? 'INR',
       category: (json['category'] as String?) ?? 'Personal',
       notes: (json['notes'] as String?) ?? '',
+      lineItems: (json['lineItems'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(BillLineItem.fromJson)
+          .toList(growable: false),
       confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
       warnings: (json['warnings'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(growable: false),
+    );
+  }
+}
+
+class BillLineItem {
+  const BillLineItem({required this.name, this.quantity, this.amount});
+
+  final String name;
+  final String? quantity;
+  final double? amount;
+
+  factory BillLineItem.fromJson(Map<String, dynamic> json) {
+    return BillLineItem(
+      name: (json['name'] ?? json['title'] ?? '').toString(),
+      quantity: json['quantity']?.toString(),
+      amount: (json['amount'] as num?)?.toDouble(),
     );
   }
 }

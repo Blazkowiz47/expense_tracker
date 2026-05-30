@@ -5,7 +5,6 @@ import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
-import 'package:expense_tracker/features/dashboard/view/dashboard_overall_summary_card.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
@@ -167,8 +166,6 @@ class _GroupsPageState extends State<GroupsPage> {
       children: [
         AppPageContainer(
           children: [
-            const DashboardOverallSummaryCard(),
-            const SizedBox(height: 16),
             AppSectionHeader(
               title: _sectionTitle,
               actionLabel: _createActionLabel,

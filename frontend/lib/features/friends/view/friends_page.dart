@@ -2,7 +2,6 @@ import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/friends/utils/settlement_balance_calculator.dart';
-import 'package:expense_tracker/features/dashboard/view/dashboard_overall_summary_card.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
@@ -337,8 +336,6 @@ class _FriendsPageState extends State<FriendsPage> {
       children: [
         AppPageContainer(
           children: [
-            const DashboardOverallSummaryCard(),
-            const SizedBox(height: 16),
             AppSectionHeader(
               title: 'Friends',
               actionLabel: 'Add friend',
@@ -466,10 +463,15 @@ class _BalanceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final amountLabel = amount == null
+        ? Text(
+            'settled',
+            style: TextStyle(color: Theme.of(context).colorScheme.outline),
+          )
+        : AppMoneyLabel(text: AppMoney.format(amount!), positive: positive);
     return AppCard(
       child: ListTile(
         onTap: removing ? null : onSettleUp,
-        onLongPress: removing ? null : onRemove,
         leading: const AppAvatar(icon: Icons.person_outline),
         title: Text(name),
         subtitle: Text(subtitle),
@@ -479,12 +481,32 @@ class _BalanceTile extends StatelessWidget {
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2.2),
               )
-            : amount == null
-            ? Text(
-                'settled',
-                style: TextStyle(color: Theme.of(context).colorScheme.outline),
-              )
-            : AppMoneyLabel(text: AppMoney.format(amount!), positive: positive),
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  amountLabel,
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Settle up',
+                    onPressed: onSettleUp,
+                    icon: const Icon(Icons.payments_outlined),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Friend actions',
+                    onSelected: (value) {
+                      if (value == 'settle') onSettleUp?.call();
+                      if (value == 'remove') onRemove?.call();
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'settle', child: Text('Settle up')),
+                      PopupMenuItem(
+                        value: 'remove',
+                        child: Text('Remove friend'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
       ),
     );
   }

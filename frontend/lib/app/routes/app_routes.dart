@@ -1,5 +1,6 @@
 class AppRoutes {
   static const root = '/';
+  static const home = '/home';
   static const overview = '/overview';
   static const friends = '/friends';
   static const family = '/family';

@@ -46,7 +46,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
             theme: theme,
             darkTheme: theme,
             themeMode: mode,
-            initialRoute: AppRoutes.friends,
+            initialRoute: AppRoutes.home,
             onGenerateRoute: (settings) => _onGenerateRoute(
               settings: settings,
               profileRepository: profileRepository,
@@ -84,6 +84,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
   String _normalizeRoute(String? name) {
     switch (name) {
       case AppRoutes.root:
+      case AppRoutes.home:
       case AppRoutes.overview:
       case AppRoutes.friends:
       case AppRoutes.family:
@@ -91,9 +92,9 @@ class ExpenseTrackerAppView extends StatelessWidget {
       case AppRoutes.activity:
       case AppRoutes.account:
       case AppRoutes.accountEdit:
-        return name ?? AppRoutes.friends;
+        return name ?? AppRoutes.home;
       default:
-        return AppRoutes.friends;
+        return AppRoutes.home;
     }
   }
 }
@@ -120,12 +121,13 @@ class _AuthGuardedRoute extends StatelessWidget {
         }
 
         final routed = switch (routeName) {
+          AppRoutes.home => const HomeShellPage(initialIndex: 0),
           AppRoutes.overview => const HomeShellPage(initialIndex: 0),
-          AppRoutes.friends => const HomeShellPage(initialIndex: 0),
-          AppRoutes.family => const HomeShellPage(initialIndex: 1),
-          AppRoutes.groups => const HomeShellPage(initialIndex: 2),
-          AppRoutes.activity => const HomeShellPage(initialIndex: 3),
-          AppRoutes.account => const HomeShellPage(initialIndex: 4),
+          AppRoutes.friends => const HomeShellPage(initialIndex: 1),
+          AppRoutes.family => const HomeShellPage(initialIndex: 2),
+          AppRoutes.groups => const HomeShellPage(initialIndex: 3),
+          AppRoutes.activity => const HomeShellPage(initialIndex: 4),
+          AppRoutes.account => const HomeShellPage(initialIndex: 5),
           AppRoutes.accountEdit => AccountEditRoutePage(
             profileRepository: profileRepository,
           ),

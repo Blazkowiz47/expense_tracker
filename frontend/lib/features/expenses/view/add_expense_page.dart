@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
@@ -22,14 +23,40 @@ class AddExpensePage extends StatefulWidget {
 }
 
 class _AddExpensePageState extends State<AddExpensePage> {
+  static const _categories = <String>[
+    'Food',
+    'Groceries',
+    'Transport',
+    'Shopping',
+    'Bills',
+    'Travel',
+    'Health',
+    'Personal',
+  ];
+  static const _currencies = <String>['INR', 'NOK', 'USD', 'EUR', 'GBP'];
+  static const _paymentMethods = <String>[
+    'cash',
+    'card',
+    'upi',
+    'bank_transfer',
+    'other',
+  ];
+
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
+  final _notesController = TextEditingController();
   final _billRepository = BillAiRepository();
   final _picker = ImagePicker();
+
   bool _saving = false;
   bool _extractingBill = false;
   String? _error;
   String? _billMessage;
+  BillExtractionResult? _billResult;
+  DateTime _expenseDate = DateTime.now();
+  String _category = 'Personal';
+  String _currency = 'INR';
+  String _paymentMethod = 'cash';
 
   bool get _editing => widget.expense != null;
 
@@ -40,6 +67,18 @@ class _AddExpensePageState extends State<AddExpensePage> {
     if (expense != null) {
       _descriptionController.text = expense.description ?? expense.title;
       _amountController.text = expense.amount.toStringAsFixed(2);
+      _expenseDate = expense.createdAt;
+      _category = _normalizedChoice(
+        expense.category ?? 'Personal',
+        _categories,
+        'Personal',
+      );
+      _currency = _normalizedChoice(expense.currency, _currencies, 'INR');
+      _paymentMethod = _normalizedChoice(
+        expense.paymentMethod ?? 'cash',
+        _paymentMethods,
+        'cash',
+      );
     }
   }
 
@@ -47,6 +86,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   void dispose() {
     _descriptionController.dispose();
     _amountController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -64,18 +104,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
       return;
     }
 
+    final notes = _notesController.text.trim();
     final existing = widget.expense;
     final expense = Expense(
       core: ExpenseCore(
         id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         title: description,
         amount: amount,
-        currency: existing?.currency ?? 'INR',
-        category: existing?.category ?? 'Personal',
-        createdAt: existing?.createdAt ?? DateTime.now(),
+        currency: _currency,
+        category: _category,
+        createdAt: _expenseDate,
       ),
-      description: description,
-      paymentMethod: existing?.paymentMethod ?? 'cash',
+      description: notes.isEmpty ? description : '$description\n$notes',
+      paymentMethod: _paymentMethod,
       updatedAt: DateTime.now(),
       isSynced: false,
       deleted: existing?.deleted ?? false,
@@ -154,10 +195,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
       _descriptionController.text = result.merchant.isNotEmpty
           ? result.merchant
           : result.notes;
+      _notesController.text = result.notes;
       if (result.amount > 0) {
         _amountController.text = result.amount.toStringAsFixed(2);
       }
       setState(() {
+        _billResult = result;
+        _expenseDate = result.date;
+        _category = _normalizedChoice(result.category, _categories, 'Personal');
+        _currency = _normalizedChoice(result.currency, _currencies, 'INR');
         _extractingBill = false;
         _billMessage =
             'Bill autofill ready (${(result.confidence * 100).toStringAsFixed(0)}% confidence).';
@@ -172,11 +218,42 @@ class _AddExpensePageState extends State<AddExpensePage> {
     }
   }
 
+  Future<void> _pickDate() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _expenseDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _expenseDate = DateTime(
+        selected.year,
+        selected.month,
+        selected.day,
+        _expenseDate.hour,
+        _expenseDate.minute,
+      );
+    });
+  }
+
   String _contentTypeFor(String fileName) {
     final lower = fileName.toLowerCase();
     if (lower.endsWith('.png')) return 'image/png';
     if (lower.endsWith('.webp')) return 'image/webp';
     return 'image/jpeg';
+  }
+
+  String _normalizedChoice(
+    String value,
+    List<String> choices,
+    String fallback,
+  ) {
+    final lower = value.trim().toLowerCase();
+    return choices.firstWhere(
+      (choice) => choice.toLowerCase() == lower,
+      orElse: () => fallback,
+    );
   }
 
   @override
@@ -201,48 +278,28 @@ class _AddExpensePageState extends State<AddExpensePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'With you and',
+                  'Expense details',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const SizedBox(height: 10),
-                const Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [Chip(label: Text('Just you'))],
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: _saving || _extractingBill ? null : _uploadBill,
-                  icon: _extractingBill
-                      ? const SizedBox(
-                          height: 16,
-                          width: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.receipt_long),
-                  label: const Text('Upload bill'),
+                const SizedBox(height: 12),
+                _BillUploadButton(
+                  extracting: _extractingBill,
+                  saving: _saving,
+                  onPressed: _uploadBill,
                 ),
                 if (_billMessage != null) ...[
                   const SizedBox(height: 8),
                   Text(_billMessage!),
                 ],
+                if (_billResult != null) ...[
+                  const SizedBox(height: 12),
+                  _BillReviewPanel(result: _billResult!),
+                ],
                 const SizedBox(height: 16),
                 TextField(
                   controller: _descriptionController,
                   decoration: const InputDecoration(
-                    labelText: 'Description',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Amount',
-                    prefixText: AppMoney.inputPrefix,
+                    labelText: 'Merchant or description',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -250,16 +307,84 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 Row(
                   children: [
                     Expanded(
-                      child: _ReadonlySelector(label: 'Paid by', value: 'You'),
+                      child: TextField(
+                        controller: _amountController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Amount',
+                          prefixText: '$_currency ',
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
-                      child: _ReadonlySelector(
-                        label: 'Split',
-                        value: 'Personal',
+                    SizedBox(
+                      width: 130,
+                      child: _DropdownField(
+                        label: 'Currency',
+                        value: _currency,
+                        values: _currencies,
+                        onChanged: (value) => setState(() => _currency = value),
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DropdownField(
+                        label: 'Category',
+                        value: _category,
+                        values: _categories,
+                        onChanged: (value) => setState(() => _category = value),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DropdownField(
+                        label: 'Payment',
+                        value: _paymentMethod,
+                        values: _paymentMethods,
+                        labelFor: _paymentLabel,
+                        onChanged: (value) =>
+                            setState(() => _paymentMethod = value),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ActionSelector(
+                        label: 'Date',
+                        value: DateFormatter.formatDate(_expenseDate),
+                        icon: Icons.calendar_today,
+                        onTap: _pickDate,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: _StaticSelector(
+                        label: 'Split',
+                        value: 'Personal',
+                        icon: Icons.person_outline,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _notesController,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 10),
@@ -273,13 +398,25 @@ class _AddExpensePageState extends State<AddExpensePage> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
+          const SizedBox(height: 72),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: FilledButton.icon(
             onPressed: _saving ? null : _save,
-            icon: const Icon(Icons.check),
+            icon: _saving
+                ? const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check),
             label: const Text('Save expense'),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -306,18 +443,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
               child: ListView(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 children: [
-                  Text(
-                    'With you and',
-                    style: CupertinoTheme.of(
-                      context,
-                    ).textTheme.navTitleTextStyle,
+                  _BillUploadButton(
+                    extracting: _extractingBill,
+                    saving: _saving,
+                    onPressed: _uploadBill,
                   ),
-                  const SizedBox(height: 10),
-                  const Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [Chip(label: Text('Just you'))],
-                  ),
+                  if (_billMessage != null) ...[
+                    const SizedBox(height: 8),
+                    Text(_billMessage!),
+                  ],
+                  if (_billResult != null) ...[
+                    const SizedBox(height: 12),
+                    _BillReviewPanel(result: _billResult!),
+                  ],
                   const SizedBox(height: 12),
                   CupertinoFormSection.insetGrouped(
                     children: [
@@ -325,7 +463,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                         prefix: const Text('Description'),
                         child: CupertinoTextField(
                           controller: _descriptionController,
-                          placeholder: 'Enter a description',
+                          placeholder: 'Merchant or description',
                           textAlign: TextAlign.end,
                         ),
                       ),
@@ -333,33 +471,47 @@ class _AddExpensePageState extends State<AddExpensePage> {
                         prefix: const Text('Amount'),
                         child: CupertinoTextField(
                           controller: _amountController,
-                          placeholder: 'INR 0.00',
+                          placeholder: '0.00',
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
                           textAlign: TextAlign.end,
                         ),
                       ),
-                      const CupertinoFormRow(
-                        prefix: Text('Paid by'),
-                        child: Text('You', textAlign: TextAlign.end),
+                      CupertinoFormRow(
+                        prefix: const Text('Currency'),
+                        child: Text(_currency, textAlign: TextAlign.end),
                       ),
-                      const CupertinoFormRow(
-                        prefix: Text('Split'),
-                        child: Text('Personal', textAlign: TextAlign.end),
+                      CupertinoFormRow(
+                        prefix: const Text('Category'),
+                        child: Text(_category, textAlign: TextAlign.end),
+                      ),
+                      CupertinoFormRow(
+                        prefix: const Text('Date'),
+                        child: CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: _pickDate,
+                          child: Text(DateFormatter.formatDate(_expenseDate)),
+                        ),
+                      ),
+                      CupertinoFormRow(
+                        prefix: const Text('Payment'),
+                        child: Text(
+                          _paymentLabel(_paymentMethod),
+                          textAlign: TextAlign.end,
+                        ),
                       ),
                     ],
                   ),
-                  CupertinoButton(
-                    onPressed: _saving || _extractingBill ? null : _uploadBill,
-                    child: _extractingBill
-                        ? const CupertinoActivityIndicator()
-                        : const Text('Upload bill'),
+                  TextField(
+                    controller: _notesController,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Notes',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                  if (_billMessage != null) ...[
-                    const SizedBox(height: 8),
-                    Text(_billMessage!),
-                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 8),
                     Text(
@@ -382,13 +534,188 @@ class _AddExpensePageState extends State<AddExpensePage> {
       ),
     );
   }
+
+  static String _paymentLabel(String value) {
+    return switch (value) {
+      'cash' => 'Cash',
+      'card' => 'Card',
+      'upi' => 'UPI',
+      'bank_transfer' => 'Bank transfer',
+      _ => 'Other',
+    };
+  }
 }
 
-class _ReadonlySelector extends StatelessWidget {
-  const _ReadonlySelector({required this.label, required this.value});
+class _BillUploadButton extends StatelessWidget {
+  const _BillUploadButton({
+    required this.extracting,
+    required this.saving,
+    required this.onPressed,
+  });
+
+  final bool extracting;
+  final bool saving;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: saving || extracting ? null : onPressed,
+      icon: extracting
+          ? const SizedBox(
+              height: 16,
+              width: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.receipt_long),
+      label: Text(extracting ? 'Reading bill...' : 'Upload bill'),
+    );
+  }
+}
+
+class _BillReviewPanel extends StatelessWidget {
+  const _BillReviewPanel({required this.result});
+
+  final BillExtractionResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final confidence = (result.confidence * 100).toStringAsFixed(0);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Autofill review',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                Text('$confidence%'),
+              ],
+            ),
+            if (result.warnings.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...result.warnings.map(
+                (warning) => Text(
+                  warning,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
+            if (result.lineItems.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Line items', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 4),
+              ...result.lineItems
+                  .take(4)
+                  .map(
+                    (item) => Text(
+                      [
+                        item.name,
+                        if (item.quantity?.isNotEmpty == true)
+                          'x${item.quantity}',
+                        if (item.amount != null)
+                          '${result.currency} ${item.amount!.toStringAsFixed(2)}',
+                      ].join(' · '),
+                    ),
+                  ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DropdownField extends StatelessWidget {
+  const _DropdownField({
+    required this.label,
+    required this.value,
+    required this.values,
+    required this.onChanged,
+    this.labelFor,
+  });
 
   final String label;
   final String value;
+  final List<String> values;
+  final ValueChanged<String> onChanged;
+  final String Function(String value)? labelFor;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+      items: values
+          .map(
+            (item) => DropdownMenuItem<String>(
+              value: item,
+              child: Text(labelFor?.call(item) ?? item),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: (value) {
+        if (value != null) onChanged(value);
+      },
+    );
+  }
+}
+
+class _ActionSelector extends StatelessWidget {
+  const _ActionSelector({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          suffixIcon: Icon(icon),
+        ),
+        child: Text(value),
+      ),
+    );
+  }
+}
+
+class _StaticSelector extends StatelessWidget {
+  const _StaticSelector({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -396,7 +723,7 @@ class _ReadonlySelector extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
-        suffixIcon: const Icon(Icons.chevron_right),
+        suffixIcon: Icon(icon),
       ),
       child: Text(value),
     );

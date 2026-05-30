@@ -10,6 +10,7 @@ import 'package:expense_tracker/features/activity/view/activity_page.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
+import 'package:expense_tracker/features/dashboard/view/home_page.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:expense_tracker/features/family/view/family_page.dart';
@@ -37,6 +38,12 @@ class _HomeShellPageState extends State<HomeShellPage> {
   late final DashboardSnapshotCubit _dashboardCubit;
 
   static const _destinations = <_ShellDestination>[
+    _ShellDestination(
+      label: 'Home',
+      icon: Icons.dashboard_outlined,
+      selectedIcon: Icons.dashboard,
+      page: HomePage(),
+    ),
     _ShellDestination(
       label: 'Friends',
       icon: Icons.person_outline,
@@ -392,17 +399,19 @@ class _HomeShellPageState extends State<HomeShellPage> {
   String _routeForIndex(int index) {
     switch (index) {
       case 0:
-        return AppRoutes.friends;
+        return AppRoutes.home;
       case 1:
-        return AppRoutes.family;
+        return AppRoutes.friends;
       case 2:
-        return AppRoutes.groups;
+        return AppRoutes.family;
       case 3:
-        return AppRoutes.activity;
+        return AppRoutes.groups;
       case 4:
+        return AppRoutes.activity;
+      case 5:
         return AppRoutes.account;
       default:
-        return AppRoutes.friends;
+        return AppRoutes.home;
     }
   }
 

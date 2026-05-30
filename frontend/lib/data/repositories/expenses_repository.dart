@@ -39,8 +39,10 @@ class ExpenseRepository {
           },
           body: jsonEncode(<String, dynamic>{
             'amount': expense.amount,
+            'currency': expense.currency,
             'category': expense.category ?? 'Personal',
             'description': expense.description ?? expense.title,
+            'paymentMethod': expense.paymentMethod ?? 'cash',
             'date': expense.createdAt.toUtc().toIso8601String(),
           }),
         )
@@ -70,8 +72,10 @@ class ExpenseRepository {
           },
           body: jsonEncode(<String, dynamic>{
             'amount': expense.amount,
+            'currency': expense.currency,
             'category': expense.category ?? 'Personal',
             'description': expense.description ?? expense.title,
+            'paymentMethod': expense.paymentMethod ?? 'cash',
             'date': expense.createdAt.toUtc().toIso8601String(),
           }),
         )
@@ -202,6 +206,8 @@ class ExpenseRepository {
   Expense _fromBackend(Map<String, dynamic> json) {
     final description = (json['description'] as String?)?.trim();
     final category = (json['category'] as String?)?.trim();
+    final currency = (json['currency'] as String?)?.trim();
+    final paymentMethod = (json['paymentMethod'] as String?)?.trim();
     final dateRaw = (json['date'] as String?) ?? '';
     final createdAt = DateTime.tryParse(dateRaw)?.toLocal() ?? DateTime.now();
     final updatedRaw = json['updatedAt'] as String?;
@@ -213,13 +219,13 @@ class ExpenseRepository {
             ? description
             : (category != null && category.isNotEmpty ? category : 'Expense'),
         amount: (json['amount'] as num?)?.toDouble() ?? 0,
-        currency: 'INR',
+        currency: currency?.isNotEmpty == true ? currency! : 'INR',
         category: category,
         createdAt: createdAt,
       ),
       description: description,
       updatedAt: updatedRaw != null ? DateTime.tryParse(updatedRaw) : null,
-      paymentMethod: null,
+      paymentMethod: paymentMethod?.isNotEmpty == true ? paymentMethod : null,
       isSynced: true,
       deleted: false,
     );

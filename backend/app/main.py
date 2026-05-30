@@ -754,8 +754,10 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "id": expense_id or uuid.uuid4().hex,
         "uid": uid,
         "amount": amount,
+        "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
         "category": str(body.get("category") or "Personal").strip() or "Personal",
         "description": str(body.get("description") or "").strip(),
+        "paymentMethod": str(body.get("paymentMethod") or "cash").strip() or "cash",
         "date": parse_dt(str(body.get("date") or iso(current))),
         "createdAt": created_at or current,
         "updatedAt": current,
@@ -763,7 +765,20 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
 
 
 def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
-    return json_ready({key: doc.get(key) for key in ["id", "amount", "category", "description", "date", "createdAt", "updatedAt"]})
+    return json_ready({
+        key: doc.get(key)
+        for key in [
+            "id",
+            "amount",
+            "currency",
+            "category",
+            "description",
+            "paymentMethod",
+            "date",
+            "createdAt",
+            "updatedAt",
+        ]
+    })
 
 
 def add_date_filter(filters: dict[str, Any], from_value: str | None, to_value: str | None) -> None:

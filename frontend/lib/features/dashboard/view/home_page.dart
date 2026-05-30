@@ -1,0 +1,121 @@
+import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
+import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
+import 'package:expense_tracker/features/dashboard/view/dashboard_overall_summary_card.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<DashboardSnapshotCubit>().state;
+    if (state is DashboardSnapshotFailure) {
+      return AppPageContainer(
+        children: [
+          AppEmptyState(
+            title: 'Dashboard unavailable',
+            subtitle: state.message,
+          ),
+        ],
+      );
+    }
+    if (state is! DashboardSnapshotLoaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final snapshot = state.snapshot;
+    return AppPageContainer(
+      children: [
+        const DashboardOverallSummaryCard(),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _MiniSummaryCard(
+                title: 'Friends',
+                items: snapshot.friendItems,
+                emptyText: 'No friend balances yet',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _MiniSummaryCard(
+                title: 'Groups',
+                items: snapshot.groupItems,
+                emptyText: 'No group balances yet',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        const AppSectionHeader(title: 'Recent activity'),
+        if (snapshot.activityItems.isEmpty)
+          const AppEmptyState(
+            title: 'Nothing to show yet',
+            subtitle: 'Add an expense or upload a bill to start your timeline.',
+          )
+        else
+          ...snapshot.activityItems.take(5).map(_RecentActivityTile.new),
+      ],
+    );
+  }
+}
+
+class _MiniSummaryCard extends StatelessWidget {
+  const _MiniSummaryCard({
+    required this.title,
+    required this.items,
+    required this.emptyText,
+  });
+
+  final String title;
+  final List<BalanceItem> items;
+  final String emptyText;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = items.isEmpty ? null : items.first;
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Text(
+            first?.amountText ?? emptyText,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(first?.title ?? 'All clear'),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentActivityTile extends StatelessWidget {
+  const _RecentActivityTile(this.item);
+
+  final ActivityItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: ListTile(
+        leading: AppAvatar(icon: Icons.receipt_long_outlined),
+        title: Text(item.title),
+        subtitle: Text(item.subtitle),
+        trailing: Text(
+          AppMoney.normalizeDisplayText(item.amountText),
+          style: TextStyle(
+            color: AppMoney.statusColor(context, positive: item.positive),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}

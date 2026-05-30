@@ -359,7 +359,11 @@ class _ActivityPageState extends State<ActivityPage> {
                 ),
               )
             else if (state.snapshot.activityItems.isEmpty)
-              const SizedBox.shrink()
+              const AppEmptyState(
+                title: 'No activity yet',
+                subtitle:
+                    'Saved expenses and group updates will appear here once you start tracking.',
+              )
             else
               ...state.snapshot.activityItems.map(
                 (item) => _ActivityTile(item: item),

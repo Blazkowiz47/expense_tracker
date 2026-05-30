@@ -19,6 +19,8 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
   bool _registerMode = false;
+  bool _passwordVisible = false;
+  String? _validationMessage;
 
   @override
   void dispose() {
@@ -29,19 +31,33 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _submit() {
-    final cubit = context.read<AuthCubit>();
-    if (_registerMode) {
-      cubit.register(
-        email: _emailController.text,
-        password: _passwordController.text,
-        displayName: _nameController.text,
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (!email.contains('@') || !email.contains('.')) {
+      setState(() => _validationMessage = 'Enter a valid email address.');
+      return;
+    }
+    if (password.length < 8) {
+      setState(
+        () => _validationMessage = 'Password must be at least 8 characters.',
       );
       return;
     }
-    cubit.login(
-      email: _emailController.text,
-      password: _passwordController.text,
-    );
+    if (_registerMode && _nameController.text.trim().isEmpty) {
+      setState(() => _validationMessage = 'Enter your name.');
+      return;
+    }
+    setState(() => _validationMessage = null);
+    final cubit = context.read<AuthCubit>();
+    if (_registerMode) {
+      cubit.register(
+        email: email,
+        password: password,
+        displayName: _nameController.text.trim(),
+      );
+      return;
+    }
+    cubit.login(email: email, password: password);
   }
 
   @override
@@ -49,9 +65,9 @@ class _LoginPageState extends State<LoginPage> {
     return BlocBuilder<AuthCubit, AuthState>(
       builder: (context, state) {
         final isLoading = state.status == AuthStatus.loading;
-        final message = state.status == AuthStatus.failure
-            ? state.message
-            : null;
+        final message =
+            _validationMessage ??
+            (state.status == AuthStatus.failure ? state.message : null);
 
         return SmartSelectionArea(
           child: PlatformWidget(
@@ -67,8 +83,13 @@ class _LoginPageState extends State<LoginPage> {
                   emailController: _emailController,
                   passwordController: _passwordController,
                   nameController: _nameController,
-                  onModeChanged: (value) =>
-                      setState(() => _registerMode = value),
+                  passwordVisible: _passwordVisible,
+                  onModeChanged: (value) => setState(() {
+                    _registerMode = value;
+                    _validationMessage = null;
+                  }),
+                  onPasswordVisibilityChanged: () =>
+                      setState(() => _passwordVisible = !_passwordVisible),
                   onSubmit: _submit,
                   useCupertino: true,
                 ),
@@ -82,7 +103,13 @@ class _LoginPageState extends State<LoginPage> {
                 emailController: _emailController,
                 passwordController: _passwordController,
                 nameController: _nameController,
-                onModeChanged: (value) => setState(() => _registerMode = value),
+                passwordVisible: _passwordVisible,
+                onModeChanged: (value) => setState(() {
+                  _registerMode = value;
+                  _validationMessage = null;
+                }),
+                onPasswordVisibilityChanged: () =>
+                    setState(() => _passwordVisible = !_passwordVisible),
                 onSubmit: _submit,
                 useCupertino: false,
               ),
@@ -95,7 +122,13 @@ class _LoginPageState extends State<LoginPage> {
                 emailController: _emailController,
                 passwordController: _passwordController,
                 nameController: _nameController,
-                onModeChanged: (value) => setState(() => _registerMode = value),
+                passwordVisible: _passwordVisible,
+                onModeChanged: (value) => setState(() {
+                  _registerMode = value;
+                  _validationMessage = null;
+                }),
+                onPasswordVisibilityChanged: () =>
+                    setState(() => _passwordVisible = !_passwordVisible),
                 onSubmit: _submit,
                 useCupertino: false,
               ),
@@ -115,7 +148,9 @@ class _LoginBody extends StatelessWidget {
     required this.emailController,
     required this.passwordController,
     required this.nameController,
+    required this.passwordVisible,
     required this.onModeChanged,
+    required this.onPasswordVisibilityChanged,
     required this.onSubmit,
     required this.useCupertino,
   });
@@ -126,7 +161,9 @@ class _LoginBody extends StatelessWidget {
   final TextEditingController emailController;
   final TextEditingController passwordController;
   final TextEditingController nameController;
+  final bool passwordVisible;
   final ValueChanged<bool> onModeChanged;
+  final VoidCallback onPasswordVisibilityChanged;
   final VoidCallback onSubmit;
   final bool useCupertino;
 
@@ -146,7 +183,9 @@ class _LoginBody extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             SmartText(
-              registerMode ? 'Create a local account' : 'Sign in to continue',
+              registerMode
+                  ? 'Create a backend account on this machine'
+                  : 'Sign in with your backend account',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -177,11 +216,19 @@ class _LoginBody extends StatelessWidget {
             TextField(
               controller: passwordController,
               enabled: !isLoading,
-              obscureText: true,
+              obscureText: !passwordVisible,
               onSubmitted: (_) => isLoading ? null : onSubmit(),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Password',
-                border: OutlineInputBorder(),
+                helperText: registerMode ? 'Use at least 8 characters.' : null,
+                suffixIcon: IconButton(
+                  tooltip: passwordVisible ? 'Hide password' : 'Show password',
+                  onPressed: isLoading ? null : onPasswordVisibilityChanged,
+                  icon: Icon(
+                    passwordVisible ? Icons.visibility_off : Icons.visibility,
+                  ),
+                ),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 20),
