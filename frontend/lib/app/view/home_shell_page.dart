@@ -32,11 +32,15 @@ class HomeShellPage extends StatefulWidget {
   State<HomeShellPage> createState() => _HomeShellPageState();
 }
 
-class _HomeShellPageState extends State<HomeShellPage> {
+class _HomeShellPageState extends State<HomeShellPage>
+    with SingleTickerProviderStateMixin {
   late int _selectedIndex;
   http.Client? _httpClient;
   late final bool _ownsHttpClient;
   late final DashboardSnapshotCubit _dashboardCubit;
+  late final AnimationController _actionMenuController;
+  late final Animation<double> _actionMenuAnimation;
+  bool _actionMenuOpen = false;
 
   static const _destinations = <_ShellDestination>[
     _ShellDestination(
@@ -87,6 +91,16 @@ class _HomeShellPageState extends State<HomeShellPage> {
     _ownsHttpClient = widget.repository == null;
     final repository = widget.repository ?? _buildApiRepository();
     _dashboardCubit = DashboardSnapshotCubit(repository: repository)..load();
+    _actionMenuController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+      reverseDuration: const Duration(milliseconds: 140),
+    );
+    _actionMenuAnimation = CurvedAnimation(
+      parent: _actionMenuController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
   }
 
   DashboardSnapshotRepository _buildApiRepository() {
@@ -97,6 +111,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
   @override
   void dispose() {
     _dashboardCubit.close();
+    _actionMenuController.dispose();
     if (_ownsHttpClient) {
       _httpClient?.close();
     }
@@ -105,6 +120,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
 
   void _onDestinationSelected(int index) {
     if (index == _selectedIndex) return;
+    _closeActionMenu();
     final path = _routeForIndex(index);
     try {
       Navigator.of(context).pushReplacementNamed(path);
@@ -115,8 +131,31 @@ class _HomeShellPageState extends State<HomeShellPage> {
     }
   }
 
-  void _openAddExpense() {
-    if (_destinations[_selectedIndex].label == 'Family') {
+  void _toggleActionMenu() {
+    setState(() => _actionMenuOpen = !_actionMenuOpen);
+    if (_actionMenuOpen) {
+      _actionMenuController.forward();
+    } else {
+      _actionMenuController.reverse();
+    }
+  }
+
+  void _closeActionMenu() {
+    if (!_actionMenuOpen) return;
+    setState(() => _actionMenuOpen = false);
+    _actionMenuController.reverse();
+  }
+
+  void _runAction(VoidCallback action) {
+    _closeActionMenu();
+    action();
+  }
+
+  void _openAddExpense({
+    bool initialBillUpload = false,
+    bool forcePersonal = false,
+  }) {
+    if (!forcePersonal && _destinations[_selectedIndex].label == 'Family') {
       Navigator.of(context).push<void>(
         platformPageRoute(
           builder: (_) => const GroupsPage(groupType: GroupType.family),
@@ -129,9 +168,31 @@ class _HomeShellPageState extends State<HomeShellPage> {
       platformPageRoute(
         builder: (context) => BlocProvider.value(
           value: expensesBloc,
-          child: const AddExpensePage(),
+          child: AddExpensePage(initialBillUpload: initialBillUpload),
         ),
       ),
+    );
+  }
+
+  void _openSharedSpace(GroupType groupType) {
+    Navigator.of(context).push<void>(
+      platformPageRoute(builder: (_) => GroupsPage(groupType: groupType)),
+    );
+  }
+
+  Widget _withActionScrim(Widget child) {
+    return Stack(
+      children: [
+        child,
+        if (_actionMenuOpen)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _closeActionMenu,
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.08)),
+            ),
+          ),
+      ],
     );
   }
 
@@ -179,9 +240,11 @@ class _HomeShellPageState extends State<HomeShellPage> {
         centerTitle: centerTitle,
         title: Text(_destinations[_selectedIndex].label),
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _destinations.map((d) => d.page).toList(growable: false),
+      body: _withActionScrim(
+        IndexedStack(
+          index: _selectedIndex,
+          children: _destinations.map((d) => d.page).toList(growable: false),
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -208,80 +271,78 @@ class _HomeShellPageState extends State<HomeShellPage> {
             })
             .toList(growable: false),
       ),
-      floatingActionButton: _showAddExpenseButton
-          ? _buildAddExpenseFab()
-          : null,
+      floatingActionButton: _showAddExpenseButton ? _buildActionFab() : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
   Widget _buildDesktopScaffold(String? accountPhotoUrl) {
     return Scaffold(
-      body: SafeArea(
-        child: Row(
-          children: [
-            NavigationRail(
-              selectedIndex: _selectedIndex,
-              labelType: NavigationRailLabelType.all,
-              onDestinationSelected: _onDestinationSelected,
-              destinations: _destinations
-                  .asMap()
-                  .entries
-                  .map(
-                    (entry) => NavigationRailDestination(
-                      icon: _buildDestinationIcon(
-                        index: entry.key,
-                        selected: false,
-                        accountPhotoUrl: accountPhotoUrl,
-                      ),
-                      selectedIcon: _buildDestinationIcon(
-                        index: entry.key,
-                        selected: true,
-                        accountPhotoUrl: accountPhotoUrl,
-                      ),
-                      label: Text(entry.value.label),
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
-            const VerticalDivider(width: 1),
-            Expanded(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg,
-                      20,
-                      AppSpacing.lg,
-                      12,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          _destinations[_selectedIndex].label,
-                          style: Theme.of(context).textTheme.headlineSmall,
+      body: _withActionScrim(
+        SafeArea(
+          child: Row(
+            children: [
+              NavigationRail(
+                selectedIndex: _selectedIndex,
+                labelType: NavigationRailLabelType.all,
+                onDestinationSelected: _onDestinationSelected,
+                destinations: _destinations
+                    .asMap()
+                    .entries
+                    .map(
+                      (entry) => NavigationRailDestination(
+                        icon: _buildDestinationIcon(
+                          index: entry.key,
+                          selected: false,
+                          accountPhotoUrl: accountPhotoUrl,
                         ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: IndexedStack(
-                      index: _selectedIndex,
-                      children: _destinations
-                          .map((d) => d.page)
-                          .toList(growable: false),
-                    ),
-                  ),
-                ],
+                        selectedIcon: _buildDestinationIcon(
+                          index: entry.key,
+                          selected: true,
+                          accountPhotoUrl: accountPhotoUrl,
+                        ),
+                        label: Text(entry.value.label),
+                      ),
+                    )
+                    .toList(growable: false),
               ),
-            ),
-          ],
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.lg,
+                        20,
+                        AppSpacing.lg,
+                        12,
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            _destinations[_selectedIndex].label,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: IndexedStack(
+                        index: _selectedIndex,
+                        children: _destinations
+                            .map((d) => d.page)
+                            .toList(growable: false),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      floatingActionButton: _showAddExpenseButton
-          ? _buildAddExpenseFab()
-          : null,
+      floatingActionButton: _showAddExpenseButton ? _buildActionFab() : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
@@ -326,7 +387,7 @@ class _HomeShellPageState extends State<HomeShellPage> {
                     ? CupertinoButton(
                         padding: EdgeInsets.zero,
                         minimumSize: const Size(30, 30),
-                        onPressed: _openAddExpense,
+                        onPressed: () => _openAddExpense(),
                         child: const Icon(CupertinoIcons.add_circled_solid),
                       )
                     : null,
@@ -336,25 +397,21 @@ class _HomeShellPageState extends State<HomeShellPage> {
                 child: Stack(
                   children: [
                     Positioned.fill(child: destination.page),
+                    if (_actionMenuOpen)
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _closeActionMenu,
+                          child: ColoredBox(
+                            color: Colors.black.withValues(alpha: 0.08),
+                          ),
+                        ),
+                      ),
                     if (showAddButton)
                       Positioned(
                         right: AppSpacing.md,
                         bottom: 90,
-                        child: CupertinoButton.filled(
-                          onPressed: _openAddExpense,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(CupertinoIcons.add, size: 18),
-                              SizedBox(width: 6),
-                              Text('Add expense'),
-                            ],
-                          ),
-                        ),
+                        child: _buildActionFab(compact: true),
                       ),
                   ],
                 ),
@@ -366,11 +423,86 @@ class _HomeShellPageState extends State<HomeShellPage> {
     );
   }
 
-  Widget _buildAddExpenseFab() {
-    return FloatingActionButton.extended(
-      onPressed: _openAddExpense,
-      icon: const Icon(Icons.receipt_long),
-      label: const Text('Add expense'),
+  Widget _buildActionFab({bool compact = false}) {
+    final actions = [
+      _QuickAction(
+        label: 'Scan bill',
+        icon: Icons.document_scanner_outlined,
+        onTap: () => _runAction(
+          () => _openAddExpense(initialBillUpload: true, forcePersonal: true),
+        ),
+      ),
+      _QuickAction(
+        label: 'Friend',
+        icon: Icons.person_add_alt_outlined,
+        onTap: () => _runAction(() => _onDestinationSelected(1)),
+      ),
+      _QuickAction(
+        label: 'Group',
+        icon: Icons.group_outlined,
+        onTap: () => _runAction(() => _openSharedSpace(GroupType.split)),
+      ),
+      _QuickAction(
+        label: 'Family',
+        icon: Icons.home_outlined,
+        onTap: () => _runAction(() => _openSharedSpace(GroupType.family)),
+      ),
+      _QuickAction(
+        label: 'Settle up',
+        icon: Icons.payments_outlined,
+        onTap: () => _runAction(() => _onDestinationSelected(1)),
+      ),
+    ];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        SizeTransition(
+          sizeFactor: _actionMenuAnimation,
+          axisAlignment: -1,
+          child: FadeTransition(
+            opacity: _actionMenuAnimation,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: actions
+                    .map(
+                      (action) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _QuickActionButton(action: action),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ),
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton.small(
+              heroTag: 'quick-actions-toggle',
+              tooltip: _actionMenuOpen ? 'Close actions' : 'More actions',
+              onPressed: _toggleActionMenu,
+              child: AnimatedRotation(
+                turns: _actionMenuOpen ? 0.125 : 0,
+                duration: const Duration(milliseconds: 160),
+                child: Icon(_actionMenuOpen ? Icons.close : Icons.add),
+              ),
+            ),
+            const SizedBox(width: 10),
+            FloatingActionButton.extended(
+              heroTag: 'add-expense-action',
+              onPressed: () => _openAddExpense(),
+              icon: const Icon(Icons.receipt_long),
+              label: Text(compact ? 'Add' : 'Add expense'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -472,6 +604,60 @@ class _ShellDestination {
   final IconData icon;
   final IconData selectedIcon;
   final Widget page;
+}
+
+class _QuickAction {
+  const _QuickAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+}
+
+class _QuickActionButton extends StatelessWidget {
+  const _QuickActionButton({required this.action});
+
+  final _QuickAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: colorScheme.surface,
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44, minWidth: 148),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Flexible(
+                  child: Text(
+                    action.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Icon(action.icon, size: 20, color: colorScheme.primary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _AccountDestinationAvatar extends StatelessWidget {

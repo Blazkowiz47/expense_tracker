@@ -14,9 +14,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 
 class AddExpensePage extends StatefulWidget {
-  const AddExpensePage({this.expense, super.key});
+  const AddExpensePage({
+    this.expense,
+    this.initialBillUpload = false,
+    super.key,
+  });
 
   final Expense? expense;
+  final bool initialBillUpload;
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
@@ -79,6 +84,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
         _paymentMethods,
         'cash',
       );
+    }
+    if (widget.initialBillUpload && expense == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _uploadBill();
+        }
+      });
     }
   }
 

@@ -26,7 +26,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNWidgets(2));
+    expect(find.byTooltip('More actions'), findsOneWidget);
     expect(find.text('Overview'), findsNothing);
     expect(find.text('Friends'), findsWidgets);
     expect(find.text('Family'), findsWidgets);
@@ -38,6 +39,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  testWidgets('mobile add action expands into quick actions', (tester) async {
+    await pumpShell(tester, size: const Size(430, 900));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Close actions'), findsOneWidget);
+    expect(find.text('Scan bill'), findsOneWidget);
+    expect(find.text('Friend'), findsOneWidget);
+    expect(find.text('Group'), findsOneWidget);
+    expect(find.text('Family'), findsWidgets);
+    expect(find.text('Settle up'), findsOneWidget);
   });
 
   testWidgets('desktop shell shows navigation rail', (tester) async {
