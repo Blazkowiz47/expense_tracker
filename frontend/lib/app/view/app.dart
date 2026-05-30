@@ -6,6 +6,8 @@ import 'package:expense_tracker/features/auth/cubit/auth_state.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/auth/view/login_page.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
+import 'package:expense_tracker/features/friends/view/friends_page.dart';
+import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/account_edit_route_page.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
@@ -123,11 +125,11 @@ class _AuthGuardedRoute extends StatelessWidget {
         final routed = switch (routeName) {
           AppRoutes.home => const HomeShellPage(initialIndex: 0),
           AppRoutes.overview => const HomeShellPage(initialIndex: 0),
-          AppRoutes.friends => const HomeShellPage(initialIndex: 1),
-          AppRoutes.family => const HomeShellPage(initialIndex: 2),
-          AppRoutes.groups => const HomeShellPage(initialIndex: 3),
-          AppRoutes.activity => const HomeShellPage(initialIndex: 4),
-          AppRoutes.account => const HomeShellPage(initialIndex: 5),
+          AppRoutes.friends => const FriendsPage(),
+          AppRoutes.family => const HomeShellPage(initialIndex: 1),
+          AppRoutes.groups => const GroupsPage(),
+          AppRoutes.activity => const HomeShellPage(initialIndex: 2),
+          AppRoutes.account => const HomeShellPage(initialIndex: 3),
           AppRoutes.accountEdit => AccountEditRoutePage(
             profileRepository: profileRepository,
           ),

@@ -7,7 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  const HomePage({this.onOpenFriends, this.onOpenGroups, super.key});
+
+  final VoidCallback? onOpenFriends;
+  final VoidCallback? onOpenGroups;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +43,7 @@ class HomePage extends StatelessWidget {
                 title: 'Friends',
                 items: snapshot.friendItems,
                 emptyText: 'No friend balances yet',
+                onTap: onOpenFriends,
               ),
             ),
             const SizedBox(width: 12),
@@ -48,6 +52,7 @@ class HomePage extends StatelessWidget {
                 title: 'Groups',
                 items: snapshot.groupItems,
                 emptyText: 'No group balances yet',
+                onTap: onOpenGroups,
               ),
             ),
           ],
@@ -71,21 +76,39 @@ class _MiniSummaryCard extends StatelessWidget {
     required this.title,
     required this.items,
     required this.emptyText,
+    this.onTap,
   });
 
   final String title;
   final List<BalanceItem> items;
   final String emptyText;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final first = items.isEmpty ? null : items.first;
     return AppCard(
       padding: const EdgeInsets.all(14),
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              if (onTap != null)
+                Icon(
+                  Icons.arrow_forward,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+            ],
+          ),
           const SizedBox(height: 8),
           Text(
             first?.amountText ?? emptyText,

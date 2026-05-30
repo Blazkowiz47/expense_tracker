@@ -25,10 +25,17 @@ void main() {
     await pumpShell(tester, size: const Size(430, 900));
     await tester.pumpAndSettle();
 
+    final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(find.byType(NavigationBar), findsOneWidget);
+    expect(nav.destinations, hasLength(4));
+    expect(
+      nav.destinations.whereType<NavigationDestination>().map((d) => d.label),
+      ['Home', 'Family', 'Activity', 'Account'],
+    );
     expect(find.byType(FloatingActionButton), findsNWidgets(2));
-    expect(find.byTooltip('More actions'), findsOneWidget);
+    expect(find.byTooltip('Quick actions'), findsOneWidget);
     expect(find.text('Overview'), findsNothing);
+    expect(find.text('Home'), findsWidgets);
     expect(find.text('Friends'), findsWidgets);
     expect(find.text('Family'), findsWidgets);
     expect(find.text('Groups'), findsWidgets);
@@ -45,15 +52,14 @@ void main() {
     await pumpShell(tester, size: const Size(430, 900));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('More actions'));
+    await tester.tap(find.byTooltip('Quick actions'));
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Close actions'), findsOneWidget);
+    expect(find.byTooltip('Close quick actions'), findsOneWidget);
     expect(find.text('Scan bill'), findsOneWidget);
-    expect(find.text('Friend'), findsOneWidget);
-    expect(find.text('Group'), findsOneWidget);
-    expect(find.text('Family'), findsWidgets);
     expect(find.text('Settle up'), findsOneWidget);
+    expect(find.text('Friend'), findsNothing);
+    expect(find.text('Group'), findsNothing);
   });
 
   testWidgets('desktop shell shows navigation rail', (tester) async {

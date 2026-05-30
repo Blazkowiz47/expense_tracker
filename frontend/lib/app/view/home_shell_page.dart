@@ -47,25 +47,13 @@ class _HomeShellPageState extends State<HomeShellPage>
       label: 'Home',
       icon: Icons.dashboard_outlined,
       selectedIcon: Icons.dashboard,
-      page: HomePage(),
-    ),
-    _ShellDestination(
-      label: 'Friends',
-      icon: Icons.person_outline,
-      selectedIcon: Icons.person,
-      page: FriendsPage(),
+      page: SizedBox.shrink(),
     ),
     _ShellDestination(
       label: 'Family',
       icon: Icons.home_outlined,
       selectedIcon: Icons.home,
       page: FamilyPage(),
-    ),
-    _ShellDestination(
-      label: 'Groups',
-      icon: Icons.group_outlined,
-      selectedIcon: Icons.group,
-      page: GroupsPage(),
     ),
     _ShellDestination(
       label: 'Activity',
@@ -180,6 +168,22 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
+  void _openFriendsPage() {
+    Navigator.of(
+      context,
+    ).push<void>(platformPageRoute(builder: (_) => const FriendsPage()));
+  }
+
+  Widget _pageForDestination(_ShellDestination destination) {
+    if (destination.label == 'Home') {
+      return HomePage(
+        onOpenFriends: _openFriendsPage,
+        onOpenGroups: () => _openSharedSpace(GroupType.split),
+      );
+    }
+    return destination.page;
+  }
+
   Widget _withActionScrim(Widget child) {
     return Stack(
       children: [
@@ -243,7 +247,9 @@ class _HomeShellPageState extends State<HomeShellPage>
       body: _withActionScrim(
         IndexedStack(
           index: _selectedIndex,
-          children: _destinations.map((d) => d.page).toList(growable: false),
+          children: _destinations
+              .map(_pageForDestination)
+              .toList(growable: false),
         ),
       ),
       bottomNavigationBar: NavigationBar(
@@ -331,7 +337,7 @@ class _HomeShellPageState extends State<HomeShellPage>
                       child: IndexedStack(
                         index: _selectedIndex,
                         children: _destinations
-                            .map((d) => d.page)
+                            .map(_pageForDestination)
                             .toList(growable: false),
                       ),
                     ),
@@ -396,7 +402,7 @@ class _HomeShellPageState extends State<HomeShellPage>
                 bottom: false,
                 child: Stack(
                   children: [
-                    Positioned.fill(child: destination.page),
+                    Positioned.fill(child: _pageForDestination(destination)),
                     if (_actionMenuOpen)
                       Positioned.fill(
                         child: GestureDetector(
@@ -433,24 +439,9 @@ class _HomeShellPageState extends State<HomeShellPage>
         ),
       ),
       _QuickAction(
-        label: 'Friend',
-        icon: Icons.person_add_alt_outlined,
-        onTap: () => _runAction(() => _onDestinationSelected(1)),
-      ),
-      _QuickAction(
-        label: 'Group',
-        icon: Icons.group_outlined,
-        onTap: () => _runAction(() => _openSharedSpace(GroupType.split)),
-      ),
-      _QuickAction(
-        label: 'Family',
-        icon: Icons.home_outlined,
-        onTap: () => _runAction(() => _openSharedSpace(GroupType.family)),
-      ),
-      _QuickAction(
         label: 'Settle up',
         icon: Icons.payments_outlined,
-        onTap: () => _runAction(() => _onDestinationSelected(1)),
+        onTap: () => _runAction(_openFriendsPage),
       ),
     ];
 
@@ -485,12 +476,14 @@ class _HomeShellPageState extends State<HomeShellPage>
           children: [
             FloatingActionButton.small(
               heroTag: 'quick-actions-toggle',
-              tooltip: _actionMenuOpen ? 'Close actions' : 'More actions',
+              tooltip: _actionMenuOpen
+                  ? 'Close quick actions'
+                  : 'Quick actions',
               onPressed: _toggleActionMenu,
               child: AnimatedRotation(
-                turns: _actionMenuOpen ? 0.125 : 0,
+                turns: _actionMenuOpen ? 0.25 : 0,
                 duration: const Duration(milliseconds: 160),
-                child: Icon(_actionMenuOpen ? Icons.close : Icons.add),
+                child: Icon(_actionMenuOpen ? Icons.close : Icons.more_horiz),
               ),
             ),
             const SizedBox(width: 10),
@@ -542,14 +535,10 @@ class _HomeShellPageState extends State<HomeShellPage>
       case 0:
         return AppRoutes.home;
       case 1:
-        return AppRoutes.friends;
-      case 2:
         return AppRoutes.family;
-      case 3:
-        return AppRoutes.groups;
-      case 4:
+      case 2:
         return AppRoutes.activity;
-      case 5:
+      case 3:
         return AppRoutes.account;
       default:
         return AppRoutes.home;
