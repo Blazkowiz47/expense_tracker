@@ -9,6 +9,9 @@ FRONTEND_DIR="$ROOT/frontend"
 AUTH_MODE_USED="${AUTH_MODE:-local}"
 MONGO_URI_USED="${MONGO_URI:-mongodb://127.0.0.1:27017}"
 MONGO_DB_USED="${MONGO_DB:-expense_tracker_local}"
+AI_PROVIDER_USED="${AI_PROVIDER:-custom}"
+AI_BASE_URL_USED="${AI_BASE_URL:-}"
+AI_MODEL_USED="${AI_MODEL:-unsloth/gemma-4-E4B-it-GGUF}"
 BACKEND_PYTHON="${BACKEND_PYTHON:-$BACKEND_DIR/.venv/bin/python}"
 
 if [[ ! -x "$BACKEND_PYTHON" ]]; then
@@ -28,7 +31,7 @@ if ! nc -z 127.0.0.1 27017 >/dev/null 2>&1; then
   fi
 fi
 
-BACKEND_CMD="cd \"$BACKEND_DIR\" && AUTH_MODE=$AUTH_MODE_USED MONGO_URI=\"$MONGO_URI_USED\" MONGO_DB=\"$MONGO_DB_USED\" DATA_DIR=\"$BACKEND_DIR/data\" \"$BACKEND_PYTHON\" -m uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload"
+BACKEND_CMD="cd \"$BACKEND_DIR\" && AUTH_MODE=$AUTH_MODE_USED MONGO_URI=\"$MONGO_URI_USED\" MONGO_DB=\"$MONGO_DB_USED\" DATA_DIR=\"$BACKEND_DIR/data\" AI_PROVIDER=\"$AI_PROVIDER_USED\" AI_BASE_URL=\"$AI_BASE_URL_USED\" AI_MODEL=\"$AI_MODEL_USED\" \"$BACKEND_PYTHON\" -m uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload"
 
 FRONTEND_CMD="cd \"$FRONTEND_DIR\" && flutter run -d web-server --web-hostname 127.0.0.1 --web-port 7357 --dart-define=API_BASE_URL=http://127.0.0.1:8080 --dart-define=AUTH_MODE=$AUTH_MODE_USED"
 

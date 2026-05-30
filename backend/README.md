@@ -24,3 +24,38 @@ Bill extraction is backend-only. Set `AI_BASE_URL` to a local Gemma-compatible
 HTTP endpoint if one is available. Without it, extraction falls back to a
 deterministic placeholder so upload/review flows continue to work.
 
+### Gemma 4 E4B via llama-server
+
+The backend can call a local OpenAI-compatible `llama-server` directly:
+
+```sh
+AI_PROVIDER=llama-server
+AI_BASE_URL=http://127.0.0.1:8001
+AI_MODEL=unsloth/gemma-4-E4B-it-GGUF
+```
+
+For the 16-bit E4B setup, download the 16-bit model and multimodal projector:
+
+```sh
+mkdir -p models
+hf download unsloth/gemma-4-E4B-it-GGUF \
+  --local-dir models/gemma-4-E4B-it-GGUF \
+  --include "gemma-4-E4B-it-BF16.gguf" \
+  --include "mmproj-F16.gguf"
+```
+
+Then run `llama-server` on port `8001`:
+
+```sh
+llama-server \
+  --model models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-BF16.gguf \
+  --mmproj models/gemma-4-E4B-it-GGUF/mmproj-F16.gguf \
+  --host 127.0.0.1 \
+  --port 8001 \
+  --alias unsloth/gemma-4-E4B-it-GGUF \
+  --ctx-size 32768 \
+  --chat-template-kwargs '{"enable_thinking":false}'
+```
+
+Start the app with those AI variables exported before running
+`scripts/start_expense_dev_tmux.sh --no-attach`.

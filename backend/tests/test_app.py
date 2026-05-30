@@ -4,7 +4,7 @@ from pathlib import Path
 import mongomock
 from fastapi.testclient import TestClient
 
-from app.main import create_app, run_bill_extraction
+from app.main import create_app, parse_model_json, run_bill_extraction
 
 
 class FakeExtractor:
@@ -107,3 +107,18 @@ def test_bill_upload_extraction_and_create_expense(tmp_path):
     assert expense.status_code == 201
     assert expense.json()["description"] == "Cafe Oslo"
     assert expense.json()["amount"] == 42.5
+
+
+def test_parse_model_json_handles_wrapped_json():
+    parsed = parse_model_json(
+        """
+        ```json
+        {"merchant": "Store", "amount": 12.3}
+        ```
+        """
+    )
+    assert parsed["merchant"] == "Store"
+    assert parsed["amount"] == 12.3
+
+    parsed = parse_model_json('Result: {"merchant": "Bakery", "amount": "8.5"}')
+    assert parsed["merchant"] == "Bakery"

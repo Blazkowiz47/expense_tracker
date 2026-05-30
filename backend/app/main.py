@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import csv
+import base64
 import hashlib
 import io
 import json
+import mimetypes
 import os
 import re
 import secrets
@@ -170,6 +172,88 @@ class LocalGemmaBillExtractor:
         }
 
 
+class LlamaServerBillExtractor(LocalGemmaBillExtractor):
+    def __init__(self, base_url: str | None, model: str):
+        super().__init__(base_url, model)
+
+    async def extract(self, file_path: Path, original_name: str) -> dict[str, Any]:
+        if not self.base_url:
+            return self._fallback(original_name, ["Local llama-server provider is not configured."])
+        try:
+            data_url = self._file_data_url(file_path, original_name)
+            async with httpx.AsyncClient(timeout=120) as client:
+                response = await client.post(
+                    self.base_url.rstrip("/") + "/v1/chat/completions",
+                    json={
+                        "model": self.model,
+                        "temperature": 0,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You extract receipt and bill fields for an expense tracker. "
+                                    "Return only valid JSON. Do not include reasoning or markdown."
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "image_url", "image_url": {"url": data_url}},
+                                    {
+                                        "type": "text",
+                                        "text": (
+                                            "Extract merchant, date, amount, currency, category, notes, "
+                                            "lineItems, confidence, and warnings from this bill. "
+                                            "Use ISO 8601 for date when visible. category should be a short "
+                                            "expense category. lineItems should be an array of objects with "
+                                            "name, quantity, amount when visible."
+                                        ),
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                )
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                return self._normalize(parse_model_json(content), original_name, [])
+        except Exception as exc:  # pragma: no cover - network path is covered by integration tests
+            return self._fallback(original_name, [f"Local llama-server provider unavailable: {exc}"])
+
+    def _file_data_url(self, file_path: Path, original_name: str) -> str:
+        mime_type = mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+
+def parse_model_json(content: Any) -> dict[str, Any]:
+    if isinstance(content, dict):
+        return content
+    text = str(content or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            raise
+        parsed = json.loads(match.group(0))
+    if not isinstance(parsed, dict):
+        raise ValueError("model response must be a JSON object")
+    return parsed
+
+
+def build_ai_provider() -> LocalGemmaBillExtractor:
+    base_url = os.getenv("AI_BASE_URL")
+    model = os.getenv("AI_MODEL", "unsloth/gemma-4-E4B-it-GGUF")
+    provider = os.getenv("AI_PROVIDER", "custom").strip().lower()
+    if provider in {"llama-server", "llama_cpp", "openai-compatible", "openai_compatible"}:
+        return LlamaServerBillExtractor(base_url, model)
+    return LocalGemmaBillExtractor(base_url, model)
+
+
 def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor | None = None) -> FastAPI:
     app = FastAPI(title="Expense Tracker API")
     data_dir = Path(os.getenv("DATA_DIR", str(DEFAULT_DATA_DIR)))
@@ -182,10 +266,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         app.state.mongo_client = client
     app.state.db = database
     app.state.upload_dir = upload_dir
-    app.state.ai_provider = ai_provider or LocalGemmaBillExtractor(
-        os.getenv("AI_BASE_URL"),
-        os.getenv("AI_MODEL", "gemma-local"),
-    )
+    app.state.ai_provider = ai_provider or build_ai_provider()
 
     app.add_middleware(
         CORSMiddleware,
