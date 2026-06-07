@@ -2483,81 +2483,99 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               autoRefresh: widget.autoRefresh,
               children: [
                 AppCard(
-                  child: ListTile(
-                    title: Text(
-                      widget.group.groupType == GroupType.family
-                          ? 'Family monthly spend'
-                          : 'Group total spend',
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '$_memberCount member${_memberCount == 1 ? '' : 's'}',
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          widget.group.groupType == GroupType.family
+                              ? 'Family monthly spend'
+                              : 'Group total spend',
                         ),
-                        if (_simplifyBalances) ...[
-                          const SizedBox(height: 4),
-                          Builder(
-                            builder: (context) {
-                              if (owedByCurrency.isEmpty &&
-                                  oweByCurrency.isEmpty) {
-                                return Text(
-                                  'You are all settled up',
-                                  style: TextStyle(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outline,
-                                  ),
-                                );
-                              }
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (owedByCurrency.isNotEmpty)
-                                    Text(
-                                      'You are owed ${AppMoney.formatCurrencyAmounts(owedByCurrency)}',
-                                      style: TextStyle(
-                                        color: AppMoney.positiveColor,
-                                      ),
-                                    ),
-                                  if (oweByCurrency.isNotEmpty)
-                                    Text(
-                                      'You owe ${AppMoney.formatCurrencyAmounts(oweByCurrency)}',
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '$_memberCount member${_memberCount == 1 ? '' : 's'}',
+                            ),
+                            if (_simplifyBalances) ...[
+                              const SizedBox(height: 4),
+                              Builder(
+                                builder: (context) {
+                                  if (owedByCurrency.isEmpty &&
+                                      oweByCurrency.isEmpty) {
+                                    return Text(
+                                      'You are all settled up',
                                       style: TextStyle(
                                         color: Theme.of(
                                           context,
-                                        ).colorScheme.error,
+                                        ).colorScheme.outline,
                                       ),
-                                    ),
-                                ],
-                              );
-                            },
-                          ),
-                        ] else ...[
-                          if (lentByCurrency.isNotEmpty ||
-                              borrowedByCurrency.isNotEmpty)
-                            const SizedBox(height: 4),
-                          if (lentByCurrency.isNotEmpty)
-                            Text(
-                              'You are owed ${AppMoney.formatCurrencyAmounts(lentByCurrency)}',
-                              style: TextStyle(color: AppMoney.positiveColor),
-                            ),
-                          if (borrowedByCurrency.isNotEmpty)
-                            Text(
-                              'You owe ${AppMoney.formatCurrencyAmounts(borrowedByCurrency)}',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
+                                    );
+                                  }
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (owedByCurrency.isNotEmpty)
+                                        Text(
+                                          'You are owed ${AppMoney.formatCurrencyAmounts(owedByCurrency)}',
+                                          style: TextStyle(
+                                            color: AppMoney.positiveColor,
+                                          ),
+                                        ),
+                                      if (oweByCurrency.isNotEmpty)
+                                        Text(
+                                          'You owe ${AppMoney.formatCurrencyAmounts(oweByCurrency)}',
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
                               ),
-                            ),
-                        ],
-                      ],
-                    ),
-                    trailing: Text(
-                      AppMoney.formatCurrencyAmounts(totalByCurrency),
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                            ] else ...[
+                              if (lentByCurrency.isNotEmpty ||
+                                  borrowedByCurrency.isNotEmpty)
+                                const SizedBox(height: 4),
+                              if (lentByCurrency.isNotEmpty)
+                                Text(
+                                  'You are owed ${AppMoney.formatCurrencyAmounts(lentByCurrency)}',
+                                  style: TextStyle(
+                                    color: AppMoney.positiveColor,
+                                  ),
+                                ),
+                              if (borrowedByCurrency.isNotEmpty)
+                                Text(
+                                  'You owe ${AppMoney.formatCurrencyAmounts(borrowedByCurrency)}',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                            ],
+                          ],
+                        ),
+                        trailing: Text(
+                          AppMoney.formatCurrencyAmounts(totalByCurrency),
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _busy ? null : _openSettings,
+                          icon: const Icon(Icons.handshake_outlined),
+                          label: const Text('Settle up'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),

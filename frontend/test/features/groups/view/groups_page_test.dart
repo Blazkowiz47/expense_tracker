@@ -194,6 +194,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Settle up'), findsOneWidget);
+
     await tester.tap(find.text('Add expense'));
     await tester.pumpAndSettle();
 
