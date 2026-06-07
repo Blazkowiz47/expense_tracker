@@ -190,6 +190,23 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
+  bool get _hasPendingInitialExpenseIntent {
+    return widget.openAddExpenseOnLaunch &&
+        !_didOpenInitialExpense &&
+        _selectedFamily != null &&
+        _families.length > 1;
+  }
+
+  Future<void> _openPendingInitialExpenseForSelectedFamily() {
+    _didOpenInitialExpense = true;
+    return _openSelectedFamily(
+      addExpense: true,
+      initialCategory: widget.initialExpenseCategory,
+      initialDescription: widget.initialExpenseDescription,
+      initialBillUpload: widget.initialBillUpload,
+    );
+  }
+
   void _openInitialExpenseIfRequested() {
     if (_didOpenInitialExpense ||
         !widget.openAddExpenseOnLaunch ||
@@ -465,6 +482,29 @@ class _FamilyPageState extends State<FamilyPage> {
           onOpen: () => _openSelectedFamily(),
           onAddExpense: _openGroceryExpense,
         ),
+        if (_hasPendingInitialExpenseIntent) ...[
+          const SizedBox(height: 12),
+          AppBalanceTile(
+            title: widget.initialBillUpload
+                ? 'Choose household for bill'
+                : 'Choose household for groceries',
+            subtitle: Text(
+              widget.initialBillUpload
+                  ? 'Select the household, then scan the bill there.'
+                  : 'Select the household, then add groceries there.',
+            ),
+            leadingIcon: Icons.home_work_outlined,
+            trailing: FilledButton.icon(
+              onPressed: _openPendingInitialExpenseForSelectedFamily,
+              icon: Icon(
+                widget.initialBillUpload
+                    ? Icons.document_scanner_outlined
+                    : Icons.shopping_basket_outlined,
+              ),
+              label: Text(widget.initialBillUpload ? 'Scan here' : 'Add here'),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         MonthlyPlanningCard(
           repository: widget.monthlyPlanRepository,

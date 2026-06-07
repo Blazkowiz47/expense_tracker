@@ -415,8 +415,21 @@ void main() {
 
     expect(find.text('Add household expense'), findsNothing);
     expect(find.text('Rao family'), findsWidgets);
+    expect(find.text('Choose household for groceries'), findsOneWidget);
+    expect(find.text('Add here'), findsOneWidget);
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -260));
     await tester.pumpAndSettle();
     expect(find.text('Parents household'), findsOneWidget);
+    await tester.tap(find.text('Parents household'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Add here'));
+    await tester.tap(find.text('Add here'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add household expense'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).controller?.text,
+      'Groceries',
+    );
   });
 }
