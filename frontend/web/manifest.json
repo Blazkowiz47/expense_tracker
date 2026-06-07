@@ -1,13 +1,19 @@
 {
-    "name": "expense_tracker",
-    "short_name": "expense_tracker",
+    "name": "Expense Tracker",
+    "short_name": "Expenses",
+    "description": "Track household spending, shared expenses, monthly plans, and recurring money.",
     "start_url": ".",
+    "scope": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F8FAFC",
+    "theme_color": "#0F766E",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "categories": [
+        "finance",
+        "productivity",
+        "utilities"
+    ],
     "icons": [
         {
             "src": "icons/Icon-192.png",
