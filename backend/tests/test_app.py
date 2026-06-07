@@ -137,6 +137,96 @@ def test_sync_freshness_tracks_personal_expense_changes_and_deletes(tmp_path):
     assert activity["personalDeletedIds"] == [expense_id]
 
 
+def test_activity_feed_returns_incremental_entries_and_tombstones(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+
+    personal = client.post(
+        "/api/v1/expenses",
+        headers=headers_b,
+        json={
+            "amount": 35,
+            "category": "Coffee",
+            "description": "Morning coffee",
+            "date": "2026-05-30T08:00:00Z",
+        },
+    )
+    assert personal.status_code == 201, personal.text
+    personal_id = personal.json()["id"]
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Household", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    group_expense = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Weekly groceries",
+            "amount": 120,
+            "category": "Groceries",
+            "date": "2026-05-30T11:00:00Z",
+        },
+    )
+    assert group_expense.status_code == 201, group_expense.text
+    group_expense_id = group_expense.json()["id"]
+
+    feed = client.get(
+        "/api/v1/activity?include=personal,group&limit=10",
+        headers=headers_b,
+    )
+    assert feed.status_code == 200, feed.text
+    payload = feed.json()
+    entries = payload["entries"]
+    assert {entry["kind"] for entry in entries} == {"personalExpense", "groupExpense"}
+    personal_entry = next(entry for entry in entries if entry["kind"] == "personalExpense")
+    group_entry = next(entry for entry in entries if entry["kind"] == "groupExpense")
+    assert personal_entry["expense"]["id"] == personal_id
+    assert group_entry["group"]["name"] == "Household"
+    assert group_entry["expense"]["id"] == group_expense_id
+    cursor = payload["serverTime"]
+
+    updated = client.put(
+        f"/api/v1/expenses/{personal_id}",
+        headers=headers_b,
+        json={
+            "amount": 42,
+            "category": "Coffee",
+            "description": "Morning coffee",
+            "date": "2026-05-30T08:00:00Z",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+
+    delta = client.get(f"/api/v1/activity?since={cursor}", headers=headers_b)
+    assert delta.status_code == 200, delta.text
+    delta_payload = delta.json()
+    assert [entry["kind"] for entry in delta_payload["entries"]] == ["personalExpense"]
+    assert delta_payload["entries"][0]["expense"]["amount"] == 42
+    cursor = delta_payload["serverTime"]
+
+    deleted_personal = client.delete(f"/api/v1/expenses/{personal_id}", headers=headers_b)
+    assert deleted_personal.status_code == 204, deleted_personal.text
+    deleted_group = client.delete(
+        f"/api/v1/groups/{group_id}/expenses/{group_expense_id}",
+        headers=headers_a,
+    )
+    assert deleted_group.status_code == 204, deleted_group.text
+
+    tombstones = client.get(f"/api/v1/activity?since={cursor}", headers=headers_b)
+    assert tombstones.status_code == 200, tombstones.text
+    assert tombstones.json()["tombstones"] == {
+        "personalDeletedIds": [personal_id],
+        "groupDeleted": [{"groupId": group_id, "expenseId": group_expense_id}],
+        "deletedGroupIds": [],
+    }
+
+
 def test_bill_upload_extraction_and_create_expense(tmp_path):
     client, app = make_client(tmp_path)
     headers = register(client)
@@ -505,6 +595,31 @@ def test_sync_freshness_tracks_group_expense_tombstones(tmp_path):
         {"groupId": group_id, "expenseId": expense_id}
     ]
     assert sections["groups"]["changed"] is True
+
+
+def test_activity_feed_reports_deleted_group_tombstones(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Family", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    baseline = client.get("/api/v1/activity?limit=1", headers=headers_b)
+    assert baseline.status_code == 200, baseline.text
+    cursor = baseline.json()["serverTime"]
+
+    left = client.post(f"/api/v1/groups/{group_id}/leave", headers=headers_b)
+    assert left.status_code == 200, left.text
+
+    feed = client.get(f"/api/v1/activity?since={cursor}", headers=headers_b)
+    assert feed.status_code == 200, feed.text
+    assert feed.json()["tombstones"]["deletedGroupIds"] == [group_id]
 
 
 def test_group_expense_saves_currency_snapshots_for_group_currencies(tmp_path):

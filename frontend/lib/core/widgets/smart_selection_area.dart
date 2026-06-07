@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class SmartSelectionArea extends StatelessWidget {
@@ -8,9 +7,6 @@ class SmartSelectionArea extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!kIsWeb) {
-      return child;
-    }
-    return SelectionArea(child: child);
+    return child;
   }
 }

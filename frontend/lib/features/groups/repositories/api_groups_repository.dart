@@ -107,6 +107,43 @@ class ApiGroupsRepository {
     );
   }
 
+  Future<void> removeCachedGroupIds(Iterable<String> groupIds) async {
+    final ids = groupIds.toSet();
+    if (ids.isEmpty) return;
+    final groupsCacheKey = await _scopedCacheKey(_groupsKey);
+    final cachedGroups = await _readListCache(groupsCacheKey);
+    await _saveListCache(
+      groupsCacheKey,
+      cachedGroups
+          .where((item) => !ids.contains(item['id']?.toString() ?? ''))
+          .toList(growable: false),
+    );
+    for (final groupId in ids) {
+      await _saveListCache(await _scopedCacheKey(_expensesKey(groupId)), []);
+      await _saveListCache(await _scopedCacheKey(_membersKey(groupId)), []);
+    }
+  }
+
+  Future<void> upsertCachedExpenses(
+    String groupId,
+    Iterable<GroupExpense> expenses,
+  ) async {
+    final updates = expenses
+        .where((expense) => expense.id.isNotEmpty)
+        .toList(growable: false);
+    if (updates.isEmpty) return;
+    final cacheKey = await _scopedCacheKey(_expensesKey(groupId));
+    final cachedById = <String, Map<String, dynamic>>{
+      for (final item in await _readListCache(cacheKey))
+        if ((item['id']?.toString() ?? '').isNotEmpty)
+          item['id'].toString(): item,
+    };
+    for (final expense in updates) {
+      cachedById[expense.id] = _expenseToCacheJson(expense);
+    }
+    await _saveListCache(cacheKey, cachedById.values.toList(growable: false));
+  }
+
   Future<List<GroupMember>> getCachedMembers(String groupId) async {
     final cached = await _readListCache(
       await _scopedCacheKey(_membersKey(groupId)),
@@ -440,5 +477,26 @@ class ApiGroupsRepository {
       }
     } catch (_) {}
     return body;
+  }
+
+  Map<String, dynamic> _expenseToCacheJson(GroupExpense expense) {
+    return <String, dynamic>{
+      'id': expense.id,
+      'groupId': expense.groupId,
+      'createdBy': expense.createdBy,
+      'updatedBy': expense.updatedBy,
+      'paidBy': expense.paidBy,
+      'splitMode': expense.splitMode,
+      'splitWith': expense.splitWith,
+      'amount': expense.amount,
+      'currency': expense.currency,
+      'convertedAmounts': expense.convertedAmounts,
+      'category': expense.category,
+      'description': expense.description,
+      'attachments': expense.attachments,
+      'date': expense.date.toUtc().toIso8601String(),
+      'createdAt': expense.createdAt.toUtc().toIso8601String(),
+      'updatedAt': expense.updatedAt.toUtc().toIso8601String(),
+    };
   }
 }

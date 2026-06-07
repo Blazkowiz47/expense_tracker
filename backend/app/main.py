@@ -341,6 +341,28 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             },
         }
 
+    @app.get("/api/v1/activity")
+    def activity_feed(
+        since: str | None = None,
+        limit: int = Query(default=80, ge=1, le=200),
+        include: str = "personal,group",
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        since_dt = parse_dt(since) if since else None
+        server_time = now()
+        include_sections = parse_activity_include(include)
+        return {
+            "serverTime": iso(server_time),
+            "entries": activity_feed_entries(
+                app.state.db,
+                user["uid"],
+                since_dt,
+                limit,
+                include_sections,
+            ),
+            "tombstones": activity_tombstones_since(app.state.db, user["uid"], since_dt),
+        }
+
     @app.post("/api/v1/auth/register", status_code=201)
     def register(body: dict[str, Any]) -> dict[str, Any]:
         require_json(body, "email", "password")
@@ -970,6 +992,7 @@ def create_session(db: Any, uid: str) -> str:
 
 
 FRESHNESS_SECTIONS = {"dashboard", "groups", "friends", "recurring", "activity"}
+ACTIVITY_INCLUDE_SECTIONS = {"personal", "group"}
 
 
 def parse_freshness_sections(raw: str) -> list[str]:
@@ -985,6 +1008,23 @@ def parse_freshness_sections(raw: str) -> list[str]:
         raise HTTPException(
             status_code=400,
             detail=api_error("INVALID_ARGUMENT", "sections must include a known freshness section"),
+        )
+    return sections
+
+
+def parse_activity_include(raw: str) -> set[str]:
+    requested = {
+        section.strip().lower()
+        for section in raw.split(",")
+        if section.strip()
+    }
+    if not requested:
+        return {"personal", "group"}
+    sections = requested & ACTIVITY_INCLUDE_SECTIONS
+    if not sections:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("INVALID_ARGUMENT", "include must contain personal or group"),
         )
     return sections
 
@@ -1109,7 +1149,88 @@ def activity_tombstones_since(db: Any, uid: str, since: datetime | None) -> dict
         )
         if doc.get("groupId") and doc.get("expenseId")
     ]
-    return {"personalDeletedIds": personal_deleted, "groupDeleted": group_deleted}
+    deleted_group_ids = [
+        doc.get("groupId")
+        for doc in db.group_tombstones.find(
+            {"memberUids": uid, **tombstone_since_filter("deletedAt", since)}
+        )
+        if doc.get("groupId")
+    ]
+    return {
+        "personalDeletedIds": personal_deleted,
+        "groupDeleted": group_deleted,
+        "deletedGroupIds": deleted_group_ids,
+    }
+
+
+def activity_group_summary(group: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": group.get("id", ""),
+        "name": group.get("name") or "Group",
+        "groupType": group.get("groupType") or "split",
+        "memberCount": len(group.get("memberUids") or []),
+    }
+
+
+def activity_since_filter(since: datetime | None) -> dict[str, Any]:
+    return {} if since is None else {"updatedAt": {"$gt": since}}
+
+
+def activity_entry_sort_time(entry: dict[str, Any]) -> datetime:
+    for key in ["updatedAt", "date"]:
+        value = entry.get(key)
+        if isinstance(value, datetime):
+            return aware(value)
+    return now()
+
+
+def activity_feed_entries(
+    db: Any,
+    uid: str,
+    since: datetime | None,
+    limit: int,
+    include_sections: set[str],
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    if "personal" in include_sections:
+        personal_filter = {"uid": uid, **activity_since_filter(since)}
+        for expense in db.expenses.find(personal_filter):
+            entries.append(
+                {
+                    "kind": "personalExpense",
+                    "id": expense.get("id", ""),
+                    "date": expense.get("date"),
+                    "updatedAt": expense.get("updatedAt"),
+                    "expense": expense_out(expense),
+                }
+            )
+
+    if "group" in include_sections:
+        groups = list(db.groups.find({"memberUids": uid}))
+        groups_by_id = {group.get("id"): group for group in groups if group.get("id")}
+        if groups_by_id:
+            group_filter = {
+                "groupId": {"$in": list(groups_by_id.keys())},
+                **activity_since_filter(since),
+            }
+            for expense in db.group_expenses.find(group_filter):
+                group = groups_by_id.get(expense.get("groupId"))
+                if not group:
+                    continue
+                entries.append(
+                    {
+                        "kind": "groupExpense",
+                        "id": expense.get("id", ""),
+                        "groupId": expense.get("groupId", ""),
+                        "date": expense.get("date"),
+                        "updatedAt": expense.get("updatedAt"),
+                        "group": activity_group_summary(group),
+                        "expense": group_expense_out(expense),
+                    }
+                )
+
+    entries.sort(key=activity_entry_sort_time, reverse=True)
+    return json_ready(entries[:limit])
 
 
 def group_tombstones_since(db: Any, uid: str, since: datetime | None) -> dict[str, Any]:

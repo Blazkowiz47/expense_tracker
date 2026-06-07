@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/expense.dart';
-import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:http/http.dart' as http;
 
 class ExpenseRepository {
@@ -55,7 +54,7 @@ class ExpenseRepository {
     }
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final created = _fromBackend(payload);
+    final created = Expense.fromBackendJson(payload);
     _expensesCache[created.id] = created;
   }
 
@@ -88,7 +87,7 @@ class ExpenseRepository {
     }
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
-    final updated = _fromBackend(payload);
+    final updated = Expense.fromBackendJson(payload);
     _expensesCache[updated.id] = updated;
   }
 
@@ -166,6 +165,14 @@ class ExpenseRepository {
     }
   }
 
+  void upsertCachedExpenses(Iterable<Expense> expenses) {
+    for (final expense in expenses) {
+      if (expense.id.isNotEmpty) {
+        _expensesCache[expense.id] = expense;
+      }
+    }
+  }
+
   List<Expense> getUnsyncedExpenses() => const [];
 
   List<Expense> getExpensesByDateRange(DateTime start, DateTime end) {
@@ -206,35 +213,7 @@ class ExpenseRepository {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final list = (payload['expenses'] as List<dynamic>? ?? const [])
         .cast<Map<String, dynamic>>();
-    return list.map(_fromBackend).toList(growable: false);
-  }
-
-  Expense _fromBackend(Map<String, dynamic> json) {
-    final description = (json['description'] as String?)?.trim();
-    final category = (json['category'] as String?)?.trim();
-    final currency = (json['currency'] as String?)?.trim();
-    final paymentMethod = (json['paymentMethod'] as String?)?.trim();
-    final dateRaw = (json['date'] as String?) ?? '';
-    final createdAt = DateTime.tryParse(dateRaw)?.toLocal() ?? DateTime.now();
-    final updatedRaw = json['updatedAt'] as String?;
-
-    return Expense(
-      core: ExpenseCore(
-        id: (json['id'] as String?) ?? '',
-        title: (description != null && description.isNotEmpty)
-            ? description
-            : (category != null && category.isNotEmpty ? category : 'Expense'),
-        amount: (json['amount'] as num?)?.toDouble() ?? 0,
-        currency: currency?.isNotEmpty == true ? currency! : 'INR',
-        category: category,
-        createdAt: createdAt,
-      ),
-      description: description,
-      updatedAt: updatedRaw != null ? DateTime.tryParse(updatedRaw) : null,
-      paymentMethod: paymentMethod?.isNotEmpty == true ? paymentMethod : null,
-      isSynced: true,
-      deleted: false,
-    );
+    return list.map(Expense.fromBackendJson).toList(growable: false);
   }
 
   void dispose() {

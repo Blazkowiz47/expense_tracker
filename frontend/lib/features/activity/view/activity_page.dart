@@ -9,6 +9,8 @@ import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
+import 'package:expense_tracker/features/activity/models/activity_feed.dart';
+import 'package:expense_tracker/features/activity/repositories/activity_feed_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
@@ -22,6 +24,7 @@ class ActivityPage extends StatefulWidget {
     this.groupsRepository,
     this.groupsClient,
     this.freshnessRepository,
+    this.activityFeedRepository,
     this.autoRefresh = false,
     super.key,
   });
@@ -29,6 +32,7 @@ class ActivityPage extends StatefulWidget {
   final ApiGroupsRepository? groupsRepository;
   final http.Client? groupsClient;
   final FreshnessRepository? freshnessRepository;
+  final ActivityFeedRepository? activityFeedRepository;
   final bool autoRefresh;
 
   @override
@@ -43,6 +47,8 @@ class _ActivityPageState extends State<ActivityPage> {
   late final ApiGroupsRepository _groupsRepository;
   late final FreshnessRepository _freshnessRepository;
   late final bool _ownsFreshnessRepository;
+  late final ActivityFeedRepository _activityFeedRepository;
+  late final bool _ownsActivityFeedRepository;
   List<Expense> _expenses = const [];
   List<_GroupExpenseEntry> _groupExpenses = const [];
   DateTime? _activityFreshnessCursor;
@@ -61,6 +67,9 @@ class _ActivityPageState extends State<ActivityPage> {
         widget.groupsRepository ?? ApiGroupsRepository(client: client);
     _freshnessRepository = widget.freshnessRepository ?? FreshnessRepository();
     _ownsFreshnessRepository = widget.freshnessRepository == null;
+    _activityFeedRepository =
+        widget.activityFeedRepository ?? ActivityFeedRepository();
+    _ownsActivityFeedRepository = widget.activityFeedRepository == null;
   }
 
   @override
@@ -68,6 +77,9 @@ class _ActivityPageState extends State<ActivityPage> {
     _ownedGroupsClient?.close();
     if (_ownsFreshnessRepository) {
       _freshnessRepository.dispose();
+    }
+    if (_ownsActivityFeedRepository) {
+      _activityFeedRepository.dispose();
     }
     super.dispose();
   }
@@ -96,19 +108,25 @@ class _ActivityPageState extends State<ActivityPage> {
       _groupExpenses = groupExpenses;
       _loadingExpenses = false;
     });
+    await _refreshActivityCursor();
   }
 
   Future<void> _autoRefreshActivityData() async {
+    final previousCursor = _activityFreshnessCursor;
     final freshness = await _freshnessRepository.fetchFreshness(
-      since: _activityFreshnessCursor,
+      since: previousCursor,
       sections: const ['activity'],
     );
     final activity = freshness.sections['activity'];
     if (activity != null) {
       await _applyActivityTombstones(activity);
-      _activityFreshnessCursor = freshness.serverTime;
       if (!activity.changed &&
           (_expenses.isNotEmpty || _groupExpenses.isNotEmpty)) {
+        _activityFreshnessCursor = freshness.serverTime;
+        return;
+      }
+      if (previousCursor != null &&
+          await _mergeActivityFeed(since: previousCursor)) {
         return;
       }
     }
@@ -117,13 +135,31 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 
   Future<void> _applyActivityTombstones(FreshnessSection activity) async {
-    final personalDeleted = activity.personalDeletedIds.toSet();
-    final groupDeleted = activity.groupDeleted;
-    if (personalDeleted.isEmpty && groupDeleted.isEmpty) return;
+    await _applyActivityDeletes(
+      personalDeletedIds: activity.personalDeletedIds,
+      groupDeleted: activity.groupDeleted,
+      deletedGroupIds: activity.deletedGroupIds,
+    );
+  }
+
+  Future<void> _applyActivityDeletes({
+    Iterable<String> personalDeletedIds = const [],
+    Iterable<GroupExpenseTombstone> groupDeleted = const [],
+    Iterable<String> deletedGroupIds = const [],
+  }) async {
+    final personalDeleted = personalDeletedIds.toSet();
+    final deletedGroupExpenses = groupDeleted.toList(growable: false);
+    final deletedGroups = deletedGroupIds.toSet();
+    if (personalDeleted.isEmpty &&
+        deletedGroupExpenses.isEmpty &&
+        deletedGroups.isEmpty) {
+      return;
+    }
 
     _repository?.removeCachedDeletedIds(personalDeleted);
+    await _groupsRepository.removeCachedGroupIds(deletedGroups);
     final groupDeletedByGroup = <String, Set<String>>{};
-    for (final tombstone in groupDeleted) {
+    for (final tombstone in deletedGroupExpenses) {
       groupDeletedByGroup
           .putIfAbsent(tombstone.groupId, () => <String>{})
           .add(tombstone.expenseId);
@@ -142,11 +178,101 @@ class _ActivityPageState extends State<ActivityPage> {
       if (groupDeletedByGroup.isNotEmpty) {
         _groupExpenses = _groupExpenses
             .where((entry) {
+              if (deletedGroups.contains(entry.group.id)) {
+                return false;
+              }
               final deletedIds = groupDeletedByGroup[entry.group.id];
               return deletedIds == null ||
                   !deletedIds.contains(entry.expense.id);
             })
             .toList(growable: false);
+      } else if (deletedGroups.isNotEmpty) {
+        _groupExpenses = _groupExpenses
+            .where((entry) => !deletedGroups.contains(entry.group.id))
+            .toList(growable: false);
+      }
+    });
+  }
+
+  Future<void> _refreshActivityCursor() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['activity'],
+      );
+      _activityFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
+  }
+
+  Future<bool> _mergeActivityFeed({required DateTime since}) async {
+    try {
+      final feed = await _activityFeedRepository.fetchActivity(since: since);
+      await _mergeActivityFeedPayload(feed);
+      _activityFreshnessCursor = feed.serverTime;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _mergeActivityFeedPayload(ActivityFeed feed) async {
+    await _applyActivityDeletes(
+      personalDeletedIds: feed.tombstones.personalDeletedIds,
+      groupDeleted: feed.tombstones.groupDeleted,
+      deletedGroupIds: feed.tombstones.deletedGroupIds,
+    );
+
+    final personalUpdates = feed.entries
+        .map((entry) => entry.personalExpense)
+        .whereType<Expense>()
+        .where((expense) => expense.id.isNotEmpty)
+        .toList(growable: false);
+    final groupUpdates = feed.entries
+        .where(
+          (entry) =>
+              entry.group != null &&
+              entry.groupExpense != null &&
+              entry.group!.id.isNotEmpty &&
+              entry.groupExpense!.id.isNotEmpty,
+        )
+        .map(
+          (entry) => _GroupExpenseEntry(
+            group: entry.group!,
+            expense: entry.groupExpense!,
+          ),
+        )
+        .toList(growable: false);
+
+    _repository?.upsertCachedExpenses(personalUpdates);
+    final groupUpdatesByGroup = <String, List<GroupExpense>>{};
+    for (final entry in groupUpdates) {
+      groupUpdatesByGroup
+          .putIfAbsent(entry.group.id, () => <GroupExpense>[])
+          .add(entry.expense);
+    }
+    for (final entry in groupUpdatesByGroup.entries) {
+      await _groupsRepository.upsertCachedExpenses(entry.key, entry.value);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      if (personalUpdates.isNotEmpty) {
+        final byId = <String, Expense>{
+          for (final expense in _expenses) expense.id: expense,
+        };
+        for (final expense in personalUpdates) {
+          byId[expense.id] = expense;
+        }
+        _expenses = byId.values.toList(growable: false);
+      }
+      if (groupUpdates.isNotEmpty) {
+        final byKey = <String, _GroupExpenseEntry>{
+          for (final entry in _groupExpenses)
+            '${entry.group.id}:${entry.expense.id}': entry,
+        };
+        for (final entry in groupUpdates) {
+          byKey['${entry.group.id}:${entry.expense.id}'] = entry;
+        }
+        _groupExpenses = byKey.values.toList(growable: false);
       }
     });
   }
