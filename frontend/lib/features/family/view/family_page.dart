@@ -2,19 +2,29 @@ import 'dart:math' as math;
 
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
+import 'package:expense_tracker/features/planning/view/monthly_planning_card.dart';
+import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
 
 class FamilyPage extends StatefulWidget {
-  const FamilyPage({this.repository, this.client, super.key});
+  const FamilyPage({
+    this.repository,
+    this.client,
+    this.monthlyPlanRepository,
+    super.key,
+  });
 
   final ApiGroupsRepository? repository;
   final http.Client? client;
+  final MonthlyPlanRepository? monthlyPlanRepository;
 
   @override
   State<FamilyPage> createState() => _FamilyPageState();
@@ -148,16 +158,60 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
-  Future<void> _openFamilyGroups() async {
-    final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) =>
-            GroupsPage(groupType: GroupType.family, repository: _repository),
-      ),
+  Future<void> _openHouseholdSetup() async {
+    final input = await showDialog<_HouseholdSetupInput>(
+      context: context,
+      builder: (_) => const _HouseholdSetupDialog(),
     );
-    if (!mounted) return;
-    if (changed == true || _families.isEmpty) {
+    if (input == null || !mounted) return;
+    final authUser = context.read<AuthCubit?>()?.state.user;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final created = await _repository.createGroup(
+        name: input.householdName,
+        groupType: GroupType.family,
+        members: input.spouseEmail.isEmpty ? const [] : [input.spouseEmail],
+      );
+      final members = await _repository.fetchMembers(created.id);
+      for (final member in members) {
+        final isCurrentUser =
+            authUser != null &&
+            (member.uid == authUser.uid ||
+                member.email.trim().toLowerCase() ==
+                    authUser.email.trim().toLowerCase());
+        final isSpouse =
+            input.spouseEmail.isNotEmpty &&
+            member.email.trim().toLowerCase() ==
+                input.spouseEmail.trim().toLowerCase();
+        if (isCurrentUser) {
+          await _repository.updateMemberRole(
+            groupId: created.id,
+            memberUid: member.uid,
+            role: input.yourRole,
+          );
+        } else if (isSpouse) {
+          await _repository.updateMemberRole(
+            groupId: created.id,
+            memberUid: member.uid,
+            role: input.spouseRole,
+          );
+        }
+      }
+      if (!mounted) return;
       await _loadFamilies();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Household set up.')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -198,7 +252,7 @@ class _FamilyPageState extends State<FamilyPage> {
   List<_FamilyCategoryTotal> _categoryTotals() {
     final totals = <String, _FamilyCategoryTotal>{};
     for (final expense in _currentMonthExpenses) {
-      final category = _categoryFor(expense.description);
+      final category = _categoryForExpense(expense);
       final current = totals[category] ?? _FamilyCategoryTotal.empty(category);
       totals[category] = current.add(expense.amount);
     }
@@ -207,7 +261,13 @@ class _FamilyPageState extends State<FamilyPage> {
     return items;
   }
 
-  String _categoryFor(String description) {
+  String _categoryForExpense(GroupExpense expense) {
+    final category = expense.category.trim();
+    if (category.isNotEmpty) return category;
+    return _categoryForDescription(expense.description);
+  }
+
+  String _categoryForDescription(String description) {
     final text = description.toLowerCase();
     if (text.contains('grocery') ||
         text.contains('groceries') ||
@@ -271,9 +331,10 @@ class _FamilyPageState extends State<FamilyPage> {
         children: [
           AppEmptyState(
             title: 'No family group yet',
-            subtitle: 'Create a family group to track household spending.',
-            actionLabel: 'Create family group',
-            onAction: _openFamilyGroups,
+            subtitle:
+                'Set up your household, add your spouse, and track shared spending.',
+            actionLabel: 'Set up household',
+            onAction: _openHouseholdSetup,
           ),
         ],
       );
@@ -302,6 +363,8 @@ class _FamilyPageState extends State<FamilyPage> {
           loading: _loadingDetails,
           onOpen: _openSelectedFamily,
         ),
+        const SizedBox(height: 16),
+        MonthlyPlanningCard(repository: widget.monthlyPlanRepository),
         if (_families.length > 1) ...[
           const SizedBox(height: 8),
           Wrap(
@@ -339,7 +402,9 @@ class _FamilyPageState extends State<FamilyPage> {
             final paid = _paidThisMonth(member);
             return AppBalanceTile(
               title: member.label,
-              subtitle: Text('paid ${AppMoney.format(paid)} this month'),
+              subtitle: Text(
+                '${member.roleLabel} · paid ${AppMoney.format(paid)} this month',
+              ),
               leadingIcon: Icons.person_outline,
               trailing: Text(
                 AppMoney.format(paid),
@@ -374,6 +439,135 @@ class _FamilyPageState extends State<FamilyPage> {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+class _HouseholdSetupInput {
+  const _HouseholdSetupInput({
+    required this.householdName,
+    required this.spouseEmail,
+    required this.yourRole,
+    required this.spouseRole,
+  });
+
+  final String householdName;
+  final String spouseEmail;
+  final String yourRole;
+  final String spouseRole;
+}
+
+class _HouseholdSetupDialog extends StatefulWidget {
+  const _HouseholdSetupDialog();
+
+  @override
+  State<_HouseholdSetupDialog> createState() => _HouseholdSetupDialogState();
+}
+
+class _HouseholdSetupDialogState extends State<_HouseholdSetupDialog> {
+  final _householdController = TextEditingController(text: 'Our household');
+  final _spouseController = TextEditingController();
+  String _yourRole = 'Husband';
+  String _spouseRole = 'Wife';
+
+  @override
+  void dispose() {
+    _householdController.dispose();
+    _spouseController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final householdName = _householdController.text.trim();
+    if (householdName.isEmpty) return;
+    Navigator.of(context).pop(
+      _HouseholdSetupInput(
+        householdName: householdName,
+        spouseEmail: _spouseController.text.trim(),
+        yourRole: _yourRole,
+        spouseRole: _spouseRole,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Set up household'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _householdController,
+              decoration: const InputDecoration(
+                labelText: 'Household name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _spouseController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Spouse email',
+                hintText: 'wife@example.com',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _yourRole,
+                    decoration: const InputDecoration(
+                      labelText: 'Your role',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: familyRoleOptions
+                        .map(
+                          (role) =>
+                              DropdownMenuItem(value: role, child: Text(role)),
+                        )
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) setState(() => _yourRole = value);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _spouseRole,
+                    decoration: const InputDecoration(
+                      labelText: 'Spouse role',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: familyRoleOptions
+                        .map(
+                          (role) =>
+                              DropdownMenuItem(value: role, child: Text(role)),
+                        )
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) setState(() => _spouseRole = value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Create')),
       ],
     );
   }

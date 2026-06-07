@@ -599,6 +599,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "groupType": str(body.get("groupType") or "split"),
             "createdBy": user["uid"],
             "memberUids": members,
+            "memberRoles": {user["uid"]: normalize_family_role(body.get("ownerRole") or "")},
             "memberCount": len(members),
             "createdAt": now(),
             "updatedAt": now(),
@@ -616,22 +617,37 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 app.state.db.groups.delete_one({"id": group_id})
                 app.state.db.group_expenses.delete_many({"groupId": group_id})
                 return {"left": True, "deleted": True}
-            app.state.db.groups.update_one({"id": group_id}, {"$set": {"memberUids": members, "memberCount": len(members), "updatedAt": now()}})
+            app.state.db.groups.update_one({"id": group_id}, {"$set": {"memberUids": members, "memberCount": len(members), "updatedAt": now()}, "$unset": {f"memberRoles.{user['uid']}": ""}})
             return {"left": True, "deleted": False}
         if parts == ["members"] and request.method == "GET":
             users = list(app.state.db.users.find({"uid": {"$in": group["memberUids"]}}))
-            return {"members": [member_out(uid, users) for uid in group["memberUids"]]}
+            roles = group.get("memberRoles") if isinstance(group.get("memberRoles"), dict) else {}
+            return {"members": [member_out(uid, users, roles.get(uid, "")) for uid in group["memberUids"]]}
         if parts == ["members", "add"] and request.method == "POST":
             body = await request.json()
             resolved = resolve_user(app.state.db, str(body.get("emailOrPhone") or ""))
             if not resolved:
                 raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "member not found"))
+            role = normalize_family_role(body.get("role") or "")
             if resolved["uid"] not in group["memberUids"]:
-                app.state.db.groups.update_one({"id": group_id}, {"$addToSet": {"memberUids": resolved["uid"]}, "$set": {"updatedAt": now()}})
+                app.state.db.groups.update_one({"id": group_id}, {"$addToSet": {"memberUids": resolved["uid"]}, "$set": {f"memberRoles.{resolved['uid']}": role, "updatedAt": now()}})
+            elif role:
+                app.state.db.groups.update_one({"id": group_id}, {"$set": {f"memberRoles.{resolved['uid']}": role, "updatedAt": now()}})
             updated = app.state.db.groups.find_one({"id": group_id})
             updated["memberCount"] = len(updated.get("memberUids") or [])
             app.state.db.groups.update_one({"id": group_id}, {"$set": {"memberCount": updated["memberCount"]}})
             return group_out(app.state.db, updated)
+        if len(parts) == 3 and parts[0] == "members" and parts[2] == "role" and request.method == "PUT":
+            body = await request.json()
+            member_uid = parts[1]
+            if member_uid not in group.get("memberUids", []):
+                raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "member not found"))
+            role = normalize_family_role(body.get("role") or "")
+            app.state.db.groups.update_one({"id": group_id}, {"$set": {f"memberRoles.{member_uid}": role, "updatedAt": now()}})
+            updated = app.state.db.groups.find_one({"id": group_id})
+            users = list(app.state.db.users.find({"uid": {"$in": updated["memberUids"]}}))
+            roles = updated.get("memberRoles") if isinstance(updated.get("memberRoles"), dict) else {}
+            return member_out(member_uid, users, roles.get(member_uid, ""))
         if parts == ["expenses"] and request.method == "GET":
             return {"expenses": [group_expense_out(doc) for doc in app.state.db.group_expenses.find({"groupId": group_id}).sort("date", -1)]}
         if parts == ["expenses"] and request.method == "POST":
@@ -1009,6 +1025,16 @@ def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
     for expense in expenses:
         category = str(expense.get("category") or "Personal").strip() or "Personal"
         actuals[category] = actuals.get(category, 0.0) + float(expense.get("amount") or 0)
+    family_groups = list(db.groups.find({"memberUids": uid, "groupType": "family"}))
+    family_group_ids = [group.get("id") for group in family_groups if group.get("id")]
+    if family_group_ids:
+        family_expenses = db.group_expenses.find({
+            "groupId": {"$in": family_group_ids},
+            "date": {"$gte": start, "$lt": end},
+        })
+        for expense in family_expenses:
+            category = str(expense.get("category") or "Personal").strip() or "Personal"
+            actuals[category] = actuals.get(category, 0.0) + float(expense.get("amount") or 0)
     rows = []
     for category in sorted(set(budgets.keys()) | set(actuals.keys())):
         budget = budgets.get(category, 0.0)
@@ -1200,11 +1226,22 @@ def compute_display_data(
     return {"expenseCount": len(expenses), "totalSpend": total, "totalAttachments": attachments, "attachmentCounts": {}, "memberBalances": balances, "updatedAt": iso(now())}
 
 
-def member_out(uid: str, users: list[dict[str, Any]]) -> dict[str, Any]:
+def normalize_family_role(value: Any) -> str:
+    role = str(value or "").strip()
+    return role[:40]
+
+
+def member_out(uid: str, users: list[dict[str, Any]], role: str = "") -> dict[str, Any]:
     user = next((item for item in users if item.get("uid") == uid), None)
     if not user:
-        return {"uid": uid, "displayName": uid, "email": "", "phone": ""}
-    return {"uid": uid, "displayName": user.get("displayName") or uid, "email": user.get("email") or "", "phone": user.get("phone") or ""}
+        return {"uid": uid, "displayName": uid, "email": "", "phone": "", "role": normalize_family_role(role)}
+    return {
+        "uid": uid,
+        "displayName": user.get("displayName") or uid,
+        "email": user.get("email") or "",
+        "phone": user.get("phone") or "",
+        "role": normalize_family_role(role),
+    }
 
 
 def build_group_expense(
@@ -1248,6 +1285,7 @@ def build_group_expense(
         "splitMode": split_mode,
         "splitWith": split_with,
         "amount": amount,
+        "category": str(body.get("category") or "").strip(),
         "description": description,
         "attachments": [str(item).strip() for item in body.get("attachments") or [] if str(item).strip()],
         "date": parse_dt(str(body.get("date") or iso(current))),

@@ -118,14 +118,29 @@ class ApiGroupsRepository {
   Future<GroupSummary> addMember({
     required String groupId,
     required String emailOrPhone,
+    String role = '',
   }) async {
     final response = await _request(
       method: 'POST',
       path: '/api/v1/groups/$groupId/members/add',
-      body: <String, dynamic>{'emailOrPhone': emailOrPhone},
+      body: <String, dynamic>{'emailOrPhone': emailOrPhone, 'role': role},
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     return GroupSummary.fromJson(payload);
+  }
+
+  Future<GroupMember> updateMemberRole({
+    required String groupId,
+    required String memberUid,
+    required String role,
+  }) async {
+    final response = await _request(
+      method: 'PUT',
+      path: '/api/v1/groups/$groupId/members/$memberUid/role',
+      body: <String, dynamic>{'role': role},
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return GroupMember.fromJson(payload);
   }
 
   Future<List<GroupExpense>> fetchExpenses(String groupId) async {
@@ -172,6 +187,7 @@ class ApiGroupsRepository {
     required String splitMode,
     required List<String> splitWith,
     required double amount,
+    String category = '',
     List<String> attachments = const [],
     required DateTime date,
   }) async {
@@ -185,6 +201,7 @@ class ApiGroupsRepository {
         'splitMode': splitMode,
         'splitWith': splitWith,
         'amount': amount,
+        'category': category,
         'attachments': attachments,
         'date': date.toUtc().toIso8601String(),
       },
@@ -201,6 +218,7 @@ class ApiGroupsRepository {
     required String splitMode,
     required List<String> splitWith,
     required double amount,
+    String category = '',
     List<String> attachments = const [],
     required DateTime date,
   }) async {
@@ -213,6 +231,7 @@ class ApiGroupsRepository {
         'splitMode': splitMode,
         'splitWith': splitWith,
         'amount': amount,
+        'category': category,
         'attachments': attachments,
         'date': date.toUtc().toIso8601String(),
       },

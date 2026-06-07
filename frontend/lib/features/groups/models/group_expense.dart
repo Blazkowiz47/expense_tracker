@@ -8,6 +8,7 @@ class GroupExpense {
     required this.splitMode,
     required this.splitWith,
     required this.amount,
+    this.category = '',
     required this.description,
     required this.attachments,
     required this.date,
@@ -23,6 +24,7 @@ class GroupExpense {
   final String splitMode;
   final List<String> splitWith;
   final double amount;
+  final String category;
   final String description;
   final List<String> attachments;
   final DateTime date;
@@ -41,6 +43,7 @@ class GroupExpense {
           .whereType<String>()
           .toList(growable: false),
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      category: (json['category'] as String?) ?? '',
       description: (json['description'] as String?) ?? '',
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
           .whereType<String>()

@@ -401,6 +401,17 @@ class GroupDetailsPage extends StatefulWidget {
 }
 
 class _GroupDetailsPageState extends State<GroupDetailsPage> {
+  static const _monthlyCategories = <String>[
+    'Groceries',
+    'Utilities',
+    'Rent and housing',
+    'School and kids',
+    'Travel',
+    'Food',
+    'Health',
+    'Personal',
+  ];
+
   List<GroupExpense> _expenses = const [];
   List<GroupMember> _members = const [];
   bool _loading = true;
@@ -506,6 +517,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => _GroupSettingsPage(
+          repository: widget.repository,
           groupId: widget.group.id,
           groupName: widget.group.name,
           members: _members,
@@ -547,6 +559,14 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       }
     }
     return participants.first;
+  }
+
+  String _normalizedCategory(String value) {
+    final lower = value.trim().toLowerCase();
+    return _monthlyCategories.firstWhere(
+      (category) => category.toLowerCase() == lower,
+      orElse: () => _monthlyCategories.first,
+    );
   }
 
   Future<_SplitSelectionResult?> _openSplitOptionsPage({
@@ -865,6 +885,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     String? initialPaidBy,
     String initialSplitMode = 'equally',
     Set<String>? initialSplitWith,
+    String initialCategory = 'Groceries',
+    bool showMonthlyCategory = false,
     List<String>? initialAttachments,
     DateTime? initialUpdatedAt,
     String? initialUpdatedBy,
@@ -882,6 +904,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         final dialogWidth = (screenWidth * 0.72).clamp(360.0, 920.0);
         var paidBy = initialPaidBy ?? participants.first;
         var splitMode = initialSplitMode;
+        var category = _normalizedCategory(initialCategory);
         final selected = {...(initialSplitWith ?? participants)};
         var splitWithAll = selected.length == participants.length;
         final attachmentItems = [
@@ -927,6 +950,29 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         prefixText: AppMoney.inputPrefix,
                       ),
                     ),
+                    if (showMonthlyCategory) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: category,
+                        decoration: const InputDecoration(
+                          labelText: 'Monthly category',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: _monthlyCategories
+                            .map(
+                              (item) => DropdownMenuItem<String>(
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => category = value);
+                          }
+                        },
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1631,6 +1677,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   'description': descriptionController.text.trim(),
                   'expenseId': expenseId,
                   'amount': double.tryParse(amountController.text.trim()),
+                  'category': showMonthlyCategory ? category : '',
                   'paidBy': paidBy,
                   'splitMode': splitMode,
                   'splitWith': selected.toList(growable: false),
@@ -1665,6 +1712,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       expenseId: '',
       participants: participants,
       initialSplitWith: participants.toSet(),
+      showMonthlyCategory: widget.group.groupType == GroupType.family,
     );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';
@@ -1674,6 +1722,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         .whereType<String>()
         .toList(growable: false);
     final amount = payload['amount'] as double?;
+    final category = (payload['category'] as String?) ?? '';
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
@@ -1696,6 +1745,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         splitMode: splitMode,
         splitWith: splitWith,
         amount: amount,
+        category: category,
         attachments: attachments,
         date: DateTime.now(),
       );
@@ -1769,6 +1819,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                 .map((member) => _resolvePayerLabel(member, participants))
                 .toSet()
           : participants.toSet(),
+      initialCategory: expense.category,
+      showMonthlyCategory: widget.group.groupType == GroupType.family,
       initialAttachments: expense.attachments,
       initialUpdatedAt: expense.updatedAt,
       initialUpdatedBy: _resolvePayerLabel(expense.updatedBy, participants),
@@ -1793,6 +1845,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         .whereType<String>()
         .toList(growable: false);
     final amount = payload['amount'] as double?;
+    final category = (payload['category'] as String?) ?? '';
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
@@ -1818,6 +1871,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         : participants.toSet();
     final fieldChanged =
         description != expense.description ||
+        category != expense.category ||
         (amount - expense.amount).abs() > 0.000001 ||
         paidBy != originalPaidBy ||
         splitMode != originalSplitMode ||
@@ -1833,6 +1887,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           splitMode: expense.splitMode,
           splitWith: expense.splitWith,
           amount: expense.amount,
+          category: expense.category,
           description: expense.description,
           attachments: attachments,
           date: expense.date,
@@ -1855,6 +1910,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         splitMode: splitMode,
         splitWith: splitWith,
         amount: amount,
+        category: category,
         attachments: attachments,
         date: expense.date,
       );
@@ -2099,6 +2155,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   .split('.')
                                   .first,
                             ),
+                            if (expense.category.trim().isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                expense.category.trim(),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
                             if (expense.attachments.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
@@ -2175,6 +2238,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
 class _GroupSettingsPage extends StatefulWidget {
   const _GroupSettingsPage({
+    required this.repository,
     required this.groupId,
     required this.groupName,
     required this.members,
@@ -2183,6 +2247,7 @@ class _GroupSettingsPage extends StatefulWidget {
     required this.memberCountFallback,
   });
 
+  final ApiGroupsRepository repository;
   final String groupId;
   final String groupName;
   final List<GroupMember> members;
@@ -2196,16 +2261,19 @@ class _GroupSettingsPage extends StatefulWidget {
 
 class _GroupSettingsPageState extends State<_GroupSettingsPage> {
   late bool _simplify;
+  late List<GroupMember> _members;
   late final http.Client _client;
   late final ExpenseRepository _expenseRepository;
   bool _settlementLoading = true;
   String? _settlingMemberUid;
+  String? _updatingRoleUid;
   Map<String, double> _settlementNetByUid = const {};
 
   @override
   void initState() {
     super.initState();
     _simplify = widget.simplifyBalances;
+    _members = widget.members;
     _client = http.Client();
     _expenseRepository = ExpenseRepository(client: _client);
     _loadSettlementBalances();
@@ -2224,7 +2292,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       await _expenseRepository.refresh();
       final expenses = _expenseRepository.getExpenses();
       final netByUid = <String, double>{};
-      for (final member in widget.members) {
+      for (final member in _members) {
         netByUid[member.uid] = 0;
       }
       for (final expense in expenses) {
@@ -2381,23 +2449,48 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     }
   }
 
+  Future<void> _updateMemberRole(GroupMember member, String role) async {
+    if (_updatingRoleUid != null || role == member.role) return;
+    setState(() => _updatingRoleUid = member.uid);
+    try {
+      final updated = await widget.repository.updateMemberRole(
+        groupId: widget.groupId,
+        memberUid: member.uid,
+        role: role,
+      );
+      if (!mounted) return;
+      setState(() {
+        _members = _members
+            .map((item) => item.uid == updated.uid ? updated : item)
+            .toList(growable: false);
+        _updatingRoleUid = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _updatingRoleUid = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   Map<String, double> _memberNetByUid() {
-    final memberCount = widget.members.isNotEmpty
-        ? widget.members.length
+    final memberCount = _members.isNotEmpty
+        ? _members.length
         : widget.memberCountFallback;
     if (memberCount <= 0) {
       return const {};
     }
 
     final netByUid = <String, double>{};
-    for (final member in widget.members) {
+    for (final member in _members) {
       netByUid[member.uid] = 0;
     }
 
     String? resolveMemberUid(String key) {
       final normalizedKey = key.trim().toLowerCase();
       if (normalizedKey.isEmpty) return null;
-      for (final member in widget.members) {
+      for (final member in _members) {
         final candidates = <String>{
           member.uid.trim().toLowerCase(),
           member.displayName.trim().toLowerCase(),
@@ -2423,7 +2516,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
           .whereType<String>()
           .toSet();
       final effectiveSplitUids = splitUids.isEmpty
-          ? widget.members.map((member) => member.uid).toSet()
+          ? _members.map((member) => member.uid).toSet()
           : splitUids;
       final share = expense.amount / effectiveSplitUids.length;
 
@@ -2443,7 +2536,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
   }
 
   String _memberLabelByUid(String uid) {
-    for (final member in widget.members) {
+    for (final member in _members) {
       if (member.uid == uid) {
         return member.label;
       }
@@ -2468,7 +2561,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
             child: ListTile(
               title: Text(widget.groupName),
               subtitle: Text(
-                '${widget.members.length} member${widget.members.length == 1 ? '' : 's'}',
+                '${_members.length} member${_members.length == 1 ? '' : 's'}',
               ),
             ),
           ),
@@ -2479,7 +2572,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
               padding: EdgeInsets.only(bottom: 8),
               child: LinearProgressIndicator(minHeight: 2),
             ),
-          ...widget.members.map((member) {
+          ..._members.map((member) {
             final net = netByUid[member.uid] ?? 0;
             final status = net.abs() <= 0.005
                 ? 'settled up'
@@ -2496,11 +2589,36 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
                 leading: AppAvatar(label: member.label),
                 title: Text(member.label),
                 subtitle: member.email.isNotEmpty
-                    ? Text(member.email)
-                    : (member.phone.isNotEmpty ? Text(member.phone) : null),
+                    ? Text('${member.roleLabel} · ${member.email}')
+                    : Text(
+                        member.phone.isNotEmpty
+                            ? '${member.roleLabel} · ${member.phone}'
+                            : member.roleLabel,
+                      ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    _updatingRoleUid == member.uid
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : PopupMenuButton<String>(
+                            tooltip: 'Assign role',
+                            icon: const Icon(Icons.badge_outlined),
+                            onSelected: (role) =>
+                                _updateMemberRole(member, role),
+                            itemBuilder: (context) => familyRoleOptions
+                                .map(
+                                  (role) => PopupMenuItem(
+                                    value: role,
+                                    child: Text(role),
+                                  ),
+                                )
+                                .toList(growable: false),
+                          ),
+                    const SizedBox(width: 8),
                     Text(
                       status,
                       style: TextStyle(

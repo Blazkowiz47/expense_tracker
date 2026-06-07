@@ -156,6 +156,75 @@ def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
     assert food["remaining"] == 300
 
 
+def test_family_roles_and_expenses_feed_monthly_plan(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+
+    created = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={
+            "name": "Our household",
+            "groupType": "family",
+            "members": ["bob@example.com"],
+            "ownerRole": "Wife",
+        },
+    )
+    assert created.status_code == 201, created.text
+    group_id = created.json()["id"]
+
+    members = client.get(f"/api/v1/groups/{group_id}/members", headers=headers_a)
+    assert members.status_code == 200, members.text
+    alice = next(item for item in members.json()["members"] if item["email"] == "alice@example.com")
+    bob = next(item for item in members.json()["members"] if item["email"] == "bob@example.com")
+    assert alice["role"] == "Wife"
+
+    role = client.put(
+        f"/api/v1/groups/{group_id}/members/{bob['uid']}/role",
+        headers=headers_a,
+        json={"role": "Husband"},
+    )
+    assert role.status_code == 200, role.text
+    assert role.json()["role"] == "Husband"
+
+    expense = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Monthly grocery run",
+            "amount": 220,
+            "category": "Groceries",
+            "date": "2026-05-12T12:00:00Z",
+        },
+    )
+    assert expense.status_code == 201, expense.text
+    assert expense.json()["category"] == "Groceries"
+
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers_a,
+        json={"month": "2026-05", "currency": "INR", "budgets": {"Groceries": 500}},
+    )
+    assert saved.status_code == 200, saved.text
+    groceries = next(
+        item for item in saved.json()["categories"] if item["category"] == "Groceries"
+    )
+    assert groceries["budget"] == 500
+    assert groceries["actual"] == 220
+    assert groceries["remaining"] == 280
+
+    bob_plan = client.get(
+        "/api/v1/planning/monthly?month=2026-05",
+        headers=headers_b,
+    )
+    assert bob_plan.status_code == 200, bob_plan.text
+    bob_groceries = next(
+        item for item in bob_plan.json()["categories"] if item["category"] == "Groceries"
+    )
+    assert bob_groceries["actual"] == 220
+
+
 def test_recurring_income_can_be_confirmed_with_actual_amount(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
