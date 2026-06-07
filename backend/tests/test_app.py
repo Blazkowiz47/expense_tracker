@@ -381,6 +381,69 @@ def test_group_expense_normalizes_member_aliases_and_custom_split(tmp_path):
     assert balances[bob_uid]["net"] == 90
 
 
+def test_group_expense_saves_currency_snapshots_for_group_currencies(tmp_path):
+    client, app = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    register(client, "bob@example.com")
+    alice_uid = client.get("/api/v1/auth/me", headers=headers_a).json()["user"]["uid"]
+
+    async def fake_rates(base_currency, quote_currencies):
+        assert base_currency == "USD"
+        assert quote_currencies == ["INR", "NOK"]
+        return {
+            "provider": "fake-fx",
+            "rateAsOf": "2026-06-07",
+            "rates": {"INR": 83.5, "NOK": 10.25},
+        }
+
+    app.state.fx_rate_fetcher = fake_rates
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Family", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    created = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Imported groceries",
+            "amount": 10,
+            "currency": "USD",
+            "targetCurrencies": ["NOK"],
+            "category": "Groceries",
+            "date": "2026-05-20T10:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()
+    assert payload["currency"] == "USD"
+    assert payload["convertedAmounts"] == {"INR": 835.0, "NOK": 102.5, "USD": 10.0}
+    assert payload["convertedAmountDetails"]["INR"]["provider"] == "fake-fx"
+    assert payload["convertedAmountDetails"]["NOK"]["provider"] == "fake-fx"
+    assert payload["exchangeRates"]["INR"] == 83.5
+
+    groups = client.get("/api/v1/groups", headers=headers_a)
+    display = groups.json()["groups"][0]["displayData"]
+    assert groups.json()["groups"][0]["currencyCodes"] == ["INR", "USD", "NOK"]
+    assert display["totalSpendByCurrency"]["INR"] == 835
+    assert display["totalSpendByCurrency"]["NOK"] == 102.5
+    assert display["totalSpendByCurrency"]["USD"] == 10
+    assert display["memberBalancesByCurrency"]["INR"][alice_uid]["net"] == 417.5
+
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers_a,
+        json={"month": "2026-05", "currency": "INR", "budgets": {"Groceries": 1000}},
+    )
+    assert saved.status_code == 200, saved.text
+    groceries = next(item for item in saved.json()["categories"] if item["category"] == "Groceries")
+    assert groceries["actual"] == 835
+    assert groceries["remaining"] == 165
+
+
 def test_group_attachment_upload_accepts_multipart_file(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)

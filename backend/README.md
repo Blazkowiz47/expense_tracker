@@ -18,6 +18,21 @@ unless `MONGO_DB` is set.
 Uploaded files are stored under `DATA_DIR/uploads` and default to
 `backend/data/uploads`.
 
+## Exchange Rates
+
+Group expenses can store purchase-time conversion snapshots. The backend owns
+FX lookups so clients never need provider keys. By default it calls
+Frankfurter's no-key rates API:
+
+```sh
+FX_BASE_URL=https://api.frankfurter.dev/v2
+FX_TIMEOUT_SECONDS=10
+```
+
+Each converted group expense stores the original `amount`/`currency`, converted
+amounts, exchange rates, provider, and rate timestamps. Historical expenses use
+the saved purchase/addition-time rate instead of being recalculated later.
+
 ## AI
 
 Bill extraction is backend-only. Set `AI_BASE_URL` to a local Gemma-compatible

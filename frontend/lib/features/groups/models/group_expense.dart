@@ -8,6 +8,8 @@ class GroupExpense {
     required this.splitMode,
     required this.splitWith,
     required this.amount,
+    this.currency = 'INR',
+    this.convertedAmounts = const {},
     this.category = '',
     required this.description,
     required this.attachments,
@@ -24,6 +26,8 @@ class GroupExpense {
   final String splitMode;
   final List<String> splitWith;
   final double amount;
+  final String currency;
+  final Map<String, double> convertedAmounts;
   final String category;
   final String description;
   final List<String> attachments;
@@ -43,6 +47,8 @@ class GroupExpense {
           .whereType<String>()
           .toList(growable: false),
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      currency: _normalizeCurrency(json['currency']),
+      convertedAmounts: _parseConvertedAmounts(json['convertedAmounts']),
       category: (json['category'] as String?) ?? '',
       description: (json['description'] as String?) ?? '',
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
@@ -58,4 +64,36 @@ class GroupExpense {
           DateTime.now(),
     );
   }
+
+  Map<String, double> get amountsByCurrency {
+    if (convertedAmounts.isNotEmpty) {
+      return convertedAmounts;
+    }
+    return {currency: amount};
+  }
+}
+
+String _normalizeCurrency(Object? value) {
+  final currency = value?.toString().trim().toUpperCase() ?? '';
+  return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : 'INR';
+}
+
+Map<String, double> _parseConvertedAmounts(Object? value) {
+  if (value is! Map) {
+    return const {};
+  }
+  final amounts = <String, double>{};
+  for (final entry in value.entries) {
+    final currency = _normalizeCurrency(entry.key);
+    final rawAmount = entry.value is Map
+        ? (entry.value as Map)['amount']
+        : entry.value;
+    final amount = rawAmount is num
+        ? rawAmount.toDouble()
+        : double.tryParse(rawAmount?.toString() ?? '');
+    if (amount != null) {
+      amounts[currency] = amount;
+    }
+  }
+  return Map.unmodifiable(amounts);
 }

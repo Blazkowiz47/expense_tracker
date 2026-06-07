@@ -77,6 +77,13 @@ def api_error(code: str, message: str) -> dict[str, str]:
     return {"code": code, "message": message}
 
 
+def normalize_currency(value: Any, default: str = "INR") -> str:
+    currency = str(value or default).strip().upper()
+    if not re.fullmatch(r"[A-Z]{3}", currency):
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "currency must be a 3-letter ISO code"))
+    return currency
+
+
 def json_ready(value: Any) -> Any:
     if isinstance(value, datetime):
         return iso(value)
@@ -597,6 +604,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "id": uuid.uuid4().hex,
             "name": str(body["name"]).strip(),
             "groupType": str(body.get("groupType") or "split"),
+            "currencyCodes": [normalize_currency(body.get("currency") or body.get("defaultCurrency") or "INR")],
             "createdBy": user["uid"],
             "memberUids": members,
             "memberRoles": {user["uid"]: normalize_family_role(body.get("ownerRole") or "")},
@@ -652,7 +660,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             return {"expenses": [group_expense_out(doc) for doc in app.state.db.group_expenses.find({"groupId": group_id}).sort("date", -1)]}
         if parts == ["expenses"] and request.method == "POST":
             body = await request.json()
-            doc = build_group_expense(body, group, app.state.db, user["uid"])
+            doc = await build_group_expense(app, body, group, app.state.db, user["uid"])
             app.state.db.group_expenses.insert_one(doc)
             touch_group(app.state.db, group_id)
             return JSONResponse(status_code=201, content=json_ready(group_expense_out(doc)))
@@ -661,7 +669,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             existing = app.state.db.group_expenses.find_one({"groupId": group_id, "id": parts[1]})
             if not existing:
                 raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "group or expense not found"))
-            updated = build_group_expense(body, group, app.state.db, user["uid"], expense_id=parts[1], created_by=existing["createdBy"], created_at=existing["createdAt"])
+            updated = await build_group_expense(app, body, group, app.state.db, user["uid"], expense_id=parts[1], created_by=existing["createdBy"], created_at=existing["createdAt"])
             app.state.db.group_expenses.replace_one({"groupId": group_id, "id": parts[1]}, updated)
             touch_group(app.state.db, group_id)
             return group_expense_out(updated)
@@ -1015,16 +1023,112 @@ def recurring_occurrence_out(doc: dict[str, Any] | None) -> dict[str, Any]:
     return json_ready(doc or {})
 
 
+def safe_currency(value: Any, default: str | None = None) -> str | None:
+    try:
+        return normalize_currency(value, default or "INR")
+    except HTTPException:
+        return default
+
+
+def expense_amounts_by_currency(expense: dict[str, Any]) -> dict[str, float]:
+    amounts: dict[str, float] = {}
+    raw_converted = expense.get("convertedAmounts")
+    if isinstance(raw_converted, dict):
+        for raw_currency, raw_amount in raw_converted.items():
+            currency = safe_currency(raw_currency, None)
+            if not currency:
+                continue
+            if isinstance(raw_amount, dict):
+                raw_amount = raw_amount.get("amount")
+            try:
+                amount = float(raw_amount or 0)
+            except (TypeError, ValueError):
+                continue
+            amounts[currency] = amount
+
+    base_currency = safe_currency(expense.get("currency"), "INR") or "INR"
+    if base_currency not in amounts:
+        try:
+            amounts[base_currency] = float(expense.get("amount") or 0)
+        except (TypeError, ValueError):
+            amounts[base_currency] = 0.0
+    return amounts
+
+
+def expense_amount_for_currency(expense: dict[str, Any], currency: str) -> float | None:
+    amounts = expense_amounts_by_currency(expense)
+    return amounts.get(currency)
+
+
+def group_currency_codes(group: dict[str, Any], expenses: list[dict[str, Any]] | None = None, extra: list[str] | None = None) -> list[str]:
+    codes: list[str] = []
+
+    def add(raw: Any) -> None:
+        currency = safe_currency(raw, None)
+        if currency and currency not in codes:
+            codes.append(currency)
+
+    raw_codes = group.get("currencyCodes") or group.get("currencies") or []
+    if isinstance(raw_codes, list):
+        for item in raw_codes:
+            add(item)
+    if expenses:
+        for expense in expenses:
+            for currency in expense_amounts_by_currency(expense).keys():
+                add(currency)
+    for item in extra or []:
+        add(item)
+    if not codes:
+        codes.append("INR")
+    return codes
+
+
+def requested_conversion_currencies(body: dict[str, Any]) -> list[str]:
+    requested: list[Any] = []
+    for key in ["targetCurrencies", "conversionCurrencies"]:
+        raw = body.get(key)
+        if isinstance(raw, list):
+            requested.extend(raw)
+        elif isinstance(raw, str):
+            requested.extend(item.strip() for item in raw.split(","))
+    for key in ["targetCurrency", "conversionCurrency", "reportingCurrency"]:
+        if body.get(key):
+            requested.append(body.get(key))
+    codes: list[str] = []
+    for item in requested:
+        if not str(item or "").strip():
+            continue
+        currency = normalize_currency(item)
+        if currency not in codes:
+            codes.append(currency)
+    return codes
+
+
+def format_currency_amount(currency: str, amount: float) -> str:
+    return f"{currency} {amount:.2f}"
+
+
+def format_currency_amounts(amounts: dict[str, float]) -> str:
+    non_zero = [(currency, amount) for currency, amount in amounts.items() if abs(amount) > 0.005]
+    if not non_zero:
+        return "INR 0.00"
+    return ", ".join(format_currency_amount(currency, abs(amount)) for currency, amount in sorted(non_zero))
+
+
 def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
     plan = db.monthly_plans.find_one({"uid": uid, "month": month}) or {}
+    plan_currency = safe_currency(plan.get("currency"), "INR") or "INR"
     raw_budgets = plan.get("budgets") if isinstance(plan.get("budgets"), dict) else {}
     budgets = {str(key): float(value or 0) for key, value in raw_budgets.items()}
     start, end = month_range(month)
     expenses = db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}})
     actuals: dict[str, float] = {}
     for expense in expenses:
+        amount = expense_amount_for_currency(expense, plan_currency)
+        if amount is None:
+            continue
         category = str(expense.get("category") or "Personal").strip() or "Personal"
-        actuals[category] = actuals.get(category, 0.0) + float(expense.get("amount") or 0)
+        actuals[category] = actuals.get(category, 0.0) + amount
     family_groups = list(db.groups.find({"memberUids": uid, "groupType": "family"}))
     family_group_ids = [group.get("id") for group in family_groups if group.get("id")]
     if family_group_ids:
@@ -1033,8 +1137,11 @@ def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
             "date": {"$gte": start, "$lt": end},
         })
         for expense in family_expenses:
+            amount = expense_amount_for_currency(expense, plan_currency)
+            if amount is None:
+                continue
             category = str(expense.get("category") or "Personal").strip() or "Personal"
-            actuals[category] = actuals.get(category, 0.0) + float(expense.get("amount") or 0)
+            actuals[category] = actuals.get(category, 0.0) + amount
     rows = []
     for category in sorted(set(budgets.keys()) | set(actuals.keys())):
         budget = budgets.get(category, 0.0)
@@ -1051,7 +1158,7 @@ def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
     total_actual = sum(actuals.values())
     return json_ready({
         "month": month,
-        "currency": plan.get("currency") or "INR",
+        "currency": plan_currency,
         "totalBudget": total_budget,
         "totalActual": total_actual,
         "totalRemaining": total_budget - total_actual,
@@ -1119,18 +1226,34 @@ def group_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
             continue
         member_uids = group.get("memberUids", [])
         users = list(db.users.find({"uid": {"$in": member_uids}}))
-        display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users))
-        member_balance = display_data.get("memberBalances", {}).get(uid, {})
-        amount = float(member_balance.get("net") or 0)
-        if abs(amount) <= 0.005:
+        currency_codes = group_currency_codes(group, expenses)
+        display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes)
+        member_balances_by_currency = display_data.get("memberBalancesByCurrency", {})
+        net_by_currency: dict[str, float] = {}
+        for currency, balances in member_balances_by_currency.items():
+            if not isinstance(balances, dict):
+                continue
+            member_balance = balances.get(uid, {})
+            if isinstance(member_balance, dict):
+                net_by_currency[str(currency)] = float(member_balance.get("net") or 0)
+        non_zero = {currency: amount for currency, amount in net_by_currency.items() if abs(amount) > 0.005}
+        if not non_zero:
             subtitle = "settled up"
+            positive = True
+        elif all(amount > 0 for amount in non_zero.values()):
+            subtitle = "you are owed"
+            positive = True
+        elif all(amount < 0 for amount in non_zero.values()):
+            subtitle = "you owe"
+            positive = False
         else:
-            subtitle = "you are owed" if amount > 0 else "you owe"
+            subtitle = "mixed balances"
+            positive = True
         items.append({
             "title": group.get("name") or "Group",
             "subtitle": subtitle,
-            "amountText": f"INR {abs(amount):.2f}",
-            "positive": amount >= 0,
+            "amountText": format_currency_amounts(non_zero),
+            "positive": positive,
         })
     return items[:5]
 
@@ -1167,8 +1290,9 @@ def group_out(db: Any, group: dict[str, Any]) -> dict[str, Any]:
     expenses = list(db.group_expenses.find({"groupId": group["id"]}))
     member_uids = group.get("memberUids", [])
     users = list(db.users.find({"uid": {"$in": member_uids}}))
-    display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users))
-    return json_ready({**group, "memberCount": len(group.get("memberUids", [])), "displayData": display_data})
+    currency_codes = group_currency_codes(group, expenses)
+    display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes)
+    return json_ready({**group, "currencyCodes": currency_codes, "memberCount": len(group.get("memberUids", [])), "displayData": display_data})
 
 
 def group_member_aliases(member_uids: list[str], users: list[dict[str, Any]]) -> dict[str, str]:
@@ -1196,34 +1320,58 @@ def compute_display_data(
     member_uids: list[str],
     expenses: list[dict[str, Any]],
     aliases: dict[str, str] | None = None,
+    currency_codes: list[str] | None = None,
 ) -> dict[str, Any]:
     aliases = aliases or {}
-    balances = {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids}
+    primary_currency = (currency_codes or ["INR"])[0]
+    totals_by_currency = {currency: 0.0 for currency in (currency_codes or ["INR"])}
+    balances_by_currency = {
+        currency: {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids}
+        for currency in (currency_codes or ["INR"])
+    }
     member_set = set(member_uids)
-    total = 0.0
     attachments = 0
     for expense in expenses:
-        amount = float(expense.get("amount") or 0)
-        total += amount
+        amounts_by_currency = expense_amounts_by_currency(expense)
+        if not amounts_by_currency:
+            continue
         split_with = [
             uid
             for uid in (normalize_group_member_ref(item, member_uids, aliases) for item in (expense.get("splitWith") or []))
             if uid in member_set
         ] or member_uids
-        share = amount / max(len(split_with), 1)
         paid_by = normalize_group_member_ref(expense.get("paidBy") or expense.get("createdBy"), member_uids, aliases)
         attachments += len(expense.get("attachments") or [])
         if not paid_by:
             continue
-        for uid in split_with:
-            balances.setdefault(uid, {"owes": 0.0, "owed": 0.0, "net": 0.0})
-            if uid != paid_by:
-                balances[uid]["owes"] += share
-                balances[uid]["net"] -= share
-                balances.setdefault(paid_by, {"owes": 0.0, "owed": 0.0, "net": 0.0})
-                balances[paid_by]["owed"] += share
-                balances[paid_by]["net"] += share
-    return {"expenseCount": len(expenses), "totalSpend": total, "totalAttachments": attachments, "attachmentCounts": {}, "memberBalances": balances, "updatedAt": iso(now())}
+        for currency, amount in amounts_by_currency.items():
+            totals_by_currency[currency] = totals_by_currency.get(currency, 0.0) + amount
+            balances = balances_by_currency.setdefault(
+                currency,
+                {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids},
+            )
+            share = amount / max(len(split_with), 1)
+            for uid in split_with:
+                balances.setdefault(uid, {"owes": 0.0, "owed": 0.0, "net": 0.0})
+                if uid != paid_by:
+                    balances[uid]["owes"] += share
+                    balances[uid]["net"] -= share
+                    balances.setdefault(paid_by, {"owes": 0.0, "owed": 0.0, "net": 0.0})
+                    balances[paid_by]["owed"] += share
+                    balances[paid_by]["net"] += share
+    primary_balances = balances_by_currency.get(primary_currency) or {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids}
+    return {
+        "expenseCount": len(expenses),
+        "currency": primary_currency,
+        "currencyCodes": sorted(totals_by_currency.keys()),
+        "totalSpend": totals_by_currency.get(primary_currency, 0.0),
+        "totalSpendByCurrency": totals_by_currency,
+        "totalAttachments": attachments,
+        "attachmentCounts": {},
+        "memberBalances": primary_balances,
+        "memberBalancesByCurrency": balances_by_currency,
+        "updatedAt": iso(now()),
+    }
 
 
 def normalize_family_role(value: Any) -> str:
@@ -1244,7 +1392,115 @@ def member_out(uid: str, users: list[dict[str, Any]], role: str = "") -> dict[st
     }
 
 
-def build_group_expense(
+def unpack_fx_rates(result: Any, quotes: list[str], provider: str = "custom") -> dict[str, Any]:
+    rate_as_of = iso(now())
+    raw_rates: dict[str, Any] = {}
+    if isinstance(result, list):
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            quote = safe_currency(item.get("quote"), None)
+            if quote:
+                raw_rates[quote] = item.get("rate")
+                rate_as_of = str(item.get("date") or rate_as_of)
+                provider = str(item.get("provider") or provider)
+    elif isinstance(result, dict):
+        provider = str(result.get("provider") or provider)
+        rate_as_of = str(result.get("rateAsOf") or result.get("date") or rate_as_of)
+        rates = result.get("rates")
+        if isinstance(rates, dict):
+            raw_rates = rates
+        else:
+            raw_rates = {
+                key: value
+                for key, value in result.items()
+                if key not in {"provider", "rateAsOf", "date", "base", "amount"}
+            }
+    rates_out: dict[str, float] = {}
+    missing: list[str] = []
+    for quote in quotes:
+        try:
+            rates_out[quote] = float(raw_rates[quote])
+        except (KeyError, TypeError, ValueError):
+            missing.append(quote)
+    if missing:
+        raise HTTPException(
+            status_code=502,
+            detail=api_error("FX_RATE_UNAVAILABLE", f"exchange rate unavailable for {', '.join(missing)}"),
+        )
+    return {"provider": provider, "rateAsOf": rate_as_of, "rates": rates_out}
+
+
+async def fetch_fx_rates(app: FastAPI, base_currency: str, quote_currencies: list[str]) -> dict[str, Any]:
+    quote_currencies = [currency for currency in quote_currencies if currency != base_currency]
+    if not quote_currencies:
+        return {"provider": "self", "rateAsOf": iso(now()), "rates": {}}
+    fetcher = getattr(app.state, "fx_rate_fetcher", None)
+    try:
+        if fetcher is not None:
+            result = fetcher(base_currency, quote_currencies)
+            if hasattr(result, "__await__"):
+                result = await result
+            return unpack_fx_rates(result, quote_currencies)
+
+        base_url = os.getenv("FX_BASE_URL", "https://api.frankfurter.dev/v2").rstrip("/")
+        try:
+            timeout = float(os.getenv("FX_TIMEOUT_SECONDS", "10"))
+        except ValueError:
+            timeout = 10.0
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(
+                f"{base_url}/rates",
+                params={"base": base_currency, "quotes": ",".join(quote_currencies)},
+            )
+            response.raise_for_status()
+            return unpack_fx_rates(response.json(), quote_currencies, provider="frankfurter")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=api_error("FX_RATE_UNAVAILABLE", f"exchange rate lookup failed: {exc}"),
+        ) from exc
+
+
+async def conversion_snapshot(app: FastAPI, amount: float, currency: str, target_currencies: list[str]) -> dict[str, Any]:
+    target_codes = sorted({*target_currencies, currency})
+    quote_codes = [code for code in target_codes if code != currency]
+    fetched = await fetch_fx_rates(app, currency, quote_codes)
+    fetched_at = iso(now())
+    converted_amounts: dict[str, float] = {}
+    converted_details: dict[str, dict[str, Any]] = {}
+    exchange_rates: dict[str, float] = {}
+    for code in target_codes:
+        rate = 1.0 if code == currency else float(fetched["rates"][code])
+        converted = round(amount * rate, 4)
+        provider = "self" if code == currency else fetched["provider"]
+        converted_amounts[code] = converted
+        exchange_rates[code] = rate
+        converted_details[code] = {
+            "amount": converted,
+            "rate": rate,
+            "rateAsOf": fetched["rateAsOf"] if code != currency else fetched_at,
+            "provider": provider,
+        }
+    return {
+        "convertedAmounts": converted_amounts,
+        "convertedAmountDetails": converted_details,
+        "exchangeRates": exchange_rates,
+        "exchangeRateProvider": fetched["provider"] if quote_codes else "self",
+        "exchangeRateFetchedAt": fetched_at,
+        "exchangeRateAsOf": fetched["rateAsOf"],
+    }
+
+
+def sync_group_currency_codes(db: Any, group_id: str, currency_codes: list[str]) -> None:
+    if currency_codes:
+        db.groups.update_one({"id": group_id}, {"$set": {"currencyCodes": currency_codes, "updatedAt": now()}})
+
+
+async def build_group_expense(
+    app: FastAPI,
     body: dict[str, Any],
     group: dict[str, Any],
     db: Any,
@@ -1258,6 +1514,12 @@ def build_group_expense(
     if amount <= 0 or not description:
         raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "description and positive amount required"))
     current = now()
+    currency = normalize_currency(body.get("currency") or group_currency_codes(group)[0])
+    existing_expenses = list(db.group_expenses.find({"groupId": group["id"]}))
+    requested_targets = requested_conversion_currencies(body)
+    target_currencies = group_currency_codes(group, existing_expenses, [currency, *requested_targets])
+    snapshot = await conversion_snapshot(app, amount, currency, target_currencies)
+    sync_group_currency_codes(db, group["id"], target_currencies)
     split_mode = str(body.get("splitMode") or "equally").strip().lower()
     if split_mode not in {"equally", "custom"}:
         split_mode = "equally"
@@ -1285,6 +1547,8 @@ def build_group_expense(
         "splitMode": split_mode,
         "splitWith": split_with,
         "amount": amount,
+        "currency": currency,
+        **snapshot,
         "category": str(body.get("category") or "").strip(),
         "description": description,
         "attachments": [str(item).strip() for item in body.get("attachments") or [] if str(item).strip()],

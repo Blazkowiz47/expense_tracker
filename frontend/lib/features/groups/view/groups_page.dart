@@ -20,6 +20,17 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
 
+const _groupCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
+
+String _normalizedGroupCurrency(String value) {
+  final normalized = value.trim().toUpperCase();
+  return _groupCurrencyOptions.contains(normalized) ? normalized : 'INR';
+}
+
+List<String> _normalizedGroupCurrencies(Iterable<String> values) {
+  return values.map(_normalizedGroupCurrency).toSet().toList(growable: false);
+}
+
 class GroupsPage extends StatefulWidget {
   const GroupsPage({
     this.groupType = GroupType.split,
@@ -503,6 +514,50 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return (owed: 0, owe: userIsInSplit ? share : 0);
   }
 
+  Map<String, double> _totalAmountsByCurrency(List<GroupExpense> expenses) {
+    final totals = <String, double>{};
+    for (final expense in expenses) {
+      for (final entry in expense.amountsByCurrency.entries) {
+        totals[entry.key] = (totals[entry.key] ?? 0) + entry.value;
+      }
+    }
+    return totals;
+  }
+
+  Map<String, double> _netAmountsByCurrency(
+    Map<String, GroupLentBorrowed> balances,
+  ) {
+    final nets = <String, double>{};
+    for (final entry in balances.entries) {
+      nets[entry.key] = entry.value.lent - entry.value.borrowed;
+    }
+    return nets;
+  }
+
+  Map<String, double> _positiveAmounts(Map<String, double> amounts) {
+    return Map.fromEntries(
+      amounts.entries.where((entry) => entry.value > 0.005),
+    );
+  }
+
+  Map<String, double> _negativeAmounts(Map<String, double> amounts) {
+    return Map.fromEntries(
+      amounts.entries
+          .where((entry) => entry.value < -0.005)
+          .map((entry) => MapEntry(entry.key, -entry.value)),
+    );
+  }
+
+  String _targetCurrencyForExpense(GroupExpense expense) {
+    for (final option in _groupCurrencyOptions) {
+      if (option != expense.currency &&
+          expense.convertedAmounts.containsKey(option)) {
+        return option;
+      }
+    }
+    return 'INR';
+  }
+
   Future<void> _openSettings() async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
@@ -871,6 +926,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     String? initialPaidBy,
     String initialSplitMode = 'equally',
     Set<String>? initialSplitWith,
+    String initialCurrency = 'INR',
+    String initialTargetCurrency = 'INR',
     String initialCategory = 'Groceries',
     bool showMonthlyCategory = false,
     List<String>? initialAttachments,
@@ -890,6 +947,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         final dialogWidth = (screenWidth * 0.72).clamp(360.0, 920.0);
         var paidBy = initialPaidBy ?? participants.first;
         var splitMode = initialSplitMode;
+        var currency = _normalizedGroupCurrency(initialCurrency);
+        var targetCurrency = _normalizedGroupCurrency(initialTargetCurrency);
         var category = _normalizedCategory(initialCategory);
         final selected = {...(initialSplitWith ?? participants)};
         var splitWithAll = selected.length == participants.length;
@@ -926,15 +985,81 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: amountController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Amount',
-                        prefixText: AppMoney.inputPrefix,
-                      ),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final amountField = TextField(
+                          controller: amountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Amount',
+                            prefixText: '$currency ',
+                          ),
+                        );
+                        final currencyField = DropdownButtonFormField<String>(
+                          initialValue: currency,
+                          decoration: const InputDecoration(
+                            labelText: 'Currency',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _groupCurrencyOptions
+                              .map(
+                                (item) => DropdownMenuItem<String>(
+                                  value: item,
+                                  child: Text(item),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: (value) {
+                            if (value != null) {
+                              setDialogState(() => currency = value);
+                            }
+                          },
+                        );
+                        final targetCurrencyField =
+                            DropdownButtonFormField<String>(
+                              initialValue: targetCurrency,
+                              decoration: const InputDecoration(
+                                labelText: 'Convert to',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: _groupCurrencyOptions
+                                  .map(
+                                    (item) => DropdownMenuItem<String>(
+                                      value: item,
+                                      child: Text(item),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setDialogState(() => targetCurrency = value);
+                                }
+                              },
+                            );
+                        if (constraints.maxWidth < 640) {
+                          return Column(
+                            children: [
+                              amountField,
+                              const SizedBox(height: 12),
+                              currencyField,
+                              const SizedBox(height: 12),
+                              targetCurrencyField,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: amountField),
+                            const SizedBox(width: 12),
+                            SizedBox(width: 140, child: currencyField),
+                            const SizedBox(width: 12),
+                            SizedBox(width: 140, child: targetCurrencyField),
+                          ],
+                        );
+                      },
                     ),
                     if (showMonthlyCategory) ...[
                       const SizedBox(height: 12),
@@ -1663,6 +1788,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   'description': descriptionController.text.trim(),
                   'expenseId': expenseId,
                   'amount': double.tryParse(amountController.text.trim()),
+                  'currency': currency,
+                  'targetCurrencies': [targetCurrency],
                   'category': showMonthlyCategory ? category : '',
                   'paidBy': paidBy,
                   'splitMode': splitMode,
@@ -1708,6 +1835,14 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         .whereType<String>()
         .toList(growable: false);
     final amount = payload['amount'] as double?;
+    final currency = _normalizedGroupCurrency(
+      (payload['currency'] as String?) ?? 'INR',
+    );
+    final targetCurrencies = _normalizedGroupCurrencies(
+      (payload['targetCurrencies'] as List<dynamic>? ?? const []).map(
+        (item) => item.toString(),
+      ),
+    );
     final category = (payload['category'] as String?) ?? '';
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
@@ -1731,6 +1866,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         splitMode: splitMode,
         splitWith: splitWith,
         amount: amount,
+        currency: currency,
+        targetCurrencies: targetCurrencies,
         category: category,
         attachments: attachments,
         date: DateTime.now(),
@@ -1805,7 +1942,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                 .map((member) => _resolvePayerLabel(member, participants))
                 .toSet()
           : participants.toSet(),
+      initialCurrency: expense.currency,
       initialCategory: expense.category,
+      initialTargetCurrency: _targetCurrencyForExpense(expense),
       showMonthlyCategory: widget.group.groupType == GroupType.family,
       initialAttachments: expense.attachments,
       initialUpdatedAt: expense.updatedAt,
@@ -1831,6 +1970,14 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         .whereType<String>()
         .toList(growable: false);
     final amount = payload['amount'] as double?;
+    final currency = _normalizedGroupCurrency(
+      (payload['currency'] as String?) ?? expense.currency,
+    );
+    final targetCurrencies = _normalizedGroupCurrencies(
+      (payload['targetCurrencies'] as List<dynamic>? ?? const []).map(
+        (item) => item.toString(),
+      ),
+    );
     final category = (payload['category'] as String?) ?? '';
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
@@ -1847,6 +1994,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
 
     final originalPaidBy = _resolvePayerLabel(expense.paidBy, participants);
+    final originalTargetCurrency = _targetCurrencyForExpense(expense);
     final originalSplitMode = expense.splitMode.isNotEmpty
         ? expense.splitMode
         : 'equally';
@@ -1857,6 +2005,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         : participants.toSet();
     final fieldChanged =
         description != expense.description ||
+        currency != expense.currency ||
+        (targetCurrencies.isNotEmpty &&
+            targetCurrencies.first != originalTargetCurrency) ||
         category != expense.category ||
         (amount - expense.amount).abs() > 0.000001 ||
         paidBy != originalPaidBy ||
@@ -1873,6 +2024,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           splitMode: expense.splitMode,
           splitWith: expense.splitWith,
           amount: expense.amount,
+          currency: expense.currency,
+          convertedAmounts: expense.convertedAmounts,
           category: expense.category,
           description: expense.description,
           attachments: attachments,
@@ -1896,6 +2049,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         splitMode: splitMode,
         splitWith: splitWith,
         amount: amount,
+        currency: currency,
+        targetCurrencies: targetCurrencies,
         category: category,
         attachments: attachments,
         date: expense.date,
@@ -1968,7 +2123,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   @override
   Widget build(BuildContext context) {
     final authUser = context.select((AuthCubit cubit) => cubit.state.user);
-    final total = _expenses.fold<double>(0, (sum, e) => sum + e.amount);
+    final totalByCurrency = _totalAmountsByCurrency(_expenses);
     final memberCount = _members.isNotEmpty ? _members.length : _memberCount;
     final userIdentifiers = authUser == null
         ? <String>{}
@@ -1978,13 +2133,26 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
             displayName: authUser.displayName,
             phone: authUser.phone,
           );
-    final balance = authUser == null
-        ? (lent: 0.0, borrowed: 0.0)
-        : calculateGroupLentBorrowed(
+    final balanceByCurrency = authUser == null
+        ? <String, GroupLentBorrowed>{}
+        : calculateGroupLentBorrowedByCurrency(
             expenses: _expenses,
             memberCount: memberCount,
             userIdentifiers: userIdentifiers,
           );
+    final netByCurrency = _netAmountsByCurrency(balanceByCurrency);
+    final owedByCurrency = _positiveAmounts(netByCurrency);
+    final oweByCurrency = _negativeAmounts(netByCurrency);
+    final lentByCurrency = Map.fromEntries(
+      balanceByCurrency.entries
+          .where((entry) => entry.value.lent > 0.005)
+          .map((entry) => MapEntry(entry.key, entry.value.lent)),
+    );
+    final borrowedByCurrency = Map.fromEntries(
+      balanceByCurrency.entries
+          .where((entry) => entry.value.borrowed > 0.005)
+          .map((entry) => MapEntry(entry.key, entry.value.borrowed)),
+    );
     final busyMessage = switch (_busyAction) {
       _GroupBusyAction.addingMember => 'Adding member...',
       _GroupBusyAction.addingExpense => 'Saving expense...',
@@ -2052,8 +2220,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           const SizedBox(height: 4),
                           Builder(
                             builder: (context) {
-                              final net = balance.lent - balance.borrowed;
-                              if (net.abs() <= 0.005) {
+                              if (owedByCurrency.isEmpty &&
+                                  oweByCurrency.isEmpty) {
                                 return Text(
                                   'You are all settled up',
                                   style: TextStyle(
@@ -2063,33 +2231,42 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   ),
                                 );
                               }
-                              if (net > 0) {
-                                return Text(
-                                  'You are owed ${AppMoney.format(net)}',
-                                  style: TextStyle(
-                                    color: AppMoney.positiveColor,
-                                  ),
-                                );
-                              }
-                              return Text(
-                                'You owe ${AppMoney.format(-net)}',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (owedByCurrency.isNotEmpty)
+                                    Text(
+                                      'You are owed ${AppMoney.formatCurrencyAmounts(owedByCurrency)}',
+                                      style: TextStyle(
+                                        color: AppMoney.positiveColor,
+                                      ),
+                                    ),
+                                  if (oweByCurrency.isNotEmpty)
+                                    Text(
+                                      'You owe ${AppMoney.formatCurrencyAmounts(oweByCurrency)}',
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                    ),
+                                ],
                               );
                             },
                           ),
                         ] else ...[
-                          if (balance.lent > 0.005 || balance.borrowed > 0.005)
+                          if (lentByCurrency.isNotEmpty ||
+                              borrowedByCurrency.isNotEmpty)
                             const SizedBox(height: 4),
-                          if (balance.lent > 0.005)
+                          if (lentByCurrency.isNotEmpty)
                             Text(
-                              'You are owed ${AppMoney.format(balance.lent)}',
+                              'You are owed ${AppMoney.formatCurrencyAmounts(lentByCurrency)}',
                               style: TextStyle(color: AppMoney.positiveColor),
                             ),
-                          if (balance.borrowed > 0.005)
+                          if (borrowedByCurrency.isNotEmpty)
                             Text(
-                              'You owe ${AppMoney.format(balance.borrowed)}',
+                              'You owe ${AppMoney.formatCurrencyAmounts(borrowedByCurrency)}',
                               style: TextStyle(
                                 color: Theme.of(context).colorScheme.error,
                               ),
@@ -2098,7 +2275,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       ],
                     ),
                     trailing: Text(
-                      AppMoney.format(total),
+                      AppMoney.formatCurrencyAmounts(totalByCurrency),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -2122,6 +2299,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       expense: expense,
                       userIdentifiers: userIdentifiers,
                       memberCount: memberCount,
+                    );
+                    final convertedOtherAmounts = Map.fromEntries(
+                      expense.convertedAmounts.entries.where(
+                        (entry) => entry.key != expense.currency,
+                      ),
                     );
                     return AppCard(
                       child: ListTile(
@@ -2148,6 +2330,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
+                            if (convertedOtherAmounts.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Saved as ${AppMoney.formatCurrencyAmounts(convertedOtherAmounts)}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
                             if (expense.attachments.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
@@ -2162,10 +2351,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(AppMoney.format(expense.amount)),
+                            Text(
+                              AppMoney.formatCurrency(
+                                expense.amount,
+                                expense.currency,
+                              ),
+                            ),
                             if (expenseBalance.owed > 0.005)
                               Text(
-                                'owed ${AppMoney.format(expenseBalance.owed)}',
+                                'owed ${AppMoney.formatCurrency(expenseBalance.owed, expense.currency)}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: AppMoney.positiveColor,
@@ -2173,7 +2367,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               ),
                             if (expenseBalance.owe > 0.005)
                               Text(
-                                'owe ${AppMoney.format(expenseBalance.owe)}',
+                                'owe ${AppMoney.formatCurrency(expenseBalance.owe, expense.currency)}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Theme.of(context).colorScheme.error,
