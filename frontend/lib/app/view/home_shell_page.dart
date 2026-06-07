@@ -147,8 +147,12 @@ class _HomeShellPageState extends State<HomeShellPage>
     if (!forcePersonal && _destinations[_selectedIndex].label == 'Family') {
       Navigator.of(context).push<void>(
         platformPageRoute(
-          builder: (_) =>
-              const GroupsPage(groupType: GroupType.family, autoRefresh: true),
+          builder: (_) => FamilyPage(
+            autoRefresh: true,
+            openAddExpenseOnLaunch: true,
+            initialExpenseCategory: 'Groceries',
+            initialExpenseDescription: initialBillUpload ? null : 'Groceries',
+          ),
         ),
       );
       return;
@@ -159,6 +163,19 @@ class _HomeShellPageState extends State<HomeShellPage>
         builder: (context) => BlocProvider.value(
           value: expensesBloc,
           child: AddExpensePage(initialBillUpload: initialBillUpload),
+        ),
+      ),
+    );
+  }
+
+  void _openHouseholdGroceries() {
+    Navigator.of(context).push<void>(
+      platformPageRoute(
+        builder: (_) => const FamilyPage(
+          autoRefresh: true,
+          openAddExpenseOnLaunch: true,
+          initialExpenseCategory: 'Groceries',
+          initialExpenseDescription: 'Groceries',
         ),
       ),
     );
@@ -459,6 +476,11 @@ class _HomeShellPageState extends State<HomeShellPage>
 
   Widget _buildActionFab({bool compact = false}) {
     final actions = [
+      _QuickAction(
+        label: 'Groceries',
+        icon: Icons.shopping_basket_outlined,
+        onTap: () => _runAction(_openHouseholdGroceries),
+      ),
       _QuickAction(
         label: 'Scan bill',
         icon: Icons.document_scanner_outlined,

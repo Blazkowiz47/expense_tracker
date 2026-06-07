@@ -59,6 +59,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('Close quick actions'), findsOneWidget);
+    expect(find.text('Groceries'), findsOneWidget);
     expect(find.text('Scan bill'), findsOneWidget);
     expect(find.text('Settle up'), findsOneWidget);
     expect(find.text('Friend'), findsNothing);

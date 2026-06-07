@@ -17,6 +17,9 @@ class FamilyPage extends StatefulWidget {
     this.repository,
     this.client,
     this.monthlyPlanRepository,
+    this.openAddExpenseOnLaunch = false,
+    this.initialExpenseCategory = 'Groceries',
+    this.initialExpenseDescription,
     this.autoRefresh = false,
     super.key,
   });
@@ -24,6 +27,9 @@ class FamilyPage extends StatefulWidget {
   final ApiGroupsRepository? repository;
   final http.Client? client;
   final MonthlyPlanRepository? monthlyPlanRepository;
+  final bool openAddExpenseOnLaunch;
+  final String initialExpenseCategory;
+  final String? initialExpenseDescription;
   final bool autoRefresh;
 
   @override
@@ -39,6 +45,7 @@ class _FamilyPageState extends State<FamilyPage> {
   GroupSummary? _selectedFamily;
   bool _loading = true;
   bool _loadingDetails = false;
+  bool _didOpenInitialExpense = false;
   int _monthlyPlanRefreshToken = 0;
   String? _error;
 
@@ -83,6 +90,7 @@ class _FamilyPageState extends State<FamilyPage> {
       if (!mounted) return;
       _applyFamilies(groups);
       await _loadSelectedFamilyDetails(showLoading: showLoading);
+      _openInitialExpenseIfRequested();
     } catch (error) {
       if (!mounted) return;
       if (!hadCached && (showLoading || _families.isEmpty)) {
@@ -152,7 +160,11 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
-  Future<void> _openSelectedFamily() async {
+  Future<void> _openSelectedFamily({
+    bool addExpense = false,
+    String initialCategory = 'Groceries',
+    String? initialDescription,
+  }) async {
     final family = _selectedFamily;
     if (family == null) return;
     final changed = await Navigator.of(context).push<bool>(
@@ -160,6 +172,9 @@ class _FamilyPageState extends State<FamilyPage> {
         builder: (_) => GroupDetailsPage(
           group: family,
           repository: _repository,
+          initialAddExpense: addExpense,
+          initialExpenseCategory: initialCategory,
+          initialExpenseDescription: initialDescription,
           autoRefresh: true,
         ),
       ),
@@ -169,6 +184,32 @@ class _FamilyPageState extends State<FamilyPage> {
       setState(() => _monthlyPlanRefreshToken += 1);
       await _loadFamilies(showLoading: false);
     }
+  }
+
+  void _openInitialExpenseIfRequested() {
+    if (_didOpenInitialExpense ||
+        !widget.openAddExpenseOnLaunch ||
+        _selectedFamily == null ||
+        _families.length != 1) {
+      return;
+    }
+    _didOpenInitialExpense = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _openSelectedFamily(
+        addExpense: true,
+        initialCategory: widget.initialExpenseCategory,
+        initialDescription: widget.initialExpenseDescription,
+      );
+    });
+  }
+
+  Future<void> _openGroceryExpense() {
+    return _openSelectedFamily(
+      addExpense: true,
+      initialCategory: 'Groceries',
+      initialDescription: 'Groceries',
+    );
   }
 
   Future<void> _openHouseholdSetup() async {
@@ -409,7 +450,8 @@ class _FamilyPageState extends State<FamilyPage> {
           trackedTotal: trackedTotalForCopy,
           progress: progress,
           loading: _loadingDetails,
-          onOpen: _openSelectedFamily,
+          onOpen: () => _openSelectedFamily(),
+          onAddExpense: _openGroceryExpense,
         ),
         const SizedBox(height: 16),
         MonthlyPlanningCard(
@@ -439,7 +481,7 @@ class _FamilyPageState extends State<FamilyPage> {
         AppSectionHeader(
           title: 'Members',
           actionLabel: 'Manage',
-          onAction: _openSelectedFamily,
+          onAction: () => _openSelectedFamily(),
         ),
         if (_loadingDetails && _members.isEmpty)
           const AppBalanceTile(
@@ -467,7 +509,7 @@ class _FamilyPageState extends State<FamilyPage> {
         AppSectionHeader(
           title: 'Categories',
           actionLabel: 'Open expenses',
-          onAction: _openSelectedFamily,
+          onAction: () => _openSelectedFamily(),
         ),
         if (_loadingDetails && categories.isEmpty)
           const AppBalanceTile(
@@ -644,6 +686,7 @@ class _HouseholdCard extends StatelessWidget {
     required this.progress,
     required this.loading,
     required this.onOpen,
+    required this.onAddExpense,
   });
 
   final GroupSummary family;
@@ -653,6 +696,7 @@ class _HouseholdCard extends StatelessWidget {
   final double progress;
   final bool loading;
   final VoidCallback onOpen;
+  final VoidCallback onAddExpense;
 
   @override
   Widget build(BuildContext context) {
@@ -753,6 +797,15 @@ class _HouseholdCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: loading ? null : onAddExpense,
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('Add groceries'),
+            ),
           ),
         ],
       ),

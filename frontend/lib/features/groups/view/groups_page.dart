@@ -411,6 +411,9 @@ class GroupDetailsPage extends StatefulWidget {
     required this.group,
     required this.repository,
     this.initialExpenseId,
+    this.initialAddExpense = false,
+    this.initialExpenseCategory = 'Groceries',
+    this.initialExpenseDescription,
     this.autoRefresh = false,
     super.key,
   });
@@ -418,6 +421,9 @@ class GroupDetailsPage extends StatefulWidget {
   final GroupSummary group;
   final ApiGroupsRepository repository;
   final String? initialExpenseId;
+  final bool initialAddExpense;
+  final String initialExpenseCategory;
+  final String? initialExpenseDescription;
   final bool autoRefresh;
 
   @override
@@ -662,11 +668,22 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       _loadMembers(),
       _loadExpenses(showLoading: showLoading),
     ]);
-    _openInitialExpenseEditor();
+    _openInitialExpenseAction();
   }
 
-  void _openInitialExpenseEditor() {
+  void _openInitialExpenseAction() {
     if (_didOpenInitialExpense) return;
+    if (widget.initialAddExpense) {
+      _didOpenInitialExpense = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _addExpense(
+          initialCategory: widget.initialExpenseCategory,
+          initialDescription: widget.initialExpenseDescription,
+        );
+      });
+      return;
+    }
     final expenseId = widget.initialExpenseId?.trim();
     if (expenseId == null || expenseId.isEmpty) return;
     final expense = _expenses.where((item) => item.id == expenseId).firstOrNull;
@@ -2057,16 +2074,23 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     );
   }
 
-  Future<void> _addExpense() async {
+  Future<void> _addExpense({
+    String initialCategory = 'Groceries',
+    String? initialDescription,
+  }) async {
     if (_members.isEmpty && _memberCount > 0) {
       await _loadMembers();
       if (!mounted) return;
     }
     final participants = _expenseParticipantKeys();
     final payload = await _showExpenseForm(
-      title: 'Add group expense',
+      title: widget.group.groupType == GroupType.family
+          ? 'Add household expense'
+          : 'Add group expense',
       expenseId: '',
       participants: participants,
+      initialDescription: initialDescription,
+      initialCategory: initialCategory,
       initialSplitWith: participants.toSet(),
       showMonthlyCategory: widget.group.groupType == GroupType.family,
     );

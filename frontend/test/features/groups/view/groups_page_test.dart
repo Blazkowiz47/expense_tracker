@@ -197,9 +197,116 @@ void main() {
     await tester.tap(find.text('Add expense'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Add group expense'), findsOneWidget);
+    expect(find.text('Add household expense'), findsOneWidget);
     expect(find.text('Scan bill'), findsOneWidget);
     expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
     expect(find.text('Monthly category'), findsOneWidget);
+  });
+
+  testWidgets('family page opens grocery expense form from household card', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              repository: _FakeGroupsRepository([familyGroup]),
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add groceries'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add household expense'), findsOneWidget);
+    expect(find.text('Monthly category'), findsOneWidget);
+    final descriptionField = tester.widget<TextField>(
+      find.byType(TextField).first,
+    );
+    expect(descriptionField.controller?.text, 'Groceries');
+  });
+
+  testWidgets('family quick-add launch auto-opens only one household', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              repository: _FakeGroupsRepository([familyGroup]),
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              openAddExpenseOnLaunch: true,
+              initialExpenseCategory: 'Groceries',
+              initialExpenseDescription: 'Groceries',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add household expense'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).controller?.text,
+      'Groceries',
+    );
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              key: const ValueKey('two-household-family-page'),
+              repository: _FakeGroupsRepository([
+                familyGroup,
+                const GroupSummary(
+                  id: 'family-2',
+                  name: 'Parents household',
+                  groupType: GroupType.family,
+                  memberCount: 2,
+                ),
+              ]),
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              openAddExpenseOnLaunch: true,
+              initialExpenseCategory: 'Groceries',
+              initialExpenseDescription: 'Groceries',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add household expense'), findsNothing);
+    expect(find.text('Rao family'), findsWidgets);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -260));
+    await tester.pumpAndSettle();
+    expect(find.text('Parents household'), findsOneWidget);
   });
 }
