@@ -654,9 +654,15 @@ def test_friend_settlement_is_visible_to_both_users(tmp_path):
     settlement = client.post(
         "/api/v1/friends/settlements",
         headers=headers_a,
-        json={"friendUid": added.json()["uid"], "direction": "paid", "amount": 120},
+        json={"friendUid": added.json()["uid"], "direction": "paid", "amount": 120, "currency": "USD"},
     )
     assert settlement.status_code == 201, settlement.text
+    settlement_nok = client.post(
+        "/api/v1/friends/settlements",
+        headers=headers_a,
+        json={"friendUid": added.json()["uid"], "direction": "paid", "amount": 50, "currency": "NOK"},
+    )
+    assert settlement_nok.status_code == 201, settlement_nok.text
 
     balances_a = client.get("/api/v1/friends/balances", headers=headers_a)
     balances_b = client.get("/api/v1/friends/balances", headers=headers_b)
@@ -664,13 +670,16 @@ def test_friend_settlement_is_visible_to_both_users(tmp_path):
     assert balances_b.status_code == 200
     bob_uid = added.json()["uid"]
     alice_uid = client.get("/api/v1/auth/me", headers=headers_a).json()["user"]["uid"]
-    assert balances_a.json()["balances"][bob_uid] == 120
-    assert balances_b.json()["balances"][alice_uid] == -120
+    assert balances_a.json()["balances"][bob_uid] == 170
+    assert balances_b.json()["balances"][alice_uid] == -170
+    assert balances_a.json()["balancesByCurrency"][bob_uid] == {"NOK": 50, "USD": 120}
+    assert balances_b.json()["balancesByCurrency"][alice_uid] == {"NOK": -50, "USD": -120}
 
     dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
     assert dashboard.status_code == 200
     assert dashboard.json()["friendItems"][0]["title"] == "User"
     assert dashboard.json()["friendItems"][0]["subtitle"] == "owes you"
+    assert dashboard.json()["friendItems"][0]["amountText"] == "NOK 50.00, USD 120.00"
 
 
 def test_group_expense_normalizes_member_aliases_and_custom_split(tmp_path):

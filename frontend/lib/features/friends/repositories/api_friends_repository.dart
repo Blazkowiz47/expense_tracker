@@ -50,16 +50,30 @@ class ApiFriendsRepository {
     );
   }
 
-  Future<Map<String, double>> fetchBalances() async {
+  Future<Map<String, Map<String, double>>> fetchBalances() async {
     final response = await _request(
       method: 'GET',
       path: '/api/v1/friends/balances',
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawByCurrency =
+        payload['balancesByCurrency'] as Map<String, dynamic>? ?? const {};
+    if (rawByCurrency.isNotEmpty) {
+      return rawByCurrency.map((key, value) {
+        final rawAmounts = value as Map<String, dynamic>? ?? const {};
+        return MapEntry(
+          key,
+          rawAmounts.map(
+            (currency, amount) =>
+                MapEntry(currency, (amount as num?)?.toDouble() ?? 0),
+          ),
+        );
+      });
+    }
     final rawBalances =
         payload['balances'] as Map<String, dynamic>? ?? const {};
     return rawBalances.map(
-      (key, value) => MapEntry(key, (value as num?)?.toDouble() ?? 0),
+      (key, value) => MapEntry(key, {'INR': (value as num?)?.toDouble() ?? 0}),
     );
   }
 

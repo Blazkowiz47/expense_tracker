@@ -9,13 +9,14 @@ void main() {
     required double amount,
     required String category,
     required String description,
+    String currency = 'INR',
   }) {
     return Expense(
       core: ExpenseCore(
         id: id,
         title: 'x',
         amount: amount,
-        currency: 'INR',
+        currency: currency,
         category: category,
         createdAt: DateTime.parse('2026-03-01T00:00:00Z'),
       ),
@@ -73,6 +74,29 @@ void main() {
       expect(net['u1'], closeTo(-60, 0.0001));
       expect(net['u2'], closeTo(60, 0.0001));
       expect(net.containsKey('u3'), isFalse);
+    });
+
+    test('keeps settlement amounts separated by currency', () {
+      final expenses = [
+        buildExpense(
+          id: '1',
+          amount: 100,
+          currency: 'USD',
+          category: 'Settlement',
+          description: 'A [uid:u1][dir:paid]',
+        ),
+        buildExpense(
+          id: '2',
+          amount: 40,
+          currency: 'NOK',
+          category: 'Settlement',
+          description: 'B [uid:u1][dir:received]',
+        ),
+      ];
+
+      final net = calculateFriendSettlementNetByUidAndCurrency(expenses);
+      expect(net['u1']?['USD'], closeTo(-100, 0.0001));
+      expect(net['u1']?['NOK'], closeTo(40, 0.0001));
     });
   });
 }

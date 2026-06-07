@@ -6,6 +6,8 @@ import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+const _friendCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
+
 class FriendsPage extends StatefulWidget {
   const FriendsPage({
     super.key,
@@ -30,7 +32,7 @@ class _FriendsPageState extends State<FriendsPage> {
   late final ExpenseRepository _expenseRepository;
 
   List<FriendContact> _friends = const [];
-  Map<String, double> _friendSettlementNetByUid = const {};
+  Map<String, Map<String, double>> _friendSettlementNetByUid = const {};
   bool _loading = true;
   bool _addingFriend = false;
   bool _showFriendAddedSuccess = false;
@@ -94,13 +96,13 @@ class _FriendsPageState extends State<FriendsPage> {
     }
   }
 
-  Future<Map<String, double>> _loadSettlementBalances() async {
+  Future<Map<String, Map<String, double>>> _loadSettlementBalances() async {
     try {
       return await _repository.fetchBalances();
     } catch (_) {
       await _expenseRepository.refresh();
       final expenses = _expenseRepository.getExpenses();
-      return calculateFriendSettlementNetByUid(expenses);
+      return calculateFriendSettlementNetByUidAndCurrency(expenses);
     }
   }
 
@@ -202,6 +204,7 @@ class _FriendsPageState extends State<FriendsPage> {
         friendUid: friend.uid,
         direction: input.direction,
         amount: input.amount,
+        currency: input.currency,
       );
       final settlementMap = await _loadSettlementBalances();
       if (!mounted) return;
@@ -209,7 +212,7 @@ class _FriendsPageState extends State<FriendsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Settlement of ${AppMoney.format(input.amount)} recorded for both accounts.',
+            'Settlement of ${AppMoney.formatCurrency(input.amount, input.currency)} recorded for both accounts.',
           ),
         ),
       );
@@ -229,6 +232,7 @@ class _FriendsPageState extends State<FriendsPage> {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var direction = 'paid';
+    var currency = 'INR';
     return showDialog<_SettleUpInput>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -256,6 +260,25 @@ class _FriendsPageState extends State<FriendsPage> {
                   },
                 ),
                 const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: currency,
+                  decoration: const InputDecoration(
+                    labelText: 'Currency',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _friendCurrencyOptions
+                      .map(
+                        (item) =>
+                            DropdownMenuItem(value: item, child: Text(item)),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => currency = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextFormField(
                   controller: controller,
                   autofocus: true,
@@ -264,7 +287,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   ),
                   decoration: InputDecoration(
                     labelText: 'Amount',
-                    prefixText: AppMoney.inputPrefix,
+                    prefixText: '$currency ',
                     hintText: '0.00',
                     helperText: direction == 'paid'
                         ? '${friend.label} will owe you this amount.'
@@ -290,9 +313,13 @@ class _FriendsPageState extends State<FriendsPage> {
               onPressed: () {
                 if (!(formKey.currentState?.validate() ?? false)) return;
                 final amount = double.parse(controller.text.trim());
-                Navigator.of(
-                  context,
-                ).pop(_SettleUpInput(amount: amount, direction: direction));
+                Navigator.of(context).pop(
+                  _SettleUpInput(
+                    amount: amount,
+                    direction: direction,
+                    currency: currency,
+                  ),
+                );
               },
               child: const Text('Record'),
             ),
@@ -363,17 +390,29 @@ class _FriendsPageState extends State<FriendsPage> {
               )
             else
               ..._friends.map((friend) {
-                final net = _friendSettlementNetByUid[friend.uid] ?? 0;
-                final settled = net.abs() <= 0.005;
+                final netByCurrency = Map<String, double>.from(
+                  _friendSettlementNetByUid[friend.uid] ?? const {},
+                )..removeWhere((currency, amount) => amount.abs() <= 0.005);
+                final settled = netByCurrency.isEmpty;
+                final allPositive = netByCurrency.values.every(
+                  (amount) => amount > 0,
+                );
+                final allNegative = netByCurrency.values.every(
+                  (amount) => amount < 0,
+                );
                 return _BalanceTile(
                   name: friend.label,
                   subtitle: settled
                       ? 'settled'
-                      : net > 0
+                      : allPositive
                       ? 'owes you'
-                      : 'you owe',
-                  amount: settled ? null : net.abs(),
-                  positive: net >= 0,
+                      : allNegative
+                      ? 'you owe'
+                      : 'mixed balances',
+                  amountText: settled
+                      ? null
+                      : AppMoney.formatCurrencyAmounts(netByCurrency),
+                  positive: !allNegative,
                   removing: _removingFriendUid == friend.uid,
                   onSettleUp: () => _settleUpFlow(friend),
                   onRemove: () => _removeFriendFlow(friend),
@@ -449,7 +488,7 @@ class _BalanceTile extends StatelessWidget {
     required this.name,
     required this.subtitle,
     required this.positive,
-    this.amount,
+    this.amountText,
     this.removing = false,
     this.onSettleUp,
     this.onRemove,
@@ -457,7 +496,7 @@ class _BalanceTile extends StatelessWidget {
 
   final String name;
   final String subtitle;
-  final double? amount;
+  final String? amountText;
   final bool positive;
   final bool removing;
   final VoidCallback? onSettleUp;
@@ -465,12 +504,12 @@ class _BalanceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final amountLabel = amount == null
+    final amountLabel = amountText == null
         ? Text(
             'settled',
             style: TextStyle(color: Theme.of(context).colorScheme.outline),
           )
-        : AppMoneyLabel(text: AppMoney.format(amount!), positive: positive);
+        : AppMoneyLabel(text: amountText!, positive: positive);
     return AppCard(
       child: ListTile(
         onTap: removing ? null : onSettleUp,
@@ -515,8 +554,13 @@ class _BalanceTile extends StatelessWidget {
 }
 
 class _SettleUpInput {
-  const _SettleUpInput({required this.amount, required this.direction});
+  const _SettleUpInput({
+    required this.amount,
+    required this.direction,
+    required this.currency,
+  });
 
   final double amount;
   final String direction;
+  final String currency;
 }

@@ -31,9 +31,11 @@ class _FakeFriendsRepository extends ApiFriendsRepository {
       phone: '',
     ),
   ];
-  final List<({String friendUid, String direction, double amount})>
+  final List<
+    ({String friendUid, String direction, double amount, String currency})
+  >
   recordedSettlements = [];
-  Map<String, double> balances = const {};
+  Map<String, Map<String, double>> balances = const {};
 
   @override
   Future<List<FriendContact>> fetchFriends() async => friends;
@@ -50,7 +52,7 @@ class _FakeFriendsRepository extends ApiFriendsRepository {
   Future<void> removeFriend(String _) async {}
 
   @override
-  Future<Map<String, double>> fetchBalances() async => balances;
+  Future<Map<String, Map<String, double>>> fetchBalances() async => balances;
 
   @override
   Future<void> recordSettlement({
@@ -63,8 +65,11 @@ class _FakeFriendsRepository extends ApiFriendsRepository {
       friendUid: friendUid,
       direction: direction,
       amount: amount,
+      currency: currency,
     ));
-    balances = {friendUid: amount};
+    balances = {
+      friendUid: {currency: amount},
+    };
   }
 }
 
@@ -122,8 +127,10 @@ void main() {
       expect(settlement.friendUid, 'friend-uid-1');
       expect(settlement.direction, 'paid');
       expect(settlement.amount, 120);
+      expect(settlement.currency, 'INR');
       expect(expenseRepository.created, isEmpty);
       expect(find.text('owes you'), findsOneWidget);
+      expect(find.text('₹120.00'), findsOneWidget);
     },
   );
 }

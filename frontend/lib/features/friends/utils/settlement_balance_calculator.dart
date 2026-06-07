@@ -20,7 +20,19 @@ SettlementMeta? parseFriendSettlementMeta(String description) {
 }
 
 Map<String, double> calculateFriendSettlementNetByUid(List<Expense> expenses) {
-  final netByUid = <String, double>{};
+  final byCurrency = calculateFriendSettlementNetByUidAndCurrency(expenses);
+  return byCurrency.map(
+    (uid, amounts) => MapEntry(
+      uid,
+      amounts.values.fold<double>(0, (sum, amount) => sum + amount),
+    ),
+  );
+}
+
+Map<String, Map<String, double>> calculateFriendSettlementNetByUidAndCurrency(
+  List<Expense> expenses,
+) {
+  final netByCurrency = <String, Map<String, double>>{};
   for (final expense in expenses) {
     final category = (expense.category ?? '').trim().toLowerCase();
     if (category != 'settlement') continue;
@@ -29,11 +41,14 @@ Map<String, double> calculateFriendSettlementNetByUid(List<Expense> expenses) {
     final signed = meta.direction == 'received'
         ? expense.amount
         : -expense.amount;
-    netByUid.update(
-      meta.uid,
-      (value) => value + signed,
-      ifAbsent: () => signed,
-    );
+    final currency = _normalizeCurrency(expense.currency);
+    final friendAmounts = netByCurrency.putIfAbsent(meta.uid, () => {});
+    friendAmounts[currency] = (friendAmounts[currency] ?? 0) + signed;
   }
-  return netByUid;
+  return netByCurrency;
+}
+
+String _normalizeCurrency(String? value) {
+  final currency = value?.trim().toUpperCase() ?? '';
+  return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : 'INR';
 }

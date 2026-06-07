@@ -593,7 +593,10 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
 
     @app.get("/api/v1/friends/balances")
     def friend_balances(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-        return {"balances": friend_balance_map(app.state.db, user["uid"])}
+        return {
+            "balances": friend_balance_map(app.state.db, user["uid"]),
+            "balancesByCurrency": friend_balance_map_by_currency(app.state.db, user["uid"]),
+        }
 
     @app.post("/api/v1/friends/settlements", status_code=201)
     def create_friend_settlement(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -1798,35 +1801,49 @@ def group_settlement_out(doc: dict[str, Any]) -> dict[str, Any]:
     })
 
 
-def friend_balance_map(db: Any, uid: str) -> dict[str, float]:
-    balances: dict[str, float] = {}
+def friend_balance_map_by_currency(db: Any, uid: str) -> dict[str, dict[str, float]]:
+    balances: dict[str, dict[str, float]] = {}
     for settlement in db.friend_settlements.find({"uids": uid}):
         payer_uid = settlement.get("payerUid")
         receiver_uid = settlement.get("receiverUid")
         amount = float(settlement.get("amount") or 0)
+        currency = safe_currency(settlement.get("currency"), "INR") or "INR"
         if payer_uid == uid and receiver_uid:
-            balances[receiver_uid] = balances.get(receiver_uid, 0.0) + amount
+            friend_balances = balances.setdefault(receiver_uid, {})
+            friend_balances[currency] = friend_balances.get(currency, 0.0) + amount
         elif receiver_uid == uid and payer_uid:
-            balances[payer_uid] = balances.get(payer_uid, 0.0) - amount
+            friend_balances = balances.setdefault(payer_uid, {})
+            friend_balances[currency] = friend_balances.get(currency, 0.0) - amount
     return balances
 
 
+def friend_balance_map(db: Any, uid: str) -> dict[str, float]:
+    balances_by_currency = friend_balance_map_by_currency(db, uid)
+    return {
+        friend_uid: sum(amounts.values())
+        for friend_uid, amounts in balances_by_currency.items()
+    }
+
+
 def friend_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
-    balances = friend_balance_map(db, uid)
+    balances = friend_balance_map_by_currency(db, uid)
     if not balances:
         return []
     users = {doc["uid"]: doc for doc in db.users.find({"uid": {"$in": list(balances.keys())}})}
     items = []
-    for friend_uid, amount in sorted(balances.items(), key=lambda item: abs(item[1]), reverse=True):
-        if abs(amount) <= 0.005:
+    for friend_uid, amounts in sorted(balances.items(), key=lambda item: sum(abs(amount) for amount in item[1].values()), reverse=True):
+        non_zero = {currency: amount for currency, amount in amounts.items() if abs(amount) > 0.005}
+        if not non_zero:
             continue
         friend = users.get(friend_uid, {"uid": friend_uid, "displayName": "Friend", "email": ""})
         label = user_public(friend)["displayName"]
+        positive = all(amount > 0 for amount in non_zero.values())
+        negative = all(amount < 0 for amount in non_zero.values())
         items.append({
             "title": label,
-            "subtitle": "owes you" if amount > 0 else "you owe",
-            "amountText": f"INR {abs(amount):.2f}",
-            "positive": amount > 0,
+            "subtitle": "owes you" if positive else "you owe" if negative else "mixed balances",
+            "amountText": format_currency_amounts(non_zero),
+            "positive": not negative,
             "friendUid": friend_uid,
         })
     return items
