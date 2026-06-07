@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
 import 'package:expense_tracker/features/recurring/repositories/api_recurring_repository.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ const _recurringFrequencyOptions = <String>['monthly', 'weekly', 'daily'];
 class RecurringPage extends StatefulWidget {
   const RecurringPage({
     this.repository,
+    this.freshnessRepository,
     this.initialOccurrenceId,
     this.openConfirmOnLaunch = false,
     this.autoRefresh = false,
@@ -19,6 +22,7 @@ class RecurringPage extends StatefulWidget {
   });
 
   final ApiRecurringRepository? repository;
+  final FreshnessRepository? freshnessRepository;
   final String? initialOccurrenceId;
   final bool openConfirmOnLaunch;
   final bool autoRefresh;
@@ -29,14 +33,18 @@ class RecurringPage extends StatefulWidget {
 
 class _RecurringPageState extends State<RecurringPage> {
   late final ApiRecurringRepository _repository;
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
   http.Client? _client;
   var _templates = <RecurringTemplate>[];
   var _occurrences = <RecurringOccurrence>[];
   var _loading = true;
+  var _loadedRecurring = false;
   var _saving = false;
   var _didOpenInitialOccurrence = false;
   String? _error;
   late String _month;
+  DateTime? _recurringFreshnessCursor;
 
   @override
   void initState() {
@@ -49,16 +57,25 @@ class _RecurringPageState extends State<RecurringPage> {
     } else {
       _repository = widget.repository!;
     }
+    _freshnessRepository =
+        widget.freshnessRepository ?? FreshnessRepository(client: _client);
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
     _load();
   }
 
   @override
   void dispose() {
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
     _client?.close();
     super.dispose();
   }
 
-  Future<void> _load({bool showLoading = true}) async {
+  Future<void> _load({
+    bool showLoading = true,
+    bool markFreshness = true,
+  }) async {
     setState(() {
       _loading = showLoading || (_templates.isEmpty && _occurrences.isEmpty);
       _error = null;
@@ -73,7 +90,11 @@ class _RecurringPageState extends State<RecurringPage> {
         _templates = results[0] as List<RecurringTemplate>;
         _occurrences = results[1] as List<RecurringOccurrence>;
         _loading = false;
+        _loadedRecurring = true;
       });
+      if (markFreshness) {
+        unawaited(_markRecurringFreshnessSeen());
+      }
       _openInitialOccurrenceAction();
     } catch (error) {
       if (!mounted) return;
@@ -105,6 +126,29 @@ class _RecurringPageState extends State<RecurringPage> {
       if (!mounted) return;
       _confirmOccurrence(target!);
     });
+  }
+
+  Future<void> _autoRefreshRecurring() async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _recurringFreshnessCursor,
+      sections: const ['recurring'],
+    );
+    final recurring = freshness.sections['recurring'];
+    if (recurring != null && !recurring.changed && _loadedRecurring) {
+      _recurringFreshnessCursor = freshness.serverTime;
+      return;
+    }
+    await _load(showLoading: false, markFreshness: false);
+    _recurringFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _markRecurringFreshnessSeen() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['recurring'],
+      );
+      _recurringFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
   }
 
   Future<void> _showCreateDialog() async {
@@ -193,6 +237,7 @@ class _RecurringPageState extends State<RecurringPage> {
           else if (_error != null)
             AppPageContainer(
               onRefresh: () => _load(showLoading: false),
+              onAutoRefresh: _autoRefreshRecurring,
               autoRefresh: widget.autoRefresh,
               children: [
                 AppEmptyState(title: 'Recurring unavailable', subtitle: _error),
@@ -201,6 +246,7 @@ class _RecurringPageState extends State<RecurringPage> {
           else
             AppPageContainer(
               onRefresh: () => _load(showLoading: false),
+              onAutoRefresh: _autoRefreshRecurring,
               autoRefresh: widget.autoRefresh,
               children: [
                 _CashflowSummaryCard(

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/friends/utils/settlement_balance_calculator.dart';
@@ -13,12 +16,14 @@ class FriendsPage extends StatefulWidget {
     super.key,
     this.friendsRepository,
     this.expenseRepository,
+    this.freshnessRepository,
     this.client,
     this.autoRefresh = false,
   });
 
   final ApiFriendsRepository? friendsRepository;
   final ExpenseRepository? expenseRepository;
+  final FreshnessRepository? freshnessRepository;
   final http.Client? client;
   final bool autoRefresh;
 
@@ -30,14 +35,18 @@ class _FriendsPageState extends State<FriendsPage> {
   http.Client? _ownedClient;
   late final ApiFriendsRepository _repository;
   late final ExpenseRepository _expenseRepository;
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
 
   List<FriendContact> _friends = const [];
   Map<String, Map<String, double>> _friendSettlementNetByUid = const {};
   bool _loading = true;
+  bool _loadedFriends = false;
   bool _addingFriend = false;
   bool _showFriendAddedSuccess = false;
   String? _removingFriendUid;
   String? _error;
+  DateTime? _friendsFreshnessCursor;
 
   @override
   void initState() {
@@ -55,11 +64,18 @@ class _FriendsPageState extends State<FriendsPage> {
       _expenseRepository =
           widget.expenseRepository ?? ExpenseRepository(client: client);
     }
+    _freshnessRepository =
+        widget.freshnessRepository ??
+        FreshnessRepository(client: _ownedClient ?? widget.client);
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
     _loadFriends();
   }
 
   @override
   void dispose() {
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
     if (_ownedClient != null) {
       if (widget.expenseRepository == null) {
         _expenseRepository.dispose();
@@ -70,7 +86,10 @@ class _FriendsPageState extends State<FriendsPage> {
     super.dispose();
   }
 
-  Future<void> _loadFriends({bool showLoading = true}) async {
+  Future<void> _loadFriends({
+    bool showLoading = true,
+    bool markFreshness = true,
+  }) async {
     setState(() {
       _loading = showLoading || _friends.isEmpty;
       _error = null;
@@ -82,7 +101,11 @@ class _FriendsPageState extends State<FriendsPage> {
       setState(() {
         _friends = friends;
         _friendSettlementNetByUid = settlementMap;
+        _loadedFriends = true;
       });
+      if (markFreshness) {
+        unawaited(_markFriendsFreshnessSeen());
+      }
     } catch (error) {
       if (!mounted) return;
       if (!showLoading && _friends.isNotEmpty) {
@@ -104,6 +127,29 @@ class _FriendsPageState extends State<FriendsPage> {
       final expenses = _expenseRepository.getExpenses();
       return calculateFriendSettlementNetByUidAndCurrency(expenses);
     }
+  }
+
+  Future<void> _autoRefreshFriends() async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _friendsFreshnessCursor,
+      sections: const ['friends'],
+    );
+    final friends = freshness.sections['friends'];
+    if (friends != null && !friends.changed && _loadedFriends) {
+      _friendsFreshnessCursor = freshness.serverTime;
+      return;
+    }
+    await _loadFriends(showLoading: false, markFreshness: false);
+    _friendsFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _markFriendsFreshnessSeen() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['friends'],
+      );
+      _friendsFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
   }
 
   Future<void> _addFriendFlow() async {
@@ -363,6 +409,7 @@ class _FriendsPageState extends State<FriendsPage> {
       children: [
         AppPageContainer(
           onRefresh: () => _loadFriends(showLoading: false),
+          onAutoRefresh: _autoRefreshFriends,
           autoRefresh: widget.autoRefresh,
           children: [
             AppSectionHeader(

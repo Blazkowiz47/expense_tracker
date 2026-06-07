@@ -1082,7 +1082,14 @@ def create_session(db: Any, uid: str) -> str:
     return token
 
 
-FRESHNESS_SECTIONS = {"dashboard", "groups", "friends", "recurring", "activity"}
+FRESHNESS_SECTIONS = {
+    "dashboard",
+    "groups",
+    "friends",
+    "recurring",
+    "activity",
+    "plans",
+}
 ACTIVITY_INCLUDE_SECTIONS = {"personal", "group"}
 
 
@@ -1199,6 +1206,23 @@ def recurring_freshness(db: Any, uid: str) -> datetime | None:
     )
 
 
+def monthly_plan_freshness(db: Any, uid: str) -> datetime | None:
+    owner_keys = [uid]
+    owner_keys.extend(
+        f"group:{group_id}"
+        for group_id in user_group_ids(db, uid)
+        if group_id
+    )
+    if not owner_keys:
+        return None
+    return latest_collection_time(
+        db,
+        "monthly_plans",
+        {"uid": {"$in": owner_keys}},
+        "updatedAt",
+    )
+
+
 def activity_freshness(db: Any, uid: str) -> datetime | None:
     return max_time(personal_expense_freshness(db, uid), group_freshness(db, uid))
 
@@ -1210,6 +1234,7 @@ def dashboard_freshness(db: Any, uid: str) -> datetime | None:
         group_freshness(db, uid),
         friends_freshness(db, uid),
         recurring_freshness(db, uid),
+        monthly_plan_freshness(db, uid),
     )
 
 
@@ -1224,6 +1249,8 @@ def section_latest_time(db: Any, uid: str, section: str) -> datetime | None:
         return recurring_freshness(db, uid)
     if section == "activity":
         return activity_freshness(db, uid)
+    if section == "plans":
+        return monthly_plan_freshness(db, uid)
     return None
 
 

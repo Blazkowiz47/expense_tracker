@@ -179,6 +179,60 @@ def test_sync_freshness_tracks_personal_expense_changes_and_deletes(tmp_path):
     assert activity["personalDeletedIds"] == [expense_id]
 
 
+def test_sync_freshness_tracks_monthly_plan_changes(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={
+            "name": "Home",
+            "groupType": "family",
+            "members": ["bob@example.com"],
+        },
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    baseline = client.get(
+        "/api/v1/sync/freshness?sections=dashboard,plans,activity",
+        headers=headers_b,
+    )
+    assert baseline.status_code == 200, baseline.text
+    cursor = baseline.json()["serverTime"]
+
+    unchanged = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=plans",
+        headers=headers_b,
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["sections"]["plans"]["changed"] is False
+
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers_a,
+        json={
+            "month": "2026-05",
+            "groupId": group_id,
+            "currency": "INR",
+            "budgets": {"Groceries": 500},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    changed = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=dashboard,plans,activity",
+        headers=headers_b,
+    )
+    assert changed.status_code == 200, changed.text
+    sections = changed.json()["sections"]
+    assert sections["plans"]["changed"] is True
+    assert sections["dashboard"]["changed"] is True
+    assert sections["activity"]["changed"] is False
+
+
 def test_activity_feed_returns_incremental_entries_and_tombstones(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")

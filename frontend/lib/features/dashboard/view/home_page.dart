@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/view/dashboard_overall_summary_card.dart';
+import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:expense_tracker/features/planning/view/monthly_planning_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13,6 +17,8 @@ class HomePage extends StatefulWidget {
     this.onOpenFamily,
     this.onOpenRecurring,
     this.onOpenAction,
+    this.freshnessRepository,
+    this.monthlyPlanRepository,
     this.autoRefresh = false,
     super.key,
   });
@@ -22,6 +28,8 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onOpenFamily;
   final VoidCallback? onOpenRecurring;
   final void Function(DailyActionItem item)? onOpenAction;
+  final FreshnessRepository? freshnessRepository;
+  final MonthlyPlanRepository? monthlyPlanRepository;
   final bool autoRefresh;
 
   @override
@@ -30,20 +38,76 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   var _planRefreshToken = 0;
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
+  DateTime? _dashboardFreshnessCursor;
+
+  @override
+  void initState() {
+    super.initState();
+    _freshnessRepository = widget.freshnessRepository ?? FreshnessRepository();
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_markDashboardFreshnessSeen());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _refreshDashboard(DashboardSnapshotCubit dashboardCubit) async {
+    await dashboardCubit.load(showLoading: false);
+    if (!mounted) return;
+    setState(() => _planRefreshToken += 1);
+    unawaited(_markDashboardFreshnessSeen());
+  }
+
+  Future<void> _autoRefreshDashboard(
+    DashboardSnapshotCubit dashboardCubit,
+  ) async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _dashboardFreshnessCursor,
+      sections: const ['dashboard', 'plans'],
+    );
+    final dashboard = freshness.sections['dashboard'];
+    final plans = freshness.sections['plans'];
+    final changed = (dashboard?.changed ?? true) || (plans?.changed ?? false);
+    if (!changed && dashboardCubit.state is DashboardSnapshotLoaded) {
+      _dashboardFreshnessCursor = freshness.serverTime;
+      return;
+    }
+
+    await dashboardCubit.load(showLoading: false);
+    if (!mounted) return;
+    setState(() => _planRefreshToken += 1);
+    _dashboardFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _markDashboardFreshnessSeen() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['dashboard', 'plans'],
+      );
+      _dashboardFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<DashboardSnapshotCubit>().state;
     final dashboardCubit = context.read<DashboardSnapshotCubit>();
-    Future<void> refreshDashboard() async {
-      await dashboardCubit.load(showLoading: false);
-      if (!mounted) return;
-      setState(() => _planRefreshToken += 1);
-    }
 
     if (state is DashboardSnapshotFailure) {
       return AppPageContainer(
-        onRefresh: refreshDashboard,
+        onRefresh: () => _refreshDashboard(dashboardCubit),
+        onAutoRefresh: () => _autoRefreshDashboard(dashboardCubit),
         autoRefresh: widget.autoRefresh,
         children: [
           AppEmptyState(
@@ -59,12 +123,16 @@ class _HomePageState extends State<HomePage> {
 
     final snapshot = state.snapshot;
     return AppPageContainer(
-      onRefresh: refreshDashboard,
+      onRefresh: () => _refreshDashboard(dashboardCubit),
+      onAutoRefresh: () => _autoRefreshDashboard(dashboardCubit),
       autoRefresh: widget.autoRefresh,
       children: [
         const DashboardOverallSummaryCard(),
         const SizedBox(height: 16),
-        MonthlyPlanningCard(refreshToken: _planRefreshToken),
+        MonthlyPlanningCard(
+          repository: widget.monthlyPlanRepository,
+          refreshToken: _planRefreshToken,
+        ),
         const SizedBox(height: 16),
         _DailyActionCenterCard(
           items: snapshot.actionItems,
