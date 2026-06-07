@@ -6,6 +6,9 @@ import 'package:expense_tracker/features/recurring/repositories/api_recurring_re
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+const _recurringCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
+const _recurringFrequencyOptions = <String>['monthly', 'weekly', 'daily'];
+
 class RecurringPage extends StatefulWidget {
   const RecurringPage({
     this.repository,
@@ -119,8 +122,8 @@ class _RecurringPageState extends State<RecurringPage> {
         kind: draft.kind,
         amount: draft.amount,
         category: draft.category,
-        currency: 'INR',
-        frequency: 'monthly',
+        currency: draft.currency,
+        frequency: draft.frequency,
         dayOfMonth: draft.dayOfMonth,
         startDate: DateTime(now.year, now.month, startDay),
       );
@@ -155,18 +158,22 @@ class _RecurringPageState extends State<RecurringPage> {
 
   @override
   Widget build(BuildContext context) {
-    final expectedIncome = _occurrences
-        .where((item) => item.isIncome)
-        .fold<double>(0, (sum, item) => sum + item.expectedAmount);
-    final expectedPayments = _occurrences
-        .where((item) => !item.isIncome)
-        .fold<double>(0, (sum, item) => sum + item.expectedAmount);
-    final confirmedIncome = _occurrences
-        .where((item) => item.isIncome && item.isConfirmed)
-        .fold<double>(0, (sum, item) => sum + (item.actualAmount ?? 0));
-    final confirmedPayments = _occurrences
-        .where((item) => !item.isIncome && item.isConfirmed)
-        .fold<double>(0, (sum, item) => sum + (item.actualAmount ?? 0));
+    final expectedIncome = _sumOccurrencesByCurrency(
+      _occurrences.where((item) => item.isIncome),
+      actual: false,
+    );
+    final expectedPayments = _sumOccurrencesByCurrency(
+      _occurrences.where((item) => !item.isIncome),
+      actual: false,
+    );
+    final confirmedIncome = _sumOccurrencesByCurrency(
+      _occurrences.where((item) => item.isIncome && item.isConfirmed),
+      actual: true,
+    );
+    final confirmedPayments = _sumOccurrencesByCurrency(
+      _occurrences.where((item) => !item.isIncome && item.isConfirmed),
+      actual: true,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -259,16 +266,22 @@ class _CashflowSummaryCard extends StatelessWidget {
   });
 
   final String month;
-  final double expectedIncome;
-  final double expectedPayments;
-  final double confirmedIncome;
-  final double confirmedPayments;
+  final Map<String, double> expectedIncome;
+  final Map<String, double> expectedPayments;
+  final Map<String, double> confirmedIncome;
+  final Map<String, double> confirmedPayments;
   final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
-    final expectedLeft = expectedIncome - expectedPayments;
-    final actualLeft = confirmedIncome - confirmedPayments;
+    final expectedLeft = _subtractCurrencyMaps(
+      expectedIncome,
+      expectedPayments,
+    );
+    final actualLeft = _subtractCurrencyMaps(
+      confirmedIncome,
+      confirmedPayments,
+    );
     return AppCard(
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -296,22 +309,22 @@ class _CashflowSummaryCard extends StatelessWidget {
             children: [
               _MetricPill(
                 label: 'Expected left',
-                value: AppMoney.format(expectedLeft),
-                positive: expectedLeft >= 0,
+                value: _formatCurrencyMap(expectedLeft),
+                positive: _allNonNegative(expectedLeft),
               ),
               _MetricPill(
                 label: 'Confirmed left',
-                value: AppMoney.format(actualLeft),
-                positive: actualLeft >= 0,
+                value: _formatCurrencyMap(actualLeft),
+                positive: _allNonNegative(actualLeft),
               ),
               _MetricPill(
                 label: 'Income',
-                value: AppMoney.format(expectedIncome),
+                value: _formatCurrencyMap(expectedIncome),
                 positive: true,
               ),
               _MetricPill(
                 label: 'Payments',
-                value: AppMoney.format(expectedPayments),
+                value: _formatCurrencyMap(expectedPayments),
                 positive: false,
               ),
             ],
@@ -405,11 +418,11 @@ class _OccurrenceCard extends StatelessWidget {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      'Expected ${AppMoney.format(occurrence.expectedAmount)}',
+                      'Expected ${AppMoney.formatCurrency(occurrence.expectedAmount, occurrence.currency)}',
                     ),
                     if (occurrence.actualAmount != null)
                       Text(
-                        'Actual ${AppMoney.format(occurrence.actualAmount!)}',
+                        'Actual ${AppMoney.formatCurrency(occurrence.actualAmount!, occurrence.currency)}',
                       ),
                     Chip(
                       visualDensity: VisualDensity.compact,
@@ -447,8 +460,12 @@ class _TemplateTile extends StatelessWidget {
             : Icons.event_repeat,
       ),
       title: Text(template.title),
-      subtitle: Text('Every month on day ${template.dayOfMonth}'),
-      trailing: Text(AppMoney.format(template.amount)),
+      subtitle: Text(
+        '${_frequencyLabel(template.frequency)} · day ${template.dayOfMonth}',
+      ),
+      trailing: Text(
+        AppMoney.formatCurrency(template.amount, template.currency),
+      ),
     );
   }
 }
@@ -466,6 +483,8 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
   final _dayController = TextEditingController(text: '15');
   final _categoryController = TextEditingController(text: 'Salary');
   var _kind = 'income';
+  var _currency = 'INR';
+  var _frequency = 'monthly';
   String? _error;
 
   @override
@@ -497,6 +516,8 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
             ? (_kind == 'income' ? 'Salary' : 'Bills')
             : category,
         dayOfMonth: day,
+        currency: _currency,
+        frequency: _frequency,
       ),
     );
   }
@@ -549,9 +570,9 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _amountController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Expected amount',
-                prefixText: AppMoney.inputPrefix,
+                prefixText: '$_currency ',
               ),
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
@@ -559,9 +580,50 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _currency,
+              decoration: const InputDecoration(
+                labelText: 'Currency',
+                border: OutlineInputBorder(),
+              ),
+              items: _recurringCurrencyOptions
+                  .map(
+                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _currency = value);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _frequency,
+              decoration: const InputDecoration(
+                labelText: 'Frequency',
+                border: OutlineInputBorder(),
+              ),
+              items: _recurringFrequencyOptions
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(_frequencyLabel(item)),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _frequency = value);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _dayController,
-              decoration: const InputDecoration(labelText: 'Day of month'),
+              decoration: const InputDecoration(
+                labelText: 'Start day of month',
+              ),
               keyboardType: TextInputType.number,
               textInputAction: TextInputAction.next,
             ),
@@ -642,14 +704,16 @@ class _ConfirmActualDialogState extends State<_ConfirmActualDialog> {
         children: [
           Text(widget.occurrence.title),
           const SizedBox(height: 8),
-          Text('Expected ${AppMoney.format(widget.occurrence.expectedAmount)}'),
+          Text(
+            'Expected ${AppMoney.formatCurrency(widget.occurrence.expectedAmount, widget.occurrence.currency)}',
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _amountController,
             autofocus: true,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Actual amount',
-              prefixText: AppMoney.inputPrefix,
+              prefixText: '${widget.occurrence.currency} ',
             ),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             onSubmitted: (_) => _submit(),
@@ -681,6 +745,8 @@ class _RecurringDraft {
     required this.amount,
     required this.category,
     required this.dayOfMonth,
+    required this.currency,
+    required this.frequency,
   });
 
   final String title;
@@ -688,6 +754,8 @@ class _RecurringDraft {
   final double amount;
   final String category;
   final int dayOfMonth;
+  final String currency;
+  final String frequency;
 }
 
 String _monthKey(DateTime date) {
@@ -717,6 +785,64 @@ String _monthTitle(String month) {
 
 String _shortDate(DateTime date) {
   return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+}
+
+Map<String, double> _sumOccurrencesByCurrency(
+  Iterable<RecurringOccurrence> occurrences, {
+  required bool actual,
+}) {
+  final totals = <String, double>{};
+  for (final occurrence in occurrences) {
+    final amount = actual
+        ? occurrence.actualAmount ?? 0
+        : occurrence.expectedAmount;
+    if (amount <= 0) continue;
+    final currency = _normalizeCurrency(occurrence.currency);
+    totals[currency] = (totals[currency] ?? 0) + amount;
+  }
+  return totals;
+}
+
+Map<String, double> _subtractCurrencyMaps(
+  Map<String, double> left,
+  Map<String, double> right,
+) {
+  final result = <String, double>{};
+  for (final currency in {...left.keys, ...right.keys}) {
+    result[currency] = (left[currency] ?? 0) - (right[currency] ?? 0);
+  }
+  result.removeWhere((currency, amount) => amount.abs() <= 0.005);
+  return result;
+}
+
+bool _allNonNegative(Map<String, double> amounts) {
+  if (amounts.isEmpty) return true;
+  return amounts.values.every((amount) => amount >= -0.005);
+}
+
+String _formatCurrencyMap(Map<String, double> amounts) {
+  final entries =
+      amounts.entries.where((entry) => entry.value.abs() > 0.005).toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+  if (entries.isEmpty) {
+    return AppMoney.format(0);
+  }
+  return entries
+      .map((entry) => AppMoney.formatCurrency(entry.value, entry.key))
+      .join(' / ');
+}
+
+String _frequencyLabel(String frequency) {
+  return switch (frequency.trim().toLowerCase()) {
+    'daily' => 'Daily',
+    'weekly' => 'Weekly',
+    _ => 'Monthly',
+  };
+}
+
+String _normalizeCurrency(String value) {
+  final currency = value.trim().toUpperCase();
+  return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : 'INR';
 }
 
 int _lastDayOfMonth(DateTime date) {

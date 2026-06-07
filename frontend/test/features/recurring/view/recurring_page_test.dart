@@ -25,7 +25,7 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
         kind: 'expense',
         title: 'Rent',
         category: 'Bills',
-        currency: 'INR',
+        currency: 'USD',
         expectedAmount: 12000,
         actualAmount: null,
         dueDate: DateTime.now(),
@@ -51,6 +51,22 @@ void main() {
 
     expect(find.text('Confirm actual'), findsOneWidget);
     expect(find.text('Rent'), findsWidgets);
-    expect(find.text('Expected ₹12,000.00'), findsWidgets);
+    expect(find.text('Expected USD 12,000.00'), findsWidgets);
+  });
+
+  testWidgets('create dialog exposes currency and frequency controls', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(home: RecurringPage(repository: _FakeRecurringRepository())),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add recurring'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Currency'), findsOneWidget);
+    expect(find.text('Frequency'), findsOneWidget);
+    expect(find.text('Monthly'), findsOneWidget);
   });
 }

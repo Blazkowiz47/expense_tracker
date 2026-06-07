@@ -20,9 +20,11 @@ void main() {
           request.method == 'POST') {
         expect(request.headers['authorization'], 'Bearer session-token');
         expect(request.body, contains('"kind":"income"'));
+        expect(request.body, contains('"currency":"USD"'));
+        expect(request.body, contains('"frequency":"weekly"'));
         expect(request.body, contains('"dayOfMonth":15'));
         return http.Response(
-          '{"id":"template-1","title":"Salary","kind":"income","expectedAmount":31000,"currency":"INR","category":"Salary","frequency":"monthly","dayOfMonth":15,"startDate":"2026-05-15T00:00:00Z","nextDueDate":"2026-05-15T00:00:00Z","active":true}',
+          '{"id":"template-1","title":"Salary","kind":"income","expectedAmount":31000,"currency":"USD","category":"Salary","frequency":"weekly","dayOfMonth":15,"startDate":"2026-05-15T00:00:00Z","nextDueDate":"2026-05-15T00:00:00Z","active":true}',
           201,
         );
       }
@@ -57,8 +59,8 @@ void main() {
       kind: 'income',
       amount: 31000,
       category: 'Salary',
-      currency: 'INR',
-      frequency: 'monthly',
+      currency: 'USD',
+      frequency: 'weekly',
       dayOfMonth: 15,
       startDate: DateTime.utc(2026, 5, 15),
     );
@@ -70,6 +72,8 @@ void main() {
     );
 
     expect(template.kind, 'income');
+    expect(template.currency, 'USD');
+    expect(template.frequency, 'weekly');
     expect(occurrences.single.expectedAmount, 31000);
     expect(confirmed.isConfirmed, isTrue);
     expect(confirmed.actualAmount, 30500);
