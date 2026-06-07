@@ -177,6 +177,7 @@ class _GroupsPageState extends State<GroupsPage> {
     return Stack(
       children: [
         AppPageContainer(
+          onRefresh: _loadGroups,
           children: [
             AppSectionHeader(
               title: _sectionTitle,
@@ -2208,6 +2209,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         body: Stack(
           children: [
             AppPageContainer(
+              onRefresh: _loadData,
               children: [
                 AppCard(
                   child: ListTile(
@@ -2506,6 +2508,17 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     }
   }
 
+  Future<void> _refreshSettings() async {
+    try {
+      final members = await widget.repository.fetchMembers(widget.groupId);
+      if (!mounted) return;
+      setState(() => _members = members);
+    } catch (_) {
+      // Keep the current member list and still refresh settlement totals.
+    }
+    await _loadSettlementBalances();
+  }
+
   _GroupSettlementMeta? _parseGroupSettlementMeta(String description) {
     final match = RegExp(
       r'\[type:groupSettlement\]\[group:([^\]]+)\]\[uid:([^\]]+)\]\[dir:(paid|received)\]',
@@ -2743,6 +2756,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Group settings')),
       body: AppPageContainer(
+        onRefresh: _refreshSettings,
         children: [
           AppCard(
             child: ListTile(

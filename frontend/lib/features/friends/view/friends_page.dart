@@ -330,6 +330,7 @@ class _FriendsPageState extends State<FriendsPage> {
     return Stack(
       children: [
         AppPageContainer(
+          onRefresh: _loadFriends,
           children: [
             AppSectionHeader(
               title: 'Friends',

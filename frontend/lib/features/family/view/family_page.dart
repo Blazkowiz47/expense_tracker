@@ -93,6 +93,12 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
+  Future<void> _refreshFamily() async {
+    if (!mounted) return;
+    setState(() => _monthlyPlanRefreshToken += 1);
+    await _loadFamilies();
+  }
+
   void _applyFamilies(List<GroupSummary> families) {
     final previousId = _selectedFamily?.id;
     final selected = families
@@ -332,8 +338,9 @@ class _FamilyPageState extends State<FamilyPage> {
     final family = _selectedFamily;
 
     if (_loading && family == null) {
-      return const AppPageContainer(
-        children: [
+      return AppPageContainer(
+        onRefresh: _refreshFamily,
+        children: const [
           AppBalanceTile(
             title: 'Loading family...',
             leadingIcon: Icons.family_restroom,
@@ -344,6 +351,7 @@ class _FamilyPageState extends State<FamilyPage> {
 
     if (_error != null && family == null) {
       return AppPageContainer(
+        onRefresh: _refreshFamily,
         children: [
           AppBalanceTile(
             title: 'Failed to load family',
@@ -356,6 +364,7 @@ class _FamilyPageState extends State<FamilyPage> {
 
     if (family == null) {
       return AppPageContainer(
+        onRefresh: _refreshFamily,
         children: [
           AppEmptyState(
             title: 'No family group yet',
@@ -380,6 +389,7 @@ class _FamilyPageState extends State<FamilyPage> {
     final categories = _categoryTotals();
 
     return AppPageContainer(
+      onRefresh: _refreshFamily,
       children: [
         _HouseholdCard(
           family: family,

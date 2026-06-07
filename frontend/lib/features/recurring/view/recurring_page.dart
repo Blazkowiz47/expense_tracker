@@ -151,12 +151,14 @@ class _RecurringPageState extends State<RecurringPage> {
             const Center(child: CircularProgressIndicator())
           else if (_error != null)
             AppPageContainer(
+              onRefresh: _load,
               children: [
                 AppEmptyState(title: 'Recurring unavailable', subtitle: _error),
               ],
             )
           else
             AppPageContainer(
+              onRefresh: _load,
               children: [
                 _CashflowSummaryCard(
                   month: _monthTitle(_month),

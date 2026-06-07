@@ -15,8 +15,10 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<DashboardSnapshotCubit>().state;
+    final dashboardCubit = context.read<DashboardSnapshotCubit>();
     if (state is DashboardSnapshotFailure) {
       return AppPageContainer(
+        onRefresh: dashboardCubit.load,
         children: [
           AppEmptyState(
             title: 'Dashboard unavailable',
@@ -31,6 +33,7 @@ class HomePage extends StatelessWidget {
 
     final snapshot = state.snapshot;
     return AppPageContainer(
+      onRefresh: dashboardCubit.load,
       children: [
         const DashboardOverallSummaryCard(),
         const SizedBox(height: 16),

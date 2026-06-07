@@ -329,6 +329,7 @@ class _ActivityPageState extends State<ActivityPage> {
         final increasedSpend = currentTotal > previousTotal;
 
         return AppPageContainer(
+          onRefresh: _refreshActivityData,
           children: [
             _SpendSummaryCard(
               total: currentTotal,
