@@ -51,6 +51,7 @@ class _ActivityPageState extends State<ActivityPage> {
   late final bool _ownsActivityFeedRepository;
   List<Expense> _expenses = const [];
   List<_GroupExpenseEntry> _groupExpenses = const [];
+  List<ActivityFeedEntry> _activityEvents = const [];
   DateTime? _activityFreshnessCursor;
   _ActivityRange _range = _ActivityRange.week;
   bool _loadedRepository = false;
@@ -96,16 +97,22 @@ class _ActivityPageState extends State<ActivityPage> {
   Future<void> _refreshActivityData({bool showLoading = true}) async {
     setState(
       () => _loadingExpenses =
-          showLoading || (_expenses.isEmpty && _groupExpenses.isEmpty),
+          showLoading ||
+          (_expenses.isEmpty &&
+              _groupExpenses.isEmpty &&
+              _activityEvents.isEmpty),
     );
     final personalFuture = _loadPersonalExpenses();
     final groupFuture = _loadGroupExpenses();
+    final eventFuture = _loadActivityEvents();
     final personalExpenses = await personalFuture;
     final groupExpenses = await groupFuture;
+    final activityEvents = await eventFuture;
     if (!mounted) return;
     setState(() {
       _expenses = personalExpenses;
       _groupExpenses = groupExpenses;
+      _activityEvents = activityEvents;
       _loadingExpenses = false;
     });
     await _refreshActivityCursor();
@@ -121,7 +128,9 @@ class _ActivityPageState extends State<ActivityPage> {
     if (activity != null) {
       await _applyActivityTombstones(activity);
       if (!activity.changed &&
-          (_expenses.isNotEmpty || _groupExpenses.isNotEmpty)) {
+          (_expenses.isNotEmpty ||
+              _groupExpenses.isNotEmpty ||
+              _activityEvents.isNotEmpty)) {
         _activityFreshnessCursor = freshness.serverTime;
         return;
       }
@@ -191,6 +200,11 @@ class _ActivityPageState extends State<ActivityPage> {
             .where((entry) => !deletedGroups.contains(entry.group.id))
             .toList(growable: false);
       }
+      if (deletedGroups.isNotEmpty) {
+        _activityEvents = _activityEvents
+            .where((entry) => !deletedGroups.contains(entry.group?.id))
+            .toList(growable: false);
+      }
     });
   }
 
@@ -241,6 +255,7 @@ class _ActivityPageState extends State<ActivityPage> {
           ),
         )
         .toList(growable: false);
+    final eventUpdates = _activityEventsFromFeed(feed.entries);
 
     _repository?.upsertCachedExpenses(personalUpdates);
     final groupUpdatesByGroup = <String, List<GroupExpense>>{};
@@ -274,6 +289,15 @@ class _ActivityPageState extends State<ActivityPage> {
         }
         _groupExpenses = byKey.values.toList(growable: false);
       }
+      if (eventUpdates.isNotEmpty) {
+        final byKey = <String, ActivityFeedEntry>{
+          for (final entry in _activityEvents) _activityEventKey(entry): entry,
+        };
+        for (final entry in eventUpdates) {
+          byKey[_activityEventKey(entry)] = entry;
+        }
+        _activityEvents = byKey.values.toList(growable: false);
+      }
     });
   }
 
@@ -301,6 +325,40 @@ class _ActivityPageState extends State<ActivityPage> {
       }
     }
     return entries;
+  }
+
+  Future<List<ActivityFeedEntry>> _loadActivityEvents() async {
+    try {
+      final feed = await _activityFeedRepository.fetchActivity(
+        limit: 120,
+        include: const ['friend_settlements', 'group_settlements', 'recurring'],
+      );
+      return _activityEventsFromFeed(feed.entries);
+    } catch (_) {
+      return _activityEvents;
+    }
+  }
+
+  List<ActivityFeedEntry> _activityEventsFromFeed(
+    Iterable<ActivityFeedEntry> entries,
+  ) {
+    return entries
+        .where(_isActivityEvent)
+        .where((entry) => entry.id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  bool _isActivityEvent(ActivityFeedEntry entry) {
+    return switch (entry.kind) {
+      ActivityFeedEntryKind.friendSettlement ||
+      ActivityFeedEntryKind.groupSettlement ||
+      ActivityFeedEntryKind.recurringConfirmation => true,
+      _ => false,
+    };
+  }
+
+  String _activityEventKey(ActivityFeedEntry entry) {
+    return '${entry.kind.name}:${entry.id}';
   }
 
   Future<List<_GroupExpenseEntry>> _groupExpenseEntriesFrom(
@@ -356,6 +414,18 @@ class _ActivityPageState extends State<ActivityPage> {
     return entries;
   }
 
+  List<_ActivityTimelineEntry> _timelineEntries(
+    List<_ActivityExpenseEntry> expenseEntries,
+  ) {
+    final entries = [
+      ...expenseEntries.map(_ActivityTimelineEntry.expense),
+      ..._activityEvents
+          .map(_ActivityTimelineEntry.event)
+          .whereType<_ActivityTimelineEntry>(),
+    ]..sort((a, b) => b.date.compareTo(a.date));
+    return entries;
+  }
+
   List<_ActivityExpenseEntry> _entriesInPeriod(
     List<_ActivityExpenseEntry> entries,
     DateTime start,
@@ -366,6 +436,18 @@ class _ActivityPageState extends State<ActivityPage> {
           final date = entry.date;
           return !date.isBefore(start) && date.isBefore(end);
         })
+        .toList(growable: false);
+  }
+
+  List<_ActivityTimelineEntry> _timelineEntriesInPeriod(
+    List<_ActivityTimelineEntry> entries,
+    DateTime start,
+    DateTime end,
+  ) {
+    return entries
+        .where(
+          (entry) => !entry.date.isBefore(start) && entry.date.isBefore(end),
+        )
         .toList(growable: false);
   }
 
@@ -557,6 +639,16 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
+  Future<void> _openTimelineEntry(_ActivityTimelineEntry entry) async {
+    final personalExpense = entry.personalExpense;
+    final groupExpense = entry.groupExpense;
+    if (personalExpense != null) {
+      await _editExpense(personalExpense);
+    } else if (groupExpense != null) {
+      await _editGroupExpense(groupExpense);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardSnapshotCubit, DashboardSnapshotState>(
@@ -581,6 +673,12 @@ class _ActivityPageState extends State<ActivityPage> {
         );
         final currentTotals = periodExpenses.totalAmountsByCurrency;
         final previousTotals = previousExpenses.totalAmountsByCurrency;
+        final timelineEntries = _timelineEntries(activityEntries);
+        final periodTimelineEntries = _timelineEntriesInPeriod(
+          timelineEntries,
+          start,
+          end,
+        );
         final trendCurrency = _singleCurrencyForTrend(
           currentTotals,
           previousTotals,
@@ -613,40 +711,24 @@ class _ActivityPageState extends State<ActivityPage> {
             _CategoryBreakdownCard(categories: categories),
             const SizedBox(height: 20),
             const AppSectionHeader(title: 'History'),
-            if (periodExpenses.isNotEmpty)
-              ...periodExpenses.map(
-                (entry) => _ExpenseActivityTile(
+            if (periodTimelineEntries.isNotEmpty)
+              ...periodTimelineEntries.map(
+                (entry) => _TimelineActivityTile(
                   entry: entry,
-                  onTap: () {
-                    final personalExpense = entry.personalExpense;
-                    final groupExpense = entry.groupExpense;
-                    if (personalExpense != null) {
-                      _editExpense(personalExpense);
-                    } else if (groupExpense != null) {
-                      _editGroupExpense(groupExpense);
-                    }
-                  },
+                  onTap: entry.canOpen ? () => _openTimelineEntry(entry) : null,
                 ),
               )
-            else if (activityEntries.isNotEmpty) ...[
+            else if (timelineEntries.isNotEmpty) ...[
               const AppEmptyState(
                 title: 'No activity in this period',
-                subtitle: 'Older expenses are shown below for context.',
+                subtitle: 'Older activity is shown below for context.',
               ),
               const SizedBox(height: 12),
               const AppSectionHeader(title: 'Older history'),
-              ...activityEntries.map(
-                (entry) => _ExpenseActivityTile(
+              ...timelineEntries.map(
+                (entry) => _TimelineActivityTile(
                   entry: entry,
-                  onTap: () {
-                    final personalExpense = entry.personalExpense;
-                    final groupExpense = entry.groupExpense;
-                    if (personalExpense != null) {
-                      _editExpense(personalExpense);
-                    } else if (groupExpense != null) {
-                      _editGroupExpense(groupExpense);
-                    }
-                  },
+                  onTap: entry.canOpen ? () => _openTimelineEntry(entry) : null,
                 ),
               ),
             ] else if (state.snapshot.activityItems.isEmpty)
@@ -666,27 +748,24 @@ class _ActivityPageState extends State<ActivityPage> {
   }
 }
 
-class _ExpenseActivityTile extends StatelessWidget {
-  const _ExpenseActivityTile({required this.entry, required this.onTap});
+class _TimelineActivityTile extends StatelessWidget {
+  const _TimelineActivityTile({required this.entry, required this.onTap});
 
-  final _ActivityExpenseEntry entry;
+  final _ActivityTimelineEntry entry;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final category = entry.category.trim();
-    final date = entry.date.toLocal().toString().split(' ').first;
-
     return AppCard(
       child: ListTile(
         onTap: onTap,
         leading: AppAvatar(icon: entry.icon),
         title: Text(entry.title),
-        subtitle: Text(category.isEmpty ? date : '$category · $date'),
+        subtitle: Text(entry.subtitle),
         trailing: AppMoneyLabel(
-          text: AppMoney.formatCurrency(entry.amount, entry.currency),
-          positive: false,
-          neutral: true,
+          text: entry.amountText,
+          positive: entry.positive,
+          neutral: entry.neutral,
         ),
       ),
     );
@@ -755,6 +834,126 @@ class _ActivityExpenseEntry {
   final IconData icon;
   final Expense? personalExpense;
   final _GroupExpenseEntry? groupExpense;
+}
+
+class _ActivityTimelineEntry {
+  const _ActivityTimelineEntry({
+    required this.title,
+    required this.subtitle,
+    required this.amountText,
+    required this.date,
+    required this.icon,
+    this.positive = false,
+    this.neutral = true,
+    this.personalExpense,
+    this.groupExpense,
+  });
+
+  factory _ActivityTimelineEntry.expense(_ActivityExpenseEntry entry) {
+    final category = entry.category.trim();
+    final date = _timelineDate(entry.date);
+    return _ActivityTimelineEntry(
+      title: entry.title,
+      subtitle: category.isEmpty ? date : '$category · $date',
+      amountText: AppMoney.formatCurrency(entry.amount, entry.currency),
+      date: entry.date,
+      icon: entry.icon,
+      personalExpense: entry.personalExpense,
+      groupExpense: entry.groupExpense,
+    );
+  }
+
+  static _ActivityTimelineEntry? event(ActivityFeedEntry entry) {
+    return switch (entry.kind) {
+      ActivityFeedEntryKind.friendSettlement => _settlementEvent(entry, null),
+      ActivityFeedEntryKind.groupSettlement => _settlementEvent(
+        entry,
+        entry.group,
+      ),
+      ActivityFeedEntryKind.recurringConfirmation => _recurringEvent(entry),
+      _ => null,
+    };
+  }
+
+  static _ActivityTimelineEntry? _settlementEvent(
+    ActivityFeedEntry entry,
+    GroupSummary? group,
+  ) {
+    final settlement = entry.settlement;
+    if (settlement == null) return null;
+    final payer = _personLabel(entry.payer, entry.viewerUid);
+    final receiver = _personLabel(entry.receiver, entry.viewerUid);
+    final title = payer == 'You'
+        ? 'You paid $receiver'
+        : receiver == 'You'
+        ? '$payer paid you'
+        : '$payer paid $receiver';
+    final date = _timelineDate(settlement.createdAt);
+    final groupLabel = group == null
+        ? 'Friend settlement'
+        : '${_groupKindLabel(group)} · ${group.name}';
+    return _ActivityTimelineEntry(
+      title: title,
+      subtitle: '$groupLabel · $date',
+      amountText: AppMoney.formatCurrency(
+        settlement.amount,
+        settlement.currency,
+      ),
+      date: settlement.createdAt,
+      icon: group == null ? Icons.handshake_outlined : Icons.payments_outlined,
+    );
+  }
+
+  static _ActivityTimelineEntry? _recurringEvent(ActivityFeedEntry entry) {
+    final occurrence = entry.recurringOccurrence;
+    if (occurrence == null) return null;
+    final title = occurrence.title.trim().isEmpty
+        ? 'recurring item'
+        : occurrence.title.trim();
+    final isIncome = occurrence.isIncome;
+    final amount = occurrence.actualAmount ?? occurrence.expectedAmount;
+    final date = occurrence.actualDate ?? occurrence.dueDate;
+    return _ActivityTimelineEntry(
+      title: isIncome ? 'Received $title' : 'Confirmed $title',
+      subtitle:
+          'Recurring ${isIncome ? 'income' : 'expense'} · ${_timelineDate(date)}',
+      amountText: AppMoney.formatCurrency(amount, occurrence.currency),
+      date: date,
+      icon: Icons.event_repeat_outlined,
+      positive: isIncome,
+      neutral: !isIncome,
+    );
+  }
+
+  static String _personLabel(ActivityUser? user, String viewerUid) {
+    if (user != null && user.uid.isNotEmpty && user.uid == viewerUid) {
+      return 'You';
+    }
+    return user?.label ?? 'Someone';
+  }
+
+  static String _groupKindLabel(GroupSummary group) {
+    return switch (group.groupType) {
+      GroupType.family => 'Family settlement',
+      GroupType.split => 'Group settlement',
+    };
+  }
+
+  static String _timelineDate(DateTime date) {
+    return date.toLocal().toString().split(' ').first;
+  }
+
+  final String title;
+  final String subtitle;
+  final String amountText;
+  final DateTime date;
+  final IconData icon;
+  final bool positive;
+  final bool neutral;
+  final Expense? personalExpense;
+  final _GroupExpenseEntry? groupExpense;
+
+  bool get canOpen => personalExpense != null || groupExpense != null;
 }
 
 class _SpendSummaryCard extends StatelessWidget {

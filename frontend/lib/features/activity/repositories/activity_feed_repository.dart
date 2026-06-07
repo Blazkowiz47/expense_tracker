@@ -21,7 +21,13 @@ class ActivityFeedRepository {
   Future<ActivityFeed> fetchActivity({
     DateTime? since,
     int limit = 80,
-    Iterable<String> include = const ['personal', 'group'],
+    Iterable<String> include = const [
+      'personal',
+      'group',
+      'friend_settlements',
+      'group_settlements',
+      'recurring',
+    ],
   }) async {
     final params = <String, String>{'limit': limit.clamp(1, 200).toString()};
     if (since != null) {

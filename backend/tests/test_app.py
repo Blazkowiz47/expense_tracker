@@ -331,6 +331,106 @@ def test_activity_feed_returns_incremental_entries_and_tombstones(tmp_path):
     }
 
 
+def test_activity_feed_includes_settlements_and_recurring_confirmations(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+    alice_uid = client.get("/api/v1/auth/me", headers=headers_a).json()["user"]["uid"]
+    bob_uid = client.get("/api/v1/auth/me", headers=headers_b).json()["user"]["uid"]
+
+    friend = client.post(
+        "/api/v1/friends/add",
+        headers=headers_a,
+        json={"emailOrPhone": "bob@example.com"},
+    )
+    assert friend.status_code == 200, friend.text
+    friend_settlement = client.post(
+        "/api/v1/friends/settlements",
+        headers=headers_a,
+        json={
+            "friendUid": bob_uid,
+            "direction": "paid",
+            "amount": 25,
+            "currency": "USD",
+        },
+    )
+    assert friend_settlement.status_code == 201, friend_settlement.text
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Household", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+    group_settlement = client.post(
+        f"/api/v1/groups/{group_id}/settlements",
+        headers=headers_b,
+        json={
+            "memberUid": alice_uid,
+            "direction": "paid",
+            "amount": 50,
+            "currency": "INR",
+        },
+    )
+    assert group_settlement.status_code == 201, group_settlement.text
+
+    template = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers_a,
+        json={
+            "title": "Salary",
+            "kind": "income",
+            "amount": 30000,
+            "currency": "INR",
+            "category": "Salary",
+            "frequency": "monthly",
+            "dayOfMonth": 15,
+            "startDate": "2026-05-01T00:00:00Z",
+        },
+    )
+    assert template.status_code == 201, template.text
+    occurrence = client.get(
+        "/api/v1/recurring/occurrences?month=2026-05",
+        headers=headers_a,
+    ).json()["occurrences"][0]
+    confirmed = client.post(
+        f"/api/v1/recurring/occurrences/{occurrence['id']}/confirm",
+        headers=headers_a,
+        json={"actualAmount": 30500, "actualDate": "2026-05-16T10:00:00Z"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+
+    feed = client.get(
+        "/api/v1/activity?include=friend_settlements,group_settlements,recurring&limit=10",
+        headers=headers_a,
+    )
+    assert feed.status_code == 200, feed.text
+    entries = feed.json()["entries"]
+    assert {entry["kind"] for entry in entries} == {
+        "friendSettlement",
+        "groupSettlement",
+        "recurringConfirmation",
+    }
+
+    friend_entry = next(entry for entry in entries if entry["kind"] == "friendSettlement")
+    assert friend_entry["viewerUid"] == alice_uid
+    assert friend_entry["payer"]["uid"] == alice_uid
+    assert friend_entry["receiver"]["uid"] == bob_uid
+    assert friend_entry["settlement"]["currency"] == "USD"
+
+    group_entry = next(entry for entry in entries if entry["kind"] == "groupSettlement")
+    assert group_entry["group"]["name"] == "Household"
+    assert group_entry["payer"]["uid"] == bob_uid
+    assert group_entry["receiver"]["uid"] == alice_uid
+    assert group_entry["settlement"]["amount"] == 50
+
+    recurring_entry = next(entry for entry in entries if entry["kind"] == "recurringConfirmation")
+    assert recurring_entry["occurrence"]["id"] == occurrence["id"]
+    assert recurring_entry["occurrence"]["status"] == "confirmed"
+    assert recurring_entry["occurrence"]["actualAmount"] == 30500
+
+
 def test_bill_upload_extraction_and_create_expense(tmp_path):
     client, app = make_client(tmp_path)
     headers = register(client)

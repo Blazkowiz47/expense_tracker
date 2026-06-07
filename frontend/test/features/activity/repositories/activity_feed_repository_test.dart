@@ -21,7 +21,10 @@ void main() {
       expect(request.url.path, '/api/v1/activity');
       expect(request.url.queryParameters['since'], since.toIso8601String());
       expect(request.url.queryParameters['limit'], '40');
-      expect(request.url.queryParameters['include'], 'personal,group');
+      expect(
+        request.url.queryParameters['include'],
+        'personal,group,friend_settlements,group_settlements,recurring',
+      );
       expect(request.headers['authorization'], 'Bearer session-token');
       return http.Response('''
         {
@@ -74,6 +77,82 @@ void main() {
                 "createdAt": "2026-06-07T08:30:00Z",
                 "updatedAt": "2026-06-07T10:00:15Z"
               }
+            },
+            {
+              "kind": "friendSettlement",
+              "id": "friend-settlement-1",
+              "date": "2026-06-07T10:00:20Z",
+              "updatedAt": "2026-06-07T10:00:20Z",
+              "viewerUid": "alice",
+              "payer": {
+                "uid": "alice",
+                "displayName": "Alice"
+              },
+              "receiver": {
+                "uid": "bob",
+                "displayName": "Bob"
+              },
+              "settlement": {
+                "id": "friend-settlement-1",
+                "uids": ["alice", "bob"],
+                "payerUid": "alice",
+                "receiverUid": "bob",
+                "amount": 25,
+                "currency": "USD",
+                "createdAt": "2026-06-07T10:00:20Z"
+              }
+            },
+            {
+              "kind": "groupSettlement",
+              "id": "group-settlement-1",
+              "groupId": "group-1",
+              "date": "2026-06-07T10:00:25Z",
+              "updatedAt": "2026-06-07T10:00:25Z",
+              "viewerUid": "alice",
+              "group": {
+                "id": "group-1",
+                "name": "Household",
+                "groupType": "family",
+                "memberCount": 2
+              },
+              "payer": {
+                "uid": "bob",
+                "displayName": "Bob"
+              },
+              "receiver": {
+                "uid": "alice",
+                "displayName": "Alice"
+              },
+              "settlement": {
+                "id": "group-settlement-1",
+                "groupId": "group-1",
+                "payerUid": "bob",
+                "receiverUid": "alice",
+                "amount": 50,
+                "currency": "INR",
+                "createdAt": "2026-06-07T10:00:25Z"
+              }
+            },
+            {
+              "kind": "recurringConfirmation",
+              "id": "occurrence-1",
+              "date": "2026-06-07T10:00:30Z",
+              "updatedAt": "2026-06-07T10:00:30Z",
+              "viewerUid": "alice",
+              "occurrence": {
+                "id": "occurrence-1",
+                "templateId": "template-1",
+                "period": "2026-06",
+                "kind": "income",
+                "title": "Salary",
+                "category": "Salary",
+                "currency": "INR",
+                "expectedAmount": 30000,
+                "actualAmount": 30500,
+                "dueDate": "2026-06-07T00:00:00Z",
+                "actualDate": "2026-06-07T10:00:30Z",
+                "status": "confirmed"
+              }
             }
           ],
           "tombstones": {
@@ -95,10 +174,29 @@ void main() {
     final feed = await repository.fetchActivity(since: since, limit: 40);
 
     expect(feed.serverTime, DateTime.parse('2026-06-07T10:00:45Z'));
-    expect(feed.entries, hasLength(2));
+    expect(feed.entries, hasLength(5));
     expect(feed.entries.first.personalExpense?.title, 'Morning coffee');
-    expect(feed.entries.last.group?.groupType, GroupType.family);
-    expect(feed.entries.last.groupExpense?.description, 'Weekly groceries');
+    final groupExpense = feed.entries.firstWhere(
+      (entry) => entry.groupExpense != null,
+    );
+    expect(groupExpense.group?.groupType, GroupType.family);
+    expect(groupExpense.groupExpense?.description, 'Weekly groceries');
+    final friendSettlement = feed.entries.firstWhere(
+      (entry) => entry.settlement?.id == 'friend-settlement-1',
+    );
+    expect(friendSettlement.payer?.label, 'Alice');
+    expect(friendSettlement.receiver?.label, 'Bob');
+    expect(friendSettlement.settlement?.currency, 'USD');
+    final groupSettlement = feed.entries.firstWhere(
+      (entry) => entry.settlement?.id == 'group-settlement-1',
+    );
+    expect(groupSettlement.group?.name, 'Household');
+    expect(groupSettlement.settlement?.amount, 50);
+    final recurring = feed.entries.firstWhere(
+      (entry) => entry.recurringOccurrence != null,
+    );
+    expect(recurring.recurringOccurrence?.title, 'Salary');
+    expect(recurring.recurringOccurrence?.actualAmount, 30500);
     expect(feed.tombstones.personalDeletedIds, ['expense-2']);
     expect(feed.tombstones.deletedGroupIds, ['group-2']);
     expect(feed.tombstones.groupDeleted.single.expenseId, 'group-expense-2');

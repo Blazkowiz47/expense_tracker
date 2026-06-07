@@ -3,6 +3,8 @@ import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
+import 'package:expense_tracker/features/activity/models/activity_feed.dart';
+import 'package:expense_tracker/features/activity/repositories/activity_feed_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
@@ -14,6 +16,7 @@ import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
+import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -65,6 +68,28 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   @override
   Future<List<GroupMember>> fetchMembers(String groupId) async =>
       membersByGroup[groupId] ?? const [];
+}
+
+class _FakeActivityFeedRepository extends ActivityFeedRepository {
+  _FakeActivityFeedRepository(this.feed)
+    : super(client: MockClient((_) async => http.Response('{}', 200)));
+
+  final ActivityFeed feed;
+
+  @override
+  Future<ActivityFeed> fetchActivity({
+    DateTime? since,
+    int limit = 80,
+    Iterable<String> include = const [
+      'personal',
+      'group',
+      'friend_settlements',
+      'group_settlements',
+      'recurring',
+    ],
+  }) async {
+    return feed;
+  }
 }
 
 class _FakeAuthRepository implements AuthRepository {
@@ -287,6 +312,118 @@ void main() {
     expect(find.text('Groceries'), findsOneWidget);
     expect(find.text('Family · Home · $todayLabel'), findsOneWidget);
   });
+
+  testWidgets(
+    'shows settlement and recurring events without adding to spend total',
+    (tester) async {
+      final today = DateTime.now();
+      final expenseRepository = _FakeExpenseRepository();
+      final expensesBloc = ExpensesBloc(repository: expenseRepository);
+      final dashboardCubit = DashboardSnapshotCubit(
+        repository: const MockDashboardSnapshotRepository(),
+      )..load();
+      final activityFeedRepository = _FakeActivityFeedRepository(
+        ActivityFeed(
+          serverTime: today.toUtc(),
+          tombstones: const ActivityFeedTombstones(),
+          entries: [
+            ActivityFeedEntry(
+              kind: ActivityFeedEntryKind.friendSettlement,
+              id: 'friend-settlement-1',
+              date: today,
+              updatedAt: today,
+              viewerUid: 'alice',
+              payer: const ActivityUser(uid: 'alice', displayName: 'Alice'),
+              receiver: const ActivityUser(uid: 'bob', displayName: 'Bob'),
+              settlement: ActivitySettlement(
+                id: 'friend-settlement-1',
+                payerUid: 'alice',
+                receiverUid: 'bob',
+                amount: 25,
+                currency: 'USD',
+                createdAt: today,
+              ),
+            ),
+            ActivityFeedEntry(
+              kind: ActivityFeedEntryKind.groupSettlement,
+              id: 'group-settlement-1',
+              date: today,
+              updatedAt: today,
+              viewerUid: 'alice',
+              group: const GroupSummary(
+                id: 'family-1',
+                name: 'Home',
+                groupType: GroupType.family,
+                memberCount: 2,
+              ),
+              payer: const ActivityUser(uid: 'bob', displayName: 'Bob'),
+              receiver: const ActivityUser(uid: 'alice', displayName: 'Alice'),
+              settlement: ActivitySettlement(
+                id: 'group-settlement-1',
+                groupId: 'family-1',
+                payerUid: 'bob',
+                receiverUid: 'alice',
+                amount: 50,
+                currency: 'INR',
+                createdAt: today,
+              ),
+            ),
+            ActivityFeedEntry(
+              kind: ActivityFeedEntryKind.recurringConfirmation,
+              id: 'occurrence-1',
+              date: today,
+              updatedAt: today,
+              viewerUid: 'alice',
+              recurringOccurrence: RecurringOccurrence(
+                id: 'occurrence-1',
+                templateId: 'template-1',
+                period: '2026-06',
+                kind: 'income',
+                title: 'Salary',
+                category: 'Salary',
+                currency: 'INR',
+                expectedAmount: 30000,
+                actualAmount: 30500,
+                dueDate: today,
+                actualDate: today,
+                status: 'confirmed',
+              ),
+            ),
+          ],
+        ),
+      );
+      addTearDown(expensesBloc.close);
+      addTearDown(dashboardCubit.close);
+
+      await tester.pumpWidget(
+        RepositoryProvider<ExpenseRepository>.value(
+          value: expenseRepository,
+          child: MultiBlocProvider(
+            providers: [
+              BlocProvider.value(value: expensesBloc),
+              BlocProvider.value(value: dashboardCubit),
+            ],
+            child: MaterialApp(
+              theme: ThemeData(splashFactory: InkRipple.splashFactory),
+              home: ActivityPage(
+                groupsRepository: _FakeGroupsRepository(),
+                activityFeedRepository: activityFeedRepository,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('You paid Bob'), findsOneWidget);
+      expect(find.text('Bob paid you'), findsOneWidget);
+      expect(find.text('Received Salary'), findsOneWidget);
+      expect(find.text('₹0.00'), findsOneWidget);
+      expect(find.text('USD 25.00'), findsOneWidget);
+      expect(find.text('₹50.00'), findsOneWidget);
+      expect(find.text('₹30,500.00'), findsOneWidget);
+    },
+  );
 
   testWidgets('opens split group expense edit mode from activity', (
     tester,

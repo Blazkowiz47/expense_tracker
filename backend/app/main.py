@@ -345,7 +345,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     def activity_feed(
         since: str | None = None,
         limit: int = Query(default=80, ge=1, le=200),
-        include: str = "personal,group",
+        include: str = "personal,group,settlements,recurring",
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
         since_dt = parse_dt(since) if since else None
@@ -1150,7 +1150,14 @@ FRESHNESS_SECTIONS = {
     "activity",
     "plans",
 }
-ACTIVITY_INCLUDE_SECTIONS = {"personal", "group"}
+ACTIVITY_INCLUDE_SECTIONS = {
+    "personal",
+    "group",
+    "friend_settlements",
+    "group_settlements",
+    "recurring",
+}
+ACTIVITY_DEFAULT_INCLUDE = set(ACTIVITY_INCLUDE_SECTIONS)
 
 
 def parse_freshness_sections(raw: str) -> list[str]:
@@ -1177,12 +1184,14 @@ def parse_activity_include(raw: str) -> set[str]:
         if section.strip()
     }
     if not requested:
-        return {"personal", "group"}
+        return set(ACTIVITY_DEFAULT_INCLUDE)
+    if "settlements" in requested:
+        requested.update({"friend_settlements", "group_settlements"})
     sections = requested & ACTIVITY_INCLUDE_SECTIONS
     if not sections:
         raise HTTPException(
             status_code=400,
-            detail=api_error("INVALID_ARGUMENT", "include must contain personal or group"),
+            detail=api_error("INVALID_ARGUMENT", "include must contain a known activity section"),
         )
     return sections
 
@@ -1284,7 +1293,17 @@ def monthly_plan_freshness(db: Any, uid: str) -> datetime | None:
 
 
 def activity_freshness(db: Any, uid: str) -> datetime | None:
-    return max_time(personal_expense_freshness(db, uid), group_freshness(db, uid))
+    return max_time(
+        personal_expense_freshness(db, uid),
+        group_freshness(db, uid),
+        latest_collection_time(db, "friend_settlements", {"uids": uid}, "createdAt"),
+        latest_collection_time(
+            db,
+            "recurring_occurrences",
+            {"uid": uid, "status": "confirmed"},
+            "updatedAt",
+        ),
+    )
 
 
 def dashboard_freshness(db: Any, uid: str) -> datetime | None:
@@ -1359,8 +1378,8 @@ def activity_group_summary(group: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def activity_since_filter(since: datetime | None) -> dict[str, Any]:
-    return {} if since is None else {"updatedAt": {"$gt": since}}
+def activity_since_filter(since: datetime | None, field: str = "updatedAt") -> dict[str, Any]:
+    return {} if since is None else {field: {"$gt": since}}
 
 
 def activity_entry_sort_time(entry: dict[str, Any]) -> datetime:
@@ -1369,6 +1388,25 @@ def activity_entry_sort_time(entry: dict[str, Any]) -> datetime:
         if isinstance(value, datetime):
             return aware(value)
     return now()
+
+
+def activity_user_summary(user: dict[str, Any] | None, fallback_uid: str = "") -> dict[str, Any]:
+    if user:
+        return user_public(user)
+    return {
+        "uid": fallback_uid,
+        "email": "",
+        "displayName": "Someone",
+        "photoUrl": None,
+        "phone": "",
+    }
+
+
+def activity_users_by_uid(db: Any, uids: set[str]) -> dict[str, dict[str, Any]]:
+    cleaned = {uid for uid in uids if uid}
+    if not cleaned:
+        return {}
+    return {doc["uid"]: doc for doc in db.users.find({"uid": {"$in": list(cleaned)}})}
 
 
 def activity_feed_entries(
@@ -1415,6 +1453,104 @@ def activity_feed_entries(
                         "expense": group_expense_out(expense),
                     }
                 )
+
+    if "friend_settlements" in include_sections:
+        settlement_filter = {
+            "uids": uid,
+            **activity_since_filter(since, "createdAt"),
+        }
+        settlements = list(db.friend_settlements.find(settlement_filter))
+        user_ids = {
+            str(settlement.get("payerUid") or "")
+            for settlement in settlements
+        } | {
+            str(settlement.get("receiverUid") or "")
+            for settlement in settlements
+        }
+        users_by_uid = activity_users_by_uid(db, user_ids)
+        for settlement in settlements:
+            payer_uid = str(settlement.get("payerUid") or "")
+            receiver_uid = str(settlement.get("receiverUid") or "")
+            entries.append(
+                {
+                    "kind": "friendSettlement",
+                    "id": settlement.get("id", ""),
+                    "date": settlement.get("createdAt"),
+                    "updatedAt": settlement.get("createdAt"),
+                    "viewerUid": uid,
+                    "payer": activity_user_summary(
+                        users_by_uid.get(payer_uid),
+                        payer_uid,
+                    ),
+                    "receiver": activity_user_summary(
+                        users_by_uid.get(receiver_uid),
+                        receiver_uid,
+                    ),
+                    "settlement": friend_settlement_out(settlement),
+                }
+            )
+
+    if "group_settlements" in include_sections:
+        groups = list(db.groups.find({"memberUids": uid}))
+        groups_by_id = {group.get("id"): group for group in groups if group.get("id")}
+        if groups_by_id:
+            settlement_filter = {
+                "groupId": {"$in": list(groups_by_id.keys())},
+                **activity_since_filter(since, "createdAt"),
+            }
+            settlements = list(db.group_settlements.find(settlement_filter))
+            user_ids = {
+                str(settlement.get("payerUid") or "")
+                for settlement in settlements
+            } | {
+                str(settlement.get("receiverUid") or "")
+                for settlement in settlements
+            }
+            users_by_uid = activity_users_by_uid(db, user_ids)
+            for settlement in settlements:
+                group = groups_by_id.get(settlement.get("groupId"))
+                if not group:
+                    continue
+                payer_uid = str(settlement.get("payerUid") or "")
+                receiver_uid = str(settlement.get("receiverUid") or "")
+                entries.append(
+                    {
+                        "kind": "groupSettlement",
+                        "id": settlement.get("id", ""),
+                        "groupId": settlement.get("groupId", ""),
+                        "date": settlement.get("createdAt"),
+                        "updatedAt": settlement.get("createdAt"),
+                        "viewerUid": uid,
+                        "group": activity_group_summary(group),
+                        "payer": activity_user_summary(
+                            users_by_uid.get(payer_uid),
+                            payer_uid,
+                        ),
+                        "receiver": activity_user_summary(
+                            users_by_uid.get(receiver_uid),
+                            receiver_uid,
+                        ),
+                        "settlement": group_settlement_out(settlement),
+                    }
+                )
+
+    if "recurring" in include_sections:
+        occurrence_filter = {
+            "uid": uid,
+            "status": "confirmed",
+            **activity_since_filter(since),
+        }
+        for occurrence in db.recurring_occurrences.find(occurrence_filter):
+            entries.append(
+                {
+                    "kind": "recurringConfirmation",
+                    "id": occurrence.get("id", ""),
+                    "date": occurrence.get("actualDate") or occurrence.get("dueDate"),
+                    "updatedAt": occurrence.get("updatedAt"),
+                    "viewerUid": uid,
+                    "occurrence": recurring_occurrence_out(occurrence),
+                }
+            )
 
     entries.sort(key=activity_entry_sort_time, reverse=True)
     return json_ready(entries[:limit])

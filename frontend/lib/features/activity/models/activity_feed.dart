@@ -2,8 +2,16 @@ import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
+import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
 
-enum ActivityFeedEntryKind { personalExpense, groupExpense, unknown }
+enum ActivityFeedEntryKind {
+  personalExpense,
+  groupExpense,
+  friendSettlement,
+  groupSettlement,
+  recurringConfirmation,
+  unknown,
+}
 
 class ActivityFeed {
   const ActivityFeed({
@@ -44,6 +52,11 @@ class ActivityFeedEntry {
     this.personalExpense,
     this.group,
     this.groupExpense,
+    this.viewerUid = '',
+    this.payer,
+    this.receiver,
+    this.settlement,
+    this.recurringOccurrence,
   });
 
   final ActivityFeedEntryKind kind;
@@ -53,6 +66,11 @@ class ActivityFeedEntry {
   final Expense? personalExpense;
   final GroupSummary? group;
   final GroupExpense? groupExpense;
+  final String viewerUid;
+  final ActivityUser? payer;
+  final ActivityUser? receiver;
+  final ActivitySettlement? settlement;
+  final RecurringOccurrence? recurringOccurrence;
 
   factory ActivityFeedEntry.fromJson(Map<String, dynamic> json) {
     final kind = _kindFromString(json['kind'] as String?);
@@ -71,12 +89,90 @@ class ActivityFeedEntry {
       personalExpense: kind == ActivityFeedEntryKind.personalExpense
           ? Expense.fromBackendJson(expense)
           : null,
-      group: kind == ActivityFeedEntryKind.groupExpense
+      group:
+          kind == ActivityFeedEntryKind.groupExpense ||
+              kind == ActivityFeedEntryKind.groupSettlement
           ? GroupSummary.fromJson(group)
           : null,
       groupExpense: kind == ActivityFeedEntryKind.groupExpense
           ? GroupExpense.fromJson(expense)
           : null,
+      viewerUid: (json['viewerUid'] as String?) ?? '',
+      payer: _userFromJson(json['payer']),
+      receiver: _userFromJson(json['receiver']),
+      settlement: _settlementFromJson(json['settlement']),
+      recurringOccurrence:
+          kind == ActivityFeedEntryKind.recurringConfirmation &&
+              json['occurrence'] is Map<String, dynamic>
+          ? RecurringOccurrence.fromJson(
+              json['occurrence'] as Map<String, dynamic>,
+            )
+          : null,
+    );
+  }
+}
+
+class ActivityUser {
+  const ActivityUser({
+    required this.uid,
+    required this.displayName,
+    this.email = '',
+  });
+
+  final String uid;
+  final String displayName;
+  final String email;
+
+  String get label {
+    final name = displayName.trim();
+    if (name.isNotEmpty) return name;
+    final fallbackEmail = email.trim();
+    if (fallbackEmail.isNotEmpty) return fallbackEmail;
+    return uid.isEmpty ? 'Someone' : uid;
+  }
+
+  factory ActivityUser.fromJson(Map<String, dynamic> json) {
+    return ActivityUser(
+      uid: (json['uid'] as String?) ?? '',
+      displayName: (json['displayName'] as String?) ?? '',
+      email: (json['email'] as String?) ?? '',
+    );
+  }
+}
+
+class ActivitySettlement {
+  const ActivitySettlement({
+    required this.id,
+    required this.payerUid,
+    required this.receiverUid,
+    required this.amount,
+    required this.currency,
+    required this.createdAt,
+    this.groupId = '',
+    this.note = '',
+  });
+
+  final String id;
+  final String groupId;
+  final String payerUid;
+  final String receiverUid;
+  final double amount;
+  final String currency;
+  final String note;
+  final DateTime createdAt;
+
+  factory ActivitySettlement.fromJson(Map<String, dynamic> json) {
+    return ActivitySettlement(
+      id: (json['id'] as String?) ?? '',
+      groupId: (json['groupId'] as String?) ?? '',
+      payerUid: (json['payerUid'] as String?) ?? '',
+      receiverUid: (json['receiverUid'] as String?) ?? '',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      currency: _normalizeCurrency(json['currency']),
+      note: (json['note'] as String?) ?? '',
+      createdAt:
+          DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toUtc() ??
+          DateTime.now().toUtc(),
     );
   }
 }
@@ -116,8 +212,26 @@ ActivityFeedEntryKind _kindFromString(String? raw) {
   return switch (raw) {
     'personalExpense' => ActivityFeedEntryKind.personalExpense,
     'groupExpense' => ActivityFeedEntryKind.groupExpense,
+    'friendSettlement' => ActivityFeedEntryKind.friendSettlement,
+    'groupSettlement' => ActivityFeedEntryKind.groupSettlement,
+    'recurringConfirmation' => ActivityFeedEntryKind.recurringConfirmation,
     _ => ActivityFeedEntryKind.unknown,
   };
 }
 
 DateTime? _parseUtc(String? raw) => DateTime.tryParse(raw ?? '')?.toUtc();
+
+ActivityUser? _userFromJson(Object? raw) {
+  if (raw is! Map<String, dynamic>) return null;
+  return ActivityUser.fromJson(raw);
+}
+
+ActivitySettlement? _settlementFromJson(Object? raw) {
+  if (raw is! Map<String, dynamic>) return null;
+  return ActivitySettlement.fromJson(raw);
+}
+
+String _normalizeCurrency(Object? value) {
+  final currency = value?.toString().trim().toUpperCase() ?? '';
+  return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : 'INR';
+}
