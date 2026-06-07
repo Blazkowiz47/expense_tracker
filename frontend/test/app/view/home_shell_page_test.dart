@@ -36,6 +36,9 @@ void main() {
     expect(find.byTooltip('Quick actions'), findsOneWidget);
     expect(find.text('Overview'), findsNothing);
     expect(find.text('Home'), findsWidgets);
+    expect(find.text('Today'), findsOneWidget);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -360));
+    await tester.pumpAndSettle();
     expect(find.text('Friends'), findsWidgets);
     expect(find.text('Family'), findsWidgets);
     expect(find.text('Groups'), findsWidgets);

@@ -191,6 +191,8 @@ class _HomeShellPageState extends State<HomeShellPage>
         autoRefresh: autoRefresh,
         onOpenFriends: _openFriendsPage,
         onOpenGroups: () => _openSharedSpace(GroupType.split),
+        onOpenFamily: () => _onDestinationSelected(1),
+        onOpenRecurring: _openRecurringPage,
       );
     }
     if (destination.label == 'Family') {

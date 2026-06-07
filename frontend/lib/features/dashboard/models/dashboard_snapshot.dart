@@ -7,6 +7,7 @@ class DashboardSnapshot extends Equatable {
     required this.overallPositive,
     required this.friendItems,
     required this.groupItems,
+    required this.actionItems,
     required this.activityItems,
     required this.accountName,
     required this.accountEmail,
@@ -17,6 +18,7 @@ class DashboardSnapshot extends Equatable {
   final bool overallPositive;
   final List<BalanceItem> friendItems;
   final List<BalanceItem> groupItems;
+  final List<DailyActionItem> actionItems;
   final List<ActivityItem> activityItems;
   final String accountName;
   final String accountEmail;
@@ -38,12 +40,21 @@ class DashboardSnapshot extends Equatable {
           .toList(growable: false);
     }
 
+    List<DailyActionItem> parseActionList(dynamic raw) {
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(DailyActionItem.fromJson)
+          .toList(growable: false);
+    }
+
     return DashboardSnapshot(
       overallLabel: (json['overallLabel'] ?? '').toString(),
       overallAmountText: (json['overallAmountText'] ?? '').toString(),
       overallPositive: json['overallPositive'] as bool? ?? true,
       friendItems: parseBalanceList(json['friendItems']),
       groupItems: parseBalanceList(json['groupItems']),
+      actionItems: parseActionList(json['actionItems']),
       activityItems: parseActivityList(json['activityItems']),
       accountName: (json['accountName'] ?? '').toString(),
       accountEmail: (json['accountEmail'] ?? '').toString(),
@@ -57,6 +68,7 @@ class DashboardSnapshot extends Equatable {
     overallPositive,
     friendItems,
     groupItems,
+    actionItems,
     activityItems,
     accountName,
     accountEmail,
@@ -87,6 +99,32 @@ class BalanceItem extends Equatable {
 
   @override
   List<Object?> get props => [title, subtitle, amountText, positive];
+}
+
+class DailyActionItem extends Equatable {
+  const DailyActionItem({
+    required this.title,
+    required this.subtitle,
+    required this.severity,
+    required this.destination,
+  });
+
+  final String title;
+  final String subtitle;
+  final String severity;
+  final String destination;
+
+  factory DailyActionItem.fromJson(Map<String, dynamic> json) {
+    return DailyActionItem(
+      title: (json['title'] ?? '').toString(),
+      subtitle: (json['subtitle'] ?? '').toString(),
+      severity: (json['severity'] ?? 'info').toString(),
+      destination: (json['destination'] ?? 'activity').toString(),
+    );
+  }
+
+  @override
+  List<Object?> get props => [title, subtitle, severity, destination];
 }
 
 class ActivityItem extends Equatable {

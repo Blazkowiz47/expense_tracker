@@ -19,7 +19,7 @@ void main() {
       if (request.url.path.endsWith('/api/v1/dashboard/snapshot')) {
         expect(request.headers['authorization'], 'Bearer session-token');
         return http.Response(
-          '{"overallLabel":"Overall, you are owed","overallAmountText":"INR 113.33","overallPositive":true,"friendItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"groupItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"activityItems":[{"title":"Groceries 1","subtitle":"2026-02-24T11:00:00Z","amountText":"You owe INR 50.00","positive":false}],"accountName":"Local User","accountEmail":"uid-1@local"}',
+          '{"overallLabel":"Overall, you are owed","overallAmountText":"INR 113.33","overallPositive":true,"friendItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"groupItems":[{"title":"Groceries","subtitle":"category total","amountText":"INR 100.00","positive":true}],"actionItems":[{"title":"Confirm rent","subtitle":"Due today - INR 12000.00","severity":"info","destination":"recurring"}],"activityItems":[{"title":"Groceries 1","subtitle":"2026-02-24T11:00:00Z","amountText":"You owe INR 50.00","positive":false}],"accountName":"Local User","accountEmail":"uid-1@local"}',
           200,
         );
       }
@@ -35,6 +35,7 @@ void main() {
     expect(snapshot.overallLabel, 'Overall, you are owed');
     expect(snapshot.overallAmountText, 'INR 113.33');
     expect(snapshot.groupItems.first.title, 'Groceries');
+    expect(snapshot.actionItems.first.destination, 'recurring');
     expect(snapshot.activityItems.first.title, 'Groceries 1');
   });
 }

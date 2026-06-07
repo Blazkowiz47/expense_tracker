@@ -1,10 +1,11 @@
 import asyncio
+from datetime import timedelta
 from pathlib import Path
 
 import mongomock
 from fastapi.testclient import TestClient
 
-from app.main import create_app, parse_model_json, run_bill_extraction
+from app.main import create_app, current_month, iso, now, parse_model_json, run_bill_extraction
 
 
 class FakeExtractor:
@@ -473,6 +474,154 @@ def test_recurring_payment_confirmation_creates_or_updates_expense(tmp_path):
     expenses = client.get("/api/v1/expenses", headers=headers).json()["expenses"]
     assert len(expenses) == 1
     assert expenses[0]["amount"] == 12400
+
+
+def test_dashboard_includes_daily_action_items(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    register(client, "bob@example.com")
+    period = current_month()
+    today = now()
+
+    recurring = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers_a,
+        json={
+            "title": "Rent",
+            "kind": "expense",
+            "amount": 12000,
+            "currency": "INR",
+            "category": "Rent",
+            "frequency": "monthly",
+            "dayOfMonth": today.day,
+            "startDate": f"{period}-01T00:00:00Z",
+        },
+    )
+    assert recurring.status_code == 201, recurring.text
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={
+            "name": "Our household",
+            "groupType": "family",
+            "members": ["bob@example.com"],
+        },
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    expense = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Monthly grocery run",
+            "amount": 250,
+            "category": "Groceries",
+            "date": iso(today),
+        },
+    )
+    assert expense.status_code == 201, expense.text
+
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers_a,
+        json={"month": period, "currency": "INR", "budgets": {"Groceries": 100}},
+    )
+    assert saved.status_code == 200, saved.text
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
+    assert dashboard.status_code == 200, dashboard.text
+    actions = dashboard.json()["actionItems"]
+    assert any(item["destination"] == "recurring" and "Confirm Rent" in item["title"] for item in actions)
+    assert any(item["destination"] == "family" and item["severity"] == "critical" for item in actions)
+    assert any(
+        item["destination"] == "family" and item["title"].startswith("Attach receipt")
+        for item in actions
+    )
+
+
+def test_dashboard_includes_prior_month_overdue_recurring_action(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client, "alice@example.com")
+    user = client.get("/api/v1/auth/me", headers=headers).json()["user"]
+    due_date = now() - timedelta(days=20)
+    app.state.db.recurring_occurrences.insert_one({
+        "id": "old-insurance",
+        "uid": user["uid"],
+        "templateId": "old-template",
+        "period": f"{due_date.year:04d}-{due_date.month:02d}",
+        "kind": "expense",
+        "title": "Insurance",
+        "category": "Bills",
+        "currency": "INR",
+        "expectedAmount": 2200,
+        "actualAmount": None,
+        "actualDate": None,
+        "dueDate": due_date,
+        "status": "expected",
+        "notes": "",
+        "createdAt": due_date,
+        "updatedAt": due_date,
+    })
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    actions = dashboard.json()["actionItems"]
+    assert any(
+        item["destination"] == "recurring"
+        and item["title"] == "Confirm Insurance"
+        and item["subtitle"].startswith("Overdue")
+        for item in actions
+    )
+
+
+def test_dashboard_group_action_skips_settled_group_items(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    register(client, "bob@example.com")
+
+    unsettled = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Weekend Trip", "groupType": "split", "members": ["bob@example.com"]},
+    )
+    assert unsettled.status_code == 201, unsettled.text
+    unsettled_expense = client.post(
+        f"/api/v1/groups/{unsettled.json()['id']}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Dinner",
+            "amount": 100,
+            "date": iso(now()),
+        },
+    )
+    assert unsettled_expense.status_code == 201, unsettled_expense.text
+
+    settled = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Solo planning", "groupType": "split"},
+    )
+    assert settled.status_code == 201, settled.text
+    settled_expense = client.post(
+        f"/api/v1/groups/{settled.json()['id']}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Notes",
+            "amount": 20,
+            "date": iso(now()),
+        },
+    )
+    assert settled_expense.status_code == 201, settled_expense.text
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
+    assert dashboard.status_code == 200, dashboard.text
+    actions = dashboard.json()["actionItems"]
+    assert any(
+        item["destination"] == "groups" and item["title"] == "Review Weekend Trip balance"
+        for item in actions
+    )
 
 
 def test_friend_settlement_is_visible_to_both_users(tmp_path):

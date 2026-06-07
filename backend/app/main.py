@@ -556,6 +556,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "overallPositive": True,
             "friendItems": friend_balance_items(app.state.db, user["uid"]),
             "groupItems": group_balance_items(app.state.db, user["uid"]),
+            "actionItems": dashboard_action_items(app.state.db, user["uid"]),
             "activityItems": [
                 {"title": doc["description"] or doc["category"], "subtitle": doc["date"], "amountText": f"You spent INR {doc['amount']:.2f}", "positive": False}
                 for doc in docs
@@ -1588,6 +1589,100 @@ def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
         "categories": rows,
         "updatedAt": plan.get("updatedAt"),
     })
+
+
+def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    current = now()
+    today_start = datetime(current.year, current.month, current.day, tzinfo=UTC)
+    tomorrow_start = today_start + timedelta(days=1)
+    period = current_month()
+    ensure_recurring_occurrences(db, uid, period)
+
+    recurring_docs = db.recurring_occurrences.find({
+        "uid": uid,
+        "status": {"$ne": "confirmed"},
+        "dueDate": {"$lt": tomorrow_start},
+    }).sort("dueDate", ASCENDING).limit(3)
+    for occurrence in recurring_docs:
+        due_date = aware(occurrence.get("dueDate") or current)
+        overdue = due_date < today_start
+        amount = float(occurrence.get("expectedAmount") or 0)
+        currency = safe_currency(occurrence.get("currency"), "INR") or "INR"
+        due_label = "Overdue" if overdue else "Due today"
+        items.append({
+            "title": f"Confirm {occurrence.get('title') or 'recurring item'}",
+            "subtitle": f"{due_label} - {format_currency_amount(currency, amount)}",
+            "severity": "warning" if overdue else "info",
+            "destination": "recurring",
+        })
+
+    plan = monthly_plan_out(db, uid, period)
+    plan_currency = str(plan.get("currency") or "INR")
+    over_budget_categories = [
+        row
+        for row in plan.get("categories", [])
+        if isinstance(row, dict) and row.get("overBudget")
+    ]
+    for row in sorted(over_budget_categories, key=lambda item: float(item.get("remaining") or 0)):
+        over_amount = abs(float(row.get("remaining") or 0))
+        category = str(row.get("category") or "Monthly plan")
+        items.append({
+            "title": f"{category} is over budget",
+            "subtitle": f"{format_currency_amount(plan_currency, over_amount)} over this month",
+            "severity": "critical",
+            "destination": "family",
+        })
+
+    for item in friend_balance_items(db, uid)[:1]:
+        verb = "Collect from" if item.get("positive") else "Pay"
+        items.append({
+            "title": f"{verb} {item.get('title') or 'friend'}",
+            "subtitle": f"{item.get('subtitle') or 'balance'} - {item.get('amountText') or ''}".strip(" -"),
+            "severity": "info",
+            "destination": "friends",
+        })
+
+    for item in group_balance_items(db, uid):
+        if str(item.get("subtitle") or "").lower() == "settled up":
+            continue
+        items.append({
+            "title": f"Review {item.get('title') or 'group'} balance",
+            "subtitle": f"{item.get('subtitle') or 'balance'} - {item.get('amountText') or ''}".strip(" -"),
+            "severity": "info",
+            "destination": "groups",
+        })
+        break
+
+    recent_cutoff = current - timedelta(days=7)
+    groups = list(db.groups.find({"memberUids": uid}, {"id": 1, "name": 1, "groupType": 1}))
+    group_meta = {
+        group.get("id"): {
+            "name": group.get("name") or "Group",
+            "destination": "family" if group.get("groupType") == "family" else "groups",
+        }
+        for group in groups
+        if group.get("id")
+    }
+    if group_meta:
+        recent_expenses = db.group_expenses.find({
+            "groupId": {"$in": list(group_meta.keys())},
+            "date": {"$gte": recent_cutoff},
+        }).sort("date", DESCENDING).limit(20)
+        for expense in recent_expenses:
+            attachments = expense.get("attachments")
+            if isinstance(attachments, list) and attachments:
+                continue
+            meta = group_meta.get(expense.get("groupId"), {})
+            items.append({
+                "title": f"Attach receipt for {expense.get('description') or 'expense'}",
+                "subtitle": str(meta.get("name") or "Group"),
+                "severity": "info",
+                "destination": str(meta.get("destination") or "groups"),
+            })
+            break
+
+    return items[:5]
 
 
 def friend_settlement_out(doc: dict[str, Any]) -> dict[str, Any]:

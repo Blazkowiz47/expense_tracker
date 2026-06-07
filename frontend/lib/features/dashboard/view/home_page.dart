@@ -6,27 +6,43 @@ import 'package:expense_tracker/features/planning/view/monthly_planning_card.dar
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({
     this.onOpenFriends,
     this.onOpenGroups,
+    this.onOpenFamily,
+    this.onOpenRecurring,
     this.autoRefresh = false,
     super.key,
   });
 
   final VoidCallback? onOpenFriends;
   final VoidCallback? onOpenGroups;
+  final VoidCallback? onOpenFamily;
+  final VoidCallback? onOpenRecurring;
   final bool autoRefresh;
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  var _planRefreshToken = 0;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<DashboardSnapshotCubit>().state;
     final dashboardCubit = context.read<DashboardSnapshotCubit>();
-    Future<void> refreshDashboard() => dashboardCubit.load(showLoading: false);
+    Future<void> refreshDashboard() async {
+      await dashboardCubit.load(showLoading: false);
+      if (!mounted) return;
+      setState(() => _planRefreshToken += 1);
+    }
+
     if (state is DashboardSnapshotFailure) {
       return AppPageContainer(
         onRefresh: refreshDashboard,
-        autoRefresh: autoRefresh,
+        autoRefresh: widget.autoRefresh,
         children: [
           AppEmptyState(
             title: 'Dashboard unavailable',
@@ -42,11 +58,19 @@ class HomePage extends StatelessWidget {
     final snapshot = state.snapshot;
     return AppPageContainer(
       onRefresh: refreshDashboard,
-      autoRefresh: autoRefresh,
+      autoRefresh: widget.autoRefresh,
       children: [
         const DashboardOverallSummaryCard(),
         const SizedBox(height: 16),
-        const MonthlyPlanningCard(),
+        MonthlyPlanningCard(refreshToken: _planRefreshToken),
+        const SizedBox(height: 16),
+        _DailyActionCenterCard(
+          items: snapshot.actionItems,
+          onOpenFriends: widget.onOpenFriends,
+          onOpenGroups: widget.onOpenGroups,
+          onOpenFamily: widget.onOpenFamily,
+          onOpenRecurring: widget.onOpenRecurring,
+        ),
         const SizedBox(height: 16),
         Row(
           children: [
@@ -55,7 +79,7 @@ class HomePage extends StatelessWidget {
                 title: 'Friends',
                 items: snapshot.friendItems,
                 emptyText: 'No friend balances yet',
-                onTap: onOpenFriends,
+                onTap: widget.onOpenFriends,
               ),
             ),
             const SizedBox(width: 12),
@@ -64,7 +88,7 @@ class HomePage extends StatelessWidget {
                 title: 'Groups',
                 items: snapshot.groupItems,
                 emptyText: 'No group balances yet',
-                onTap: onOpenGroups,
+                onTap: widget.onOpenGroups,
               ),
             ),
           ],
@@ -79,6 +103,117 @@ class HomePage extends StatelessWidget {
         else
           ...snapshot.activityItems.take(5).map(_RecentActivityTile.new),
       ],
+    );
+  }
+}
+
+class _DailyActionCenterCard extends StatelessWidget {
+  const _DailyActionCenterCard({
+    required this.items,
+    this.onOpenFriends,
+    this.onOpenGroups,
+    this.onOpenFamily,
+    this.onOpenRecurring,
+  });
+
+  final List<DailyActionItem> items;
+  final VoidCallback? onOpenFriends;
+  final VoidCallback? onOpenGroups;
+  final VoidCallback? onOpenFamily;
+  final VoidCallback? onOpenRecurring;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppAvatar(
+                icon: Icons.today_outlined,
+                backgroundColor: Theme.of(context).colorScheme.secondary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Today',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (items.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                'All clear today',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            )
+          else
+            ...items.take(5).map((item) {
+              return _DailyActionTile(
+                item: item,
+                onTap: _tapFor(item.destination),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  VoidCallback? _tapFor(String destination) {
+    switch (destination) {
+      case 'friends':
+        return onOpenFriends;
+      case 'groups':
+        return onOpenGroups;
+      case 'family':
+        return onOpenFamily;
+      case 'recurring':
+        return onOpenRecurring;
+    }
+    return null;
+  }
+}
+
+class _DailyActionTile extends StatelessWidget {
+  const _DailyActionTile({required this.item, this.onTap});
+
+  final DailyActionItem item;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (item.severity) {
+      'critical' => Theme.of(context).colorScheme.error,
+      'warning' => Colors.orange.shade700,
+      _ => Theme.of(context).colorScheme.primary,
+    };
+    final icon = switch (item.severity) {
+      'critical' => Icons.error_outline,
+      'warning' => Icons.event_busy_outlined,
+      _ => Icons.task_alt_outlined,
+    };
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(icon, color: color),
+      title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: item.subtitle.isEmpty
+          ? null
+          : Text(item.subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
+      trailing: onTap == null
+          ? null
+          : Icon(
+              Icons.arrow_forward,
+              size: 18,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+      onTap: onTap,
     );
   }
 }

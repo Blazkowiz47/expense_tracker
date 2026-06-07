@@ -35,6 +35,20 @@ class MockDashboardSnapshotRepository implements DashboardSnapshotRepository {
           positive: false,
         ),
       ],
+      actionItems: [
+        DailyActionItem(
+          title: 'Confirm rent',
+          subtitle: 'Due today - INR 12500.00',
+          severity: 'info',
+          destination: 'recurring',
+        ),
+        DailyActionItem(
+          title: 'Groceries is over budget',
+          subtitle: 'INR 420.00 over this month',
+          severity: 'critical',
+          destination: 'family',
+        ),
+      ],
       activityItems: [
         ActivityItem(
           title: 'Shikhar U. added "Groceries 5" in "This Group"',
