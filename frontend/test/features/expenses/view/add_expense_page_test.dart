@@ -3,6 +3,7 @@ import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,4 +118,59 @@ void main() {
     expect(find.text('Enter a valid amount greater than 0.'), findsOneWidget);
     expect(repository.updatedExpense, isNull);
   });
+
+  testWidgets(
+    'ios edit mode changes currency category and payment',
+    (tester) async {
+      final existing = Expense(
+        core: ExpenseCore(
+          id: 'expense-1',
+          title: 'Coffee',
+          amount: 120,
+          currency: 'INR',
+          category: 'Food',
+          createdAt: DateTime(2026, 4, 24),
+        ),
+        description: 'Coffee',
+        paymentMethod: 'card',
+      );
+      final repository = _FakeExpenseRepository(existing);
+      final bloc = ExpensesBloc(repository: repository);
+      addTearDown(bloc.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BlocProvider.value(
+            value: bloc,
+            child: AddExpensePage(expense: existing),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(CupertinoButton, 'INR').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('USD'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(CupertinoButton, 'Food').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Travel'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(CupertinoButton, 'Card').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Bank transfer'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save expense'));
+      await tester.pumpAndSettle();
+
+      expect(repository.updatedExpense, isNotNull);
+      expect(repository.updatedExpense!.currency, 'USD');
+      expect(repository.updatedExpense!.category, 'Travel');
+      expect(repository.updatedExpense!.paymentMethod, 'bank_transfer');
+    },
+    variant: const TargetPlatformVariant(<TargetPlatform>{TargetPlatform.iOS}),
+  );
 }

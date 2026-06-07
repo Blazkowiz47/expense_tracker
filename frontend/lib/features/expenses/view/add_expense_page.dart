@@ -270,6 +270,37 @@ class _AddExpensePageState extends State<AddExpensePage> {
     });
   }
 
+  Future<void> _showCupertinoChoice({
+    required String title,
+    required List<String> values,
+    required String selectedValue,
+    required ValueChanged<String> onSelected,
+    String Function(String value)? labelFor,
+  }) async {
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        title: Text(title),
+        actions: values
+            .map(
+              (value) => CupertinoActionSheetAction(
+                isDefaultAction: value == selectedValue,
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  onSelected(value);
+                },
+                child: Text(labelFor?.call(value) ?? value),
+              ),
+            )
+            .toList(growable: false),
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+  }
+
   String _contentTypeFor(String fileName) {
     final lower = fileName.toLowerCase();
     if (lower.endsWith('.png')) return 'image/png';
@@ -582,6 +613,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
                         child: CupertinoTextField(
                           controller: _amountController,
                           placeholder: '0.00',
+                          prefix: Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Text('$_currency '),
+                          ),
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
@@ -590,11 +625,35 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       ),
                       CupertinoFormRow(
                         prefix: const Text('Currency'),
-                        child: Text(_currency, textAlign: TextAlign.end),
+                        child: CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _showCupertinoChoice(
+                            title: 'Currency',
+                            values: _currencies,
+                            selectedValue: _currency,
+                            onSelected: (value) {
+                              if (!mounted) return;
+                              setState(() => _currency = value);
+                            },
+                          ),
+                          child: Text(_currency, textAlign: TextAlign.end),
+                        ),
                       ),
                       CupertinoFormRow(
                         prefix: const Text('Category'),
-                        child: Text(_category, textAlign: TextAlign.end),
+                        child: CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _showCupertinoChoice(
+                            title: 'Category',
+                            values: _categories,
+                            selectedValue: _category,
+                            onSelected: (value) {
+                              if (!mounted) return;
+                              setState(() => _category = value);
+                            },
+                          ),
+                          child: Text(_category, textAlign: TextAlign.end),
+                        ),
                       ),
                       CupertinoFormRow(
                         prefix: const Text('Date'),
@@ -606,9 +665,22 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       ),
                       CupertinoFormRow(
                         prefix: const Text('Payment'),
-                        child: Text(
-                          _paymentLabel(_paymentMethod),
-                          textAlign: TextAlign.end,
+                        child: CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _showCupertinoChoice(
+                            title: 'Payment',
+                            values: _paymentMethods,
+                            selectedValue: _paymentMethod,
+                            labelFor: _paymentLabel,
+                            onSelected: (value) {
+                              if (!mounted) return;
+                              setState(() => _paymentMethod = value);
+                            },
+                          ),
+                          child: Text(
+                            _paymentLabel(_paymentMethod),
+                            textAlign: TextAlign.end,
+                          ),
                         ),
                       ),
                     ],
