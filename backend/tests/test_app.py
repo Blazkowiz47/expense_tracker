@@ -768,6 +768,58 @@ def test_group_expense_persists_exact_split_amounts_in_balances(tmp_path):
     assert balances[charlie_uid]["net"] == -60
 
 
+def test_group_settlement_is_shared_and_updates_group_balances(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+    alice_uid = client.get("/api/v1/auth/me", headers=headers_a).json()["user"]["uid"]
+    bob_uid = client.get("/api/v1/auth/me", headers=headers_b).json()["user"]["uid"]
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Household", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+    created = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Groceries",
+            "paidBy": alice_uid,
+            "splitWith": [alice_uid, bob_uid],
+            "amount": 100,
+            "date": "2026-05-20T10:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    settlement = client.post(
+        f"/api/v1/groups/{group_id}/settlements",
+        headers=headers_b,
+        json={
+            "memberUid": alice_uid,
+            "direction": "paid",
+            "amount": 50,
+            "currency": "INR",
+        },
+    )
+    assert settlement.status_code == 201, settlement.text
+    payload = settlement.json()
+    assert payload["payerUid"] == bob_uid
+    assert payload["receiverUid"] == alice_uid
+
+    history = client.get(f"/api/v1/groups/{group_id}/settlements", headers=headers_a)
+    assert history.status_code == 200, history.text
+    assert history.json()["settlements"][0]["id"] == payload["id"]
+
+    groups = client.get("/api/v1/groups", headers=headers_a)
+    balances = groups.json()["groups"][0]["displayData"]["memberBalances"]
+    assert balances[alice_uid]["net"] == 0
+    assert balances[bob_uid]["net"] == 0
+
+
 def test_pending_family_invite_auto_joins_when_member_registers(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")

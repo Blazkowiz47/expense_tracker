@@ -5,6 +5,7 @@ import 'package:expense_tracker/features/auth/repositories/auth_repository.dart'
 import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
+import 'package:expense_tracker/features/groups/models/group_settlement.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
@@ -35,6 +36,15 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   final List<GroupSummary> groups;
   final List<GroupMember> members;
   final List<GroupExpense>? expenses;
+  final List<GroupSettlement> settlements = [];
+  ({
+    String groupId,
+    String memberUid,
+    String direction,
+    double amount,
+    String currency,
+  })?
+  recordedGroupSettlement;
 
   @override
   Future<List<GroupSummary>> getCachedGroups() async => const [];
@@ -73,6 +83,40 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
           updatedAt: DateTime.now(),
         ),
       ];
+
+  @override
+  Future<List<GroupSettlement>> fetchSettlements(String groupId) async =>
+      settlements;
+
+  @override
+  Future<GroupSettlement> recordSettlement({
+    required String groupId,
+    required String memberUid,
+    required String direction,
+    required double amount,
+    String currency = 'INR',
+    String note = '',
+  }) async {
+    recordedGroupSettlement = (
+      groupId: groupId,
+      memberUid: memberUid,
+      direction: direction,
+      amount: amount,
+      currency: currency,
+    );
+    final settlement = GroupSettlement(
+      id: 'settlement-${settlements.length + 1}',
+      groupId: groupId,
+      payerUid: 'member-1',
+      receiverUid: memberUid,
+      amount: amount,
+      currency: currency,
+      createdBy: 'member-1',
+      createdAt: DateTime(2026, 6, 7),
+    );
+    settlements.insert(0, settlement);
+    return settlement;
+  }
 }
 
 class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
@@ -311,6 +355,17 @@ void main() {
     expect(find.text('Settle up with Sushrut'), findsOneWidget);
     expect(find.text('Currency'), findsOneWidget);
     expect(find.text('NOK'), findsWidgets);
+
+    await tester.enterText(find.byType(TextFormField).last, '650');
+    await tester.tap(find.text('Record'));
+    await tester.pumpAndSettle();
+
+    expect(repository.recordedGroupSettlement?.groupId, familyGroup.id);
+    expect(repository.recordedGroupSettlement?.memberUid, 'member-2');
+    expect(repository.recordedGroupSettlement?.direction, 'paid');
+    expect(repository.recordedGroupSettlement?.amount, 650);
+    expect(repository.recordedGroupSettlement?.currency, 'NOK');
+    expect(find.text('Nisha paid Sushrut'), findsOneWidget);
   });
 
   testWidgets('family page opens grocery expense form from household card', (

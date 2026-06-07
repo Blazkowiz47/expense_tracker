@@ -5,6 +5,7 @@ import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
+import 'package:expense_tracker/features/groups/models/group_settlement.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -340,6 +341,41 @@ class ApiGroupsRepository {
       method: 'DELETE',
       path: '/api/v1/groups/$groupId/expenses/$expenseId',
     );
+  }
+
+  Future<List<GroupSettlement>> fetchSettlements(String groupId) async {
+    final response = await _request(
+      method: 'GET',
+      path: '/api/v1/groups/$groupId/settlements',
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawSettlements =
+        (payload['settlements'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>();
+    return rawSettlements.map(GroupSettlement.fromJson).toList(growable: false);
+  }
+
+  Future<GroupSettlement> recordSettlement({
+    required String groupId,
+    required String memberUid,
+    required String direction,
+    required double amount,
+    String currency = 'INR',
+    String note = '',
+  }) async {
+    final response = await _request(
+      method: 'POST',
+      path: '/api/v1/groups/$groupId/settlements',
+      body: <String, dynamic>{
+        'memberUid': memberUid,
+        'direction': direction,
+        'amount': amount,
+        'currency': currency,
+        'note': note,
+      },
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return GroupSettlement.fromJson(payload);
   }
 
   Future<String> uploadAttachment({

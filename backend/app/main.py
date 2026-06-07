@@ -721,6 +721,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 )
                 app.state.db.groups.delete_one({"id": group_id})
                 app.state.db.group_expenses.delete_many({"groupId": group_id})
+                app.state.db.group_settlements.delete_many({"groupId": group_id})
                 return {"left": True, "deleted": True}
             app.state.db.groups.update_one({"id": group_id}, {"$set": {"memberUids": members, "memberCount": len(members), "updatedAt": now()}, "$unset": {f"memberRoles.{user['uid']}": ""}})
             return {"left": True, "deleted": False}
@@ -761,6 +762,40 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             app.state.db.group_expenses.insert_one(doc)
             touch_group(app.state.db, group_id)
             return JSONResponse(status_code=201, content=json_ready(group_expense_out(doc)))
+        if parts == ["settlements"] and request.method == "GET":
+            docs = app.state.db.group_settlements.find({"groupId": group_id}).sort("createdAt", -1)
+            return {"settlements": [group_settlement_out(doc) for doc in docs]}
+        if parts == ["settlements"] and request.method == "POST":
+            body = await request.json()
+            member_uid = str(body.get("memberUid") or "").strip()
+            if not member_uid:
+                raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "memberUid is required"))
+            if member_uid == user["uid"]:
+                raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "cannot settle with yourself"))
+            if member_uid not in group.get("memberUids", []):
+                raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "member not found"))
+            direction = str(body.get("direction") or "paid").strip().lower()
+            if direction not in {"paid", "received"}:
+                raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "direction must be paid or received"))
+            amount = float(body.get("amount") or 0)
+            if amount <= 0:
+                raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "amount must be positive"))
+            payer_uid = user["uid"] if direction == "paid" else member_uid
+            receiver_uid = member_uid if direction == "paid" else user["uid"]
+            doc = {
+                "id": uuid.uuid4().hex,
+                "groupId": group_id,
+                "payerUid": payer_uid,
+                "receiverUid": receiver_uid,
+                "amount": amount,
+                "currency": normalize_currency(body.get("currency") or "INR"),
+                "note": str(body.get("note") or "").strip(),
+                "createdBy": user["uid"],
+                "createdAt": now(),
+            }
+            app.state.db.group_settlements.insert_one(doc)
+            touch_group(app.state.db, group_id)
+            return JSONResponse(status_code=201, content=json_ready(group_settlement_out(doc)))
         if len(parts) == 2 and parts[0] == "expenses" and request.method == "PUT":
             body = await request.json()
             existing = app.state.db.group_expenses.find_one({"groupId": group_id, "id": parts[1]})
@@ -984,6 +1019,7 @@ def ensure_indexes(db: Any) -> None:
     db.groups.create_index("pendingInvites.emailNormalized")
     db.group_expenses.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
     db.group_expenses.create_index([("groupId", ASCENDING), ("updatedAt", ASCENDING)])
+    db.group_settlements.create_index([("groupId", ASCENDING), ("createdAt", ASCENDING)])
     db.group_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.group_expense_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
@@ -1100,9 +1136,18 @@ def group_freshness(db: Any, uid: str) -> datetime | None:
             {"groupId": {"$in": group_ids}},
             "updatedAt",
         )
+        settlement_latest = latest_collection_time(
+            db,
+            "group_settlements",
+            {"groupId": {"$in": group_ids}},
+            "createdAt",
+        )
+    else:
+        settlement_latest = None
     return max_time(
         latest_collection_time(db, "groups", {"memberUids": uid}, "updatedAt"),
         expense_latest,
+        settlement_latest,
         latest_collection_time(db, "group_tombstones", {"memberUids": uid}, "deletedAt"),
         latest_collection_time(db, "group_expense_tombstones", {"memberUids": uid}, "deletedAt"),
     )
@@ -1736,6 +1781,23 @@ def friend_settlement_out(doc: dict[str, Any]) -> dict[str, Any]:
     })
 
 
+def group_settlement_out(doc: dict[str, Any]) -> dict[str, Any]:
+    return json_ready({
+        key: doc.get(key)
+        for key in [
+            "id",
+            "groupId",
+            "payerUid",
+            "receiverUid",
+            "amount",
+            "currency",
+            "note",
+            "createdBy",
+            "createdAt",
+        ]
+    })
+
+
 def friend_balance_map(db: Any, uid: str) -> dict[str, float]:
     balances: dict[str, float] = {}
     for settlement in db.friend_settlements.find({"uids": uid}):
@@ -1775,12 +1837,14 @@ def group_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
     groups = db.groups.find({"memberUids": uid, "groupType": {"$ne": "family"}}).sort("updatedAt", -1)
     for group in groups:
         expenses = list(db.group_expenses.find({"groupId": group["id"]}))
-        if not expenses:
+        settlements = list(db.group_settlements.find({"groupId": group["id"]}))
+        if not expenses and not settlements:
             continue
         member_uids = group.get("memberUids", [])
         users = list(db.users.find({"uid": {"$in": member_uids}}))
-        currency_codes = group_currency_codes(group, expenses)
-        display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes)
+        settlement_currencies = [settlement.get("currency") for settlement in settlements]
+        currency_codes = group_currency_codes(group, expenses, settlement_currencies)
+        display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes, settlements)
         member_balances_by_currency = display_data.get("memberBalancesByCurrency", {})
         net_by_currency: dict[str, float] = {}
         for currency, balances in member_balances_by_currency.items():
@@ -1907,10 +1971,12 @@ def require_group_member(db: Any, group_id: str, uid: str) -> dict[str, Any]:
 
 def group_out(db: Any, group: dict[str, Any]) -> dict[str, Any]:
     expenses = list(db.group_expenses.find({"groupId": group["id"]}))
+    settlements = list(db.group_settlements.find({"groupId": group["id"]}))
     member_uids = group.get("memberUids", [])
     users = list(db.users.find({"uid": {"$in": member_uids}}))
-    currency_codes = group_currency_codes(group, expenses)
-    display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes)
+    settlement_currencies = [settlement.get("currency") for settlement in settlements]
+    currency_codes = group_currency_codes(group, expenses, settlement_currencies)
+    display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes, settlements)
     pending_invites = group_pending_invites(group)
     return json_ready(
         {
@@ -2032,6 +2098,7 @@ def compute_display_data(
     expenses: list[dict[str, Any]],
     aliases: dict[str, str] | None = None,
     currency_codes: list[str] | None = None,
+    settlements: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     aliases = aliases or {}
     primary_currency = (currency_codes or ["INR"])[0]
@@ -2070,6 +2137,30 @@ def compute_display_data(
                     balances.setdefault(paid_by, {"owes": 0.0, "owed": 0.0, "net": 0.0})
                     balances[paid_by]["owed"] += share
                     balances[paid_by]["net"] += share
+    member_set = set(member_uids)
+    for settlement in settlements or []:
+        payer_uid = str(settlement.get("payerUid") or "")
+        receiver_uid = str(settlement.get("receiverUid") or "")
+        if payer_uid not in member_set or receiver_uid not in member_set:
+            continue
+        currency = safe_currency(settlement.get("currency"), primary_currency) or primary_currency
+        try:
+            amount = float(settlement.get("amount") or 0)
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue
+        totals_by_currency.setdefault(currency, totals_by_currency.get(currency, 0.0))
+        balances = balances_by_currency.setdefault(
+            currency,
+            {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids},
+        )
+        balances.setdefault(payer_uid, {"owes": 0.0, "owed": 0.0, "net": 0.0})
+        balances.setdefault(receiver_uid, {"owes": 0.0, "owed": 0.0, "net": 0.0})
+        balances[payer_uid]["owed"] += amount
+        balances[payer_uid]["net"] += amount
+        balances[receiver_uid]["owes"] += amount
+        balances[receiver_uid]["net"] -= amount
     primary_balances = balances_by_currency.get(primary_currency) or {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids}
     return {
         "expenseCount": len(expenses),

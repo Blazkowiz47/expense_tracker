@@ -1,15 +1,13 @@
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
-import 'package:expense_tracker/data/models/expense.dart';
-import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/models/group.dart';
-import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
+import 'package:expense_tracker/features/groups/models/group_settlement.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/utils/group_balance_calculator.dart';
@@ -2886,11 +2884,10 @@ class _GroupSettingsPage extends StatefulWidget {
 class _GroupSettingsPageState extends State<_GroupSettingsPage> {
   late bool _simplify;
   late List<GroupMember> _members;
-  late final http.Client _client;
-  late final ExpenseRepository _expenseRepository;
   bool _settlementLoading = true;
   String? _settlingMemberUid;
   String? _updatingRoleUid;
+  List<GroupSettlement> _settlements = const [];
   Map<String, Map<String, double>> _settlementNetByCurrency = const {};
 
   @override
@@ -2898,48 +2895,39 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     super.initState();
     _simplify = widget.simplifyBalances;
     _members = widget.members;
-    _client = http.Client();
-    _expenseRepository = ExpenseRepository(client: _client);
     _loadSettlementBalances();
-  }
-
-  @override
-  void dispose() {
-    _expenseRepository.dispose();
-    _client.close();
-    super.dispose();
   }
 
   Future<void> _loadSettlementBalances() async {
     setState(() => _settlementLoading = true);
     try {
-      await _expenseRepository.refresh();
-      final expenses = _expenseRepository.getExpenses();
+      final settlements = await widget.repository.fetchSettlements(
+        widget.groupId,
+      );
       final netByCurrency = <String, Map<String, double>>{};
       for (final member in _members) {
         netByCurrency.putIfAbsent('INR', () => <String, double>{})[member.uid] =
             0;
       }
-      for (final expense in expenses) {
-        final category = (expense.category ?? '').trim().toLowerCase();
-        if (category != 'settlement') continue;
-        final meta = _parseGroupSettlementMeta(expense.description ?? '');
-        if (meta == null) continue;
-        if (meta.groupId != widget.groupId) continue;
-        if (!_members.any((member) => member.uid == meta.memberUid)) continue;
-        final currency = _normalizeSettlementCurrency(expense.currency);
+      final memberUids = _members.map((member) => member.uid).toSet();
+      for (final settlement in settlements) {
+        if (!memberUids.contains(settlement.payerUid) ||
+            !memberUids.contains(settlement.receiverUid)) {
+          continue;
+        }
+        final currency = _normalizeSettlementCurrency(settlement.currency);
         final currencyNet = netByCurrency.putIfAbsent(
           currency,
           () => <String, double>{for (final member in _members) member.uid: 0},
         );
-        final signedDelta = meta.direction == 'received'
-            ? expense.amount
-            : -expense.amount;
-        currencyNet[meta.memberUid] =
-            (currencyNet[meta.memberUid] ?? 0) + signedDelta;
+        currencyNet[settlement.payerUid] =
+            (currencyNet[settlement.payerUid] ?? 0) + settlement.amount;
+        currencyNet[settlement.receiverUid] =
+            (currencyNet[settlement.receiverUid] ?? 0) - settlement.amount;
       }
       if (!mounted) return;
       setState(() {
+        _settlements = settlements;
         _settlementNetByCurrency = netByCurrency;
         _settlementLoading = false;
       });
@@ -2958,23 +2946,6 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       // Keep the current member list and still refresh settlement totals.
     }
     await _loadSettlementBalances();
-  }
-
-  _GroupSettlementMeta? _parseGroupSettlementMeta(String description) {
-    final match = RegExp(
-      r'\[type:groupSettlement\]\[group:([^\]]+)\]\[uid:([^\]]+)\]\[dir:(paid|received)\]',
-    ).firstMatch(description);
-    if (match == null) return null;
-    final groupId = (match.group(1) ?? '').trim();
-    final memberUid = (match.group(2) ?? '').trim();
-    final direction = (match.group(3) ?? '').trim();
-    if (groupId.isEmpty || memberUid.isEmpty) return null;
-    if (direction != 'paid' && direction != 'received') return null;
-    return _GroupSettlementMeta(
-      groupId: groupId,
-      memberUid: memberUid,
-      direction: direction,
-    );
   }
 
   String _normalizeSettlementCurrency(String value) {
@@ -3112,21 +3083,12 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     if (input == null) return;
     setState(() => _settlingMemberUid = member.uid);
     try {
-      final description =
-          'Group settle up with ${member.label} '
-          '[type:groupSettlement][group:${widget.groupId}][uid:${member.uid}][dir:${input.direction}][currency:${input.currency}]';
-      await _expenseRepository.createExpense(
-        Expense(
-          core: ExpenseCore(
-            id: DateTime.now().microsecondsSinceEpoch.toString(),
-            title: 'Group settlement',
-            amount: input.amount,
-            currency: input.currency,
-            category: 'Settlement',
-            createdAt: DateTime.now(),
-          ),
-          description: description,
-        ),
+      await widget.repository.recordSettlement(
+        groupId: widget.groupId,
+        memberUid: member.uid,
+        direction: input.direction,
+        amount: input.amount,
+        currency: input.currency,
       );
       await _loadSettlementBalances();
       if (!mounted) return;
@@ -3266,6 +3228,10 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       }
     }
     return uid;
+  }
+
+  String _settlementSummary(GroupSettlement settlement) {
+    return '${_memberLabelByUid(settlement.payerUid)} paid ${_memberLabelByUid(settlement.receiverUid)}';
   }
 
   String _primarySettlementCurrency(
@@ -3409,6 +3375,36 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
               ),
             );
           }),
+          const SizedBox(height: 16),
+          const AppSectionHeader(title: 'Settlement history'),
+          if (_settlements.isEmpty)
+            const AppCard(
+              child: ListTile(
+                leading: AppAvatar(icon: Icons.handshake_outlined),
+                title: Text('No settlements yet'),
+                subtitle: Text('Recorded paybacks will appear here.'),
+              ),
+            )
+          else
+            ..._settlements
+                .take(6)
+                .map(
+                  (settlement) => AppCard(
+                    child: ListTile(
+                      leading: const AppAvatar(icon: Icons.handshake_outlined),
+                      title: Text(_settlementSummary(settlement)),
+                      subtitle: Text(
+                        DateFormatter.formatDate(settlement.createdAt),
+                      ),
+                      trailing: Text(
+                        AppMoney.formatCurrency(
+                          settlement.amount,
+                          settlement.currency,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
           const SizedBox(height: 16),
           const AppSectionHeader(title: 'Advanced settings'),
           AppCard(
@@ -3554,18 +3550,6 @@ class _GroupSettleUpInput {
   final double amount;
   final String direction;
   final String currency;
-}
-
-class _GroupSettlementMeta {
-  const _GroupSettlementMeta({
-    required this.groupId,
-    required this.memberUid,
-    required this.direction,
-  });
-
-  final String groupId;
-  final String memberUid;
-  final String direction;
 }
 
 class _SplitSelectionResult {
