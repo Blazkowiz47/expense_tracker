@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:expense_tracker/core/ui/app_page_container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,5 +57,44 @@ void main() {
 
     expect(find.byType(RefreshIndicator), findsNothing);
     expect(find.byType(ListView), findsOneWidget);
+  });
+
+  testWidgets('auto refresh runs on interval without overlapping', (
+    tester,
+  ) async {
+    var refreshCount = 0;
+    var completer = Completer<void>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppPageContainer(
+            autoRefresh: true,
+            refreshInterval: const Duration(milliseconds: 100),
+            onAutoRefresh: () {
+              refreshCount += 1;
+              return completer.future;
+            },
+            children: const [SizedBox(height: 24, child: Text('Live data'))],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(refreshCount, 1);
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(refreshCount, 1);
+
+    completer.complete();
+    await tester.pump();
+    completer = Completer<void>();
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(refreshCount, 2);
+
+    completer.complete();
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }

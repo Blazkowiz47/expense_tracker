@@ -16,10 +16,16 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
 
 class ActivityPage extends StatefulWidget {
-  const ActivityPage({this.groupsRepository, this.groupsClient, super.key});
+  const ActivityPage({
+    this.groupsRepository,
+    this.groupsClient,
+    this.autoRefresh = false,
+    super.key,
+  });
 
   final ApiGroupsRepository? groupsRepository;
   final http.Client? groupsClient;
+  final bool autoRefresh;
 
   @override
   State<ActivityPage> createState() => _ActivityPageState();
@@ -63,8 +69,11 @@ class _ActivityPageState extends State<ActivityPage> {
     _refreshActivityData();
   }
 
-  Future<void> _refreshActivityData() async {
-    setState(() => _loadingExpenses = true);
+  Future<void> _refreshActivityData({bool showLoading = true}) async {
+    setState(
+      () => _loadingExpenses =
+          showLoading || (_expenses.isEmpty && _groupExpenses.isEmpty),
+    );
     final personalFuture = _loadPersonalExpenses();
     final groupFuture = _loadGroupExpenses();
     final personalExpenses = await personalFuture;
@@ -291,6 +300,7 @@ class _ActivityPageState extends State<ActivityPage> {
           group: entry.group,
           repository: _groupsRepository,
           initialExpenseId: entry.expense.id,
+          autoRefresh: true,
         ),
       ),
     );
@@ -329,7 +339,8 @@ class _ActivityPageState extends State<ActivityPage> {
         final increasedSpend = currentTotal > previousTotal;
 
         return AppPageContainer(
-          onRefresh: _refreshActivityData,
+          onRefresh: () => _refreshActivityData(showLoading: false),
+          autoRefresh: widget.autoRefresh,
           children: [
             _SpendSummaryCard(
               total: currentTotal,

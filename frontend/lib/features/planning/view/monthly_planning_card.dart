@@ -46,13 +46,13 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
   void didUpdateWidget(covariant MonthlyPlanningCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.refreshToken != oldWidget.refreshToken) {
-      _load();
+      _load(showLoading: false);
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool showLoading = true}) async {
     setState(() {
-      _loading = true;
+      _loading = showLoading || _plan == null;
       _error = null;
     });
     try {
@@ -64,6 +64,10 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
       });
     } catch (error) {
       if (!mounted) return;
+      if (!showLoading && _plan != null) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _error = error.toString();
         _loading = false;

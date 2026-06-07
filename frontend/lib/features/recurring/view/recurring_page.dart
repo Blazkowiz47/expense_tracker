@@ -7,9 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 class RecurringPage extends StatefulWidget {
-  const RecurringPage({this.repository, super.key});
+  const RecurringPage({this.repository, this.autoRefresh = false, super.key});
 
   final ApiRecurringRepository? repository;
+  final bool autoRefresh;
 
   @override
   State<RecurringPage> createState() => _RecurringPageState();
@@ -45,9 +46,9 @@ class _RecurringPageState extends State<RecurringPage> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool showLoading = true}) async {
     setState(() {
-      _loading = true;
+      _loading = showLoading || (_templates.isEmpty && _occurrences.isEmpty);
       _error = null;
     });
     try {
@@ -63,6 +64,10 @@ class _RecurringPageState extends State<RecurringPage> {
       });
     } catch (error) {
       if (!mounted) return;
+      if (!showLoading && (_templates.isNotEmpty || _occurrences.isNotEmpty)) {
+        setState(() => _loading = false);
+        return;
+      }
       setState(() {
         _error = error.toString();
         _loading = false;
@@ -151,14 +156,16 @@ class _RecurringPageState extends State<RecurringPage> {
             const Center(child: CircularProgressIndicator())
           else if (_error != null)
             AppPageContainer(
-              onRefresh: _load,
+              onRefresh: () => _load(showLoading: false),
+              autoRefresh: widget.autoRefresh,
               children: [
                 AppEmptyState(title: 'Recurring unavailable', subtitle: _error),
               ],
             )
           else
             AppPageContainer(
-              onRefresh: _load,
+              onRefresh: () => _load(showLoading: false),
+              autoRefresh: widget.autoRefresh,
               children: [
                 _CashflowSummaryCard(
                   month: _monthTitle(_month),

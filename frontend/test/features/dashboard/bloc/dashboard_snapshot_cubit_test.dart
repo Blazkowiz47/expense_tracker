@@ -1,5 +1,6 @@
 import 'package:bloc_test/bloc_test.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
+import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -16,5 +17,35 @@ void main() {
         isA<DashboardSnapshotLoaded>(),
       ],
     );
+
+    test(
+      'silent refresh keeps the last loaded snapshot when fetch fails',
+      () async {
+        final repository = _FailingAfterFirstSnapshotRepository();
+        final cubit = DashboardSnapshotCubit(repository: repository);
+        await cubit.load();
+        final loadedState = cubit.state;
+
+        await cubit.load(showLoading: false);
+
+        expect(loadedState, isA<DashboardSnapshotLoaded>());
+        expect(cubit.state, same(loadedState));
+        await cubit.close();
+      },
+    );
   });
+}
+
+class _FailingAfterFirstSnapshotRepository
+    implements DashboardSnapshotRepository {
+  var _calls = 0;
+
+  @override
+  Future<DashboardSnapshot> fetchSnapshot() async {
+    _calls += 1;
+    if (_calls == 1) {
+      return const MockDashboardSnapshotRepository().fetchSnapshot();
+    }
+    throw Exception('offline');
+  }
 }

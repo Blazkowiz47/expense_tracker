@@ -36,12 +36,14 @@ class GroupsPage extends StatefulWidget {
     this.groupType = GroupType.split,
     this.repository,
     this.client,
+    this.autoRefresh = false,
     super.key,
   });
 
   final GroupType groupType;
   final ApiGroupsRepository? repository;
   final http.Client? client;
+  final bool autoRefresh;
 
   @override
   State<GroupsPage> createState() => _GroupsPageState();
@@ -97,9 +99,9 @@ class _GroupsPageState extends State<GroupsPage> {
         .toList(growable: false);
   }
 
-  Future<void> _loadGroups() async {
+  Future<void> _loadGroups({bool showLoading = true}) async {
     setState(() {
-      _loading = true;
+      _loading = showLoading || _groups.isEmpty;
       _error = null;
     });
     var hadCached = false;
@@ -115,7 +117,7 @@ class _GroupsPageState extends State<GroupsPage> {
       setState(() => _groups = _filterGroups(groups));
     } catch (error) {
       if (!mounted) return;
-      if (!hadCached) {
+      if (!hadCached && (showLoading || _groups.isEmpty)) {
         setState(() => _error = error.toString());
       }
     } finally {
@@ -164,7 +166,11 @@ class _GroupsPageState extends State<GroupsPage> {
   Future<void> _openGroupDetails(GroupSummary group) async {
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => GroupDetailsPage(group: group, repository: _repository),
+        builder: (_) => GroupDetailsPage(
+          group: group,
+          repository: _repository,
+          autoRefresh: true,
+        ),
       ),
     );
     if (changed == true && mounted) {
@@ -177,7 +183,8 @@ class _GroupsPageState extends State<GroupsPage> {
     return Stack(
       children: [
         AppPageContainer(
-          onRefresh: _loadGroups,
+          onRefresh: () => _loadGroups(showLoading: false),
+          autoRefresh: widget.autoRefresh,
           children: [
             AppSectionHeader(
               title: _sectionTitle,
@@ -402,12 +409,14 @@ class GroupDetailsPage extends StatefulWidget {
     required this.group,
     required this.repository,
     this.initialExpenseId,
+    this.autoRefresh = false,
     super.key,
   });
 
   final GroupSummary group;
   final ApiGroupsRepository repository;
   final String? initialExpenseId;
+  final bool autoRefresh;
 
   @override
   State<GroupDetailsPage> createState() => _GroupDetailsPageState();
@@ -570,6 +579,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           expenses: _expenses,
           simplifyBalances: _simplifyBalances,
           memberCountFallback: _memberCount,
+          autoRefresh: true,
         ),
       ),
     );
@@ -643,8 +653,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
-    await Future.wait([_loadMembers(), _loadExpenses()]);
+  Future<void> _loadData({bool showLoading = true}) async {
+    await Future.wait([
+      _loadMembers(),
+      _loadExpenses(showLoading: showLoading),
+    ]);
     _openInitialExpenseEditor();
   }
 
@@ -687,9 +700,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     }
   }
 
-  Future<void> _loadExpenses() async {
+  Future<void> _loadExpenses({bool showLoading = true}) async {
     setState(() {
-      _loading = true;
+      _loading = showLoading || _expenses.isEmpty;
       _error = null;
     });
     var hadCached = false;
@@ -707,7 +720,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       setState(() => _expenses = items);
     } catch (error) {
       if (!mounted) return;
-      if (!hadCached) {
+      if (!hadCached && (showLoading || _expenses.isEmpty)) {
         setState(() => _error = error.toString());
       }
     } finally {
@@ -2209,7 +2222,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         body: Stack(
           children: [
             AppPageContainer(
-              onRefresh: _loadData,
+              onRefresh: () => _loadData(showLoading: false),
+              autoRefresh: widget.autoRefresh,
               children: [
                 AppCard(
                   child: ListTile(
@@ -2434,6 +2448,7 @@ class _GroupSettingsPage extends StatefulWidget {
     required this.expenses,
     required this.simplifyBalances,
     required this.memberCountFallback,
+    required this.autoRefresh,
   });
 
   final ApiGroupsRepository repository;
@@ -2443,6 +2458,7 @@ class _GroupSettingsPage extends StatefulWidget {
   final List<GroupExpense> expenses;
   final bool simplifyBalances;
   final int memberCountFallback;
+  final bool autoRefresh;
 
   @override
   State<_GroupSettingsPage> createState() => _GroupSettingsPageState();
@@ -2757,6 +2773,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       appBar: AppBar(title: const Text('Group settings')),
       body: AppPageContainer(
         onRefresh: _refreshSettings,
+        autoRefresh: widget.autoRefresh,
         children: [
           AppCard(
             child: ListTile(

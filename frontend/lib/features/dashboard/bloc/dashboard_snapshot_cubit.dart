@@ -12,13 +12,17 @@ class DashboardSnapshotCubit extends Cubit<DashboardSnapshotState> {
 
   final DashboardSnapshotRepository _repository;
 
-  Future<void> load() async {
-    emit(const DashboardSnapshotLoading());
+  Future<void> load({bool showLoading = true}) async {
+    if (showLoading) {
+      emit(const DashboardSnapshotLoading());
+    }
     try {
       final snapshot = await _repository.fetchSnapshot();
       emit(DashboardSnapshotLoaded(snapshot: snapshot));
     } catch (error) {
-      emit(DashboardSnapshotFailure(message: error.toString()));
+      if (showLoading || state is! DashboardSnapshotLoaded) {
+        emit(DashboardSnapshotFailure(message: error.toString()));
+      }
     }
   }
 }

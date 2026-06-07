@@ -127,10 +127,10 @@ class _AuthGuardedRoute extends StatelessWidget {
         final routed = switch (routeName) {
           AppRoutes.home => const HomeShellPage(initialIndex: 0),
           AppRoutes.overview => const HomeShellPage(initialIndex: 0),
-          AppRoutes.friends => const FriendsPage(),
+          AppRoutes.friends => const FriendsPage(autoRefresh: true),
           AppRoutes.family => const HomeShellPage(initialIndex: 1),
-          AppRoutes.groups => const GroupsPage(),
-          AppRoutes.recurring => const RecurringPage(),
+          AppRoutes.groups => const GroupsPage(autoRefresh: true),
+          AppRoutes.recurring => const RecurringPage(autoRefresh: true),
           AppRoutes.activity => const HomeShellPage(initialIndex: 2),
           AppRoutes.account => const HomeShellPage(initialIndex: 3),
           AppRoutes.accountEdit => AccountEditRoutePage(

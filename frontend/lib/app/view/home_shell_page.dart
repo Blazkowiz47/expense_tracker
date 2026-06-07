@@ -147,7 +147,8 @@ class _HomeShellPageState extends State<HomeShellPage>
     if (!forcePersonal && _destinations[_selectedIndex].label == 'Family') {
       Navigator.of(context).push<void>(
         platformPageRoute(
-          builder: (_) => const GroupsPage(groupType: GroupType.family),
+          builder: (_) =>
+              const GroupsPage(groupType: GroupType.family, autoRefresh: true),
         ),
       );
       return;
@@ -165,28 +166,38 @@ class _HomeShellPageState extends State<HomeShellPage>
 
   void _openSharedSpace(GroupType groupType) {
     Navigator.of(context).push<void>(
-      platformPageRoute(builder: (_) => GroupsPage(groupType: groupType)),
+      platformPageRoute(
+        builder: (_) => GroupsPage(groupType: groupType, autoRefresh: true),
+      ),
     );
   }
 
   void _openFriendsPage() {
-    Navigator.of(
-      context,
-    ).push<void>(platformPageRoute(builder: (_) => const FriendsPage()));
+    Navigator.of(context).push<void>(
+      platformPageRoute(builder: (_) => const FriendsPage(autoRefresh: true)),
+    );
   }
 
   void _openRecurringPage() {
-    Navigator.of(
-      context,
-    ).push<void>(platformPageRoute(builder: (_) => const RecurringPage()));
+    Navigator.of(context).push<void>(
+      platformPageRoute(builder: (_) => const RecurringPage(autoRefresh: true)),
+    );
   }
 
-  Widget _pageForDestination(_ShellDestination destination) {
+  Widget _pageForDestination(_ShellDestination destination, int index) {
+    final autoRefresh = index == _selectedIndex;
     if (destination.label == 'Home') {
       return HomePage(
+        autoRefresh: autoRefresh,
         onOpenFriends: _openFriendsPage,
         onOpenGroups: () => _openSharedSpace(GroupType.split),
       );
+    }
+    if (destination.label == 'Family') {
+      return FamilyPage(autoRefresh: autoRefresh);
+    }
+    if (destination.label == 'Activity') {
+      return ActivityPage(autoRefresh: autoRefresh);
     }
     return destination.page;
   }
@@ -255,7 +266,9 @@ class _HomeShellPageState extends State<HomeShellPage>
         IndexedStack(
           index: _selectedIndex,
           children: _destinations
-              .map(_pageForDestination)
+              .asMap()
+              .entries
+              .map((entry) => _pageForDestination(entry.value, entry.key))
               .toList(growable: false),
         ),
       ),
@@ -344,7 +357,12 @@ class _HomeShellPageState extends State<HomeShellPage>
                       child: IndexedStack(
                         index: _selectedIndex,
                         children: _destinations
-                            .map(_pageForDestination)
+                            .asMap()
+                            .entries
+                            .map(
+                              (entry) =>
+                                  _pageForDestination(entry.value, entry.key),
+                            )
                             .toList(growable: false),
                       ),
                     ),
@@ -390,6 +408,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       tabBuilder: (context, index) {
         final destination = _destinations[index];
         final showAddButton = destination.label != 'Account';
+        final page = _pageForDestination(destination, index);
 
         return CupertinoTabView(
           builder: (context) {
@@ -409,7 +428,7 @@ class _HomeShellPageState extends State<HomeShellPage>
                 bottom: false,
                 child: Stack(
                   children: [
-                    Positioned.fill(child: _pageForDestination(destination)),
+                    Positioned.fill(child: page),
                     if (_actionMenuOpen)
                       Positioned.fill(
                         child: GestureDetector(

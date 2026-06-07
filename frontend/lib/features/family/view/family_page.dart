@@ -17,12 +17,14 @@ class FamilyPage extends StatefulWidget {
     this.repository,
     this.client,
     this.monthlyPlanRepository,
+    this.autoRefresh = false,
     super.key,
   });
 
   final ApiGroupsRepository? repository;
   final http.Client? client;
   final MonthlyPlanRepository? monthlyPlanRepository;
+  final bool autoRefresh;
 
   @override
   State<FamilyPage> createState() => _FamilyPageState();
@@ -63,9 +65,9 @@ class _FamilyPageState extends State<FamilyPage> {
         .toList(growable: false);
   }
 
-  Future<void> _loadFamilies() async {
+  Future<void> _loadFamilies({bool showLoading = true}) async {
     setState(() {
-      _loading = true;
+      _loading = showLoading || _families.isEmpty;
       _error = null;
     });
     var hadCached = false;
@@ -80,10 +82,10 @@ class _FamilyPageState extends State<FamilyPage> {
       final groups = _familyGroups(await _repository.fetchGroups());
       if (!mounted) return;
       _applyFamilies(groups);
-      await _loadSelectedFamilyDetails();
+      await _loadSelectedFamilyDetails(showLoading: showLoading);
     } catch (error) {
       if (!mounted) return;
-      if (!hadCached) {
+      if (!hadCached && (showLoading || _families.isEmpty)) {
         setState(() => _error = error.toString());
       }
     } finally {
@@ -96,7 +98,7 @@ class _FamilyPageState extends State<FamilyPage> {
   Future<void> _refreshFamily() async {
     if (!mounted) return;
     setState(() => _monthlyPlanRefreshToken += 1);
-    await _loadFamilies();
+    await _loadFamilies(showLoading: false);
   }
 
   void _applyFamilies(List<GroupSummary> families) {
@@ -110,13 +112,15 @@ class _FamilyPageState extends State<FamilyPage> {
     });
   }
 
-  Future<void> _loadSelectedFamilyDetails() async {
+  Future<void> _loadSelectedFamilyDetails({bool showLoading = true}) async {
     final family = _selectedFamily;
     if (family == null) return;
     setState(() {
-      _loadingDetails = true;
-      _members = const [];
-      _expenses = const [];
+      _loadingDetails = showLoading || (_members.isEmpty && _expenses.isEmpty);
+      if (showLoading) {
+        _members = const [];
+        _expenses = const [];
+      }
     });
     try {
       final cachedMembers = await _repository.getCachedMembers(family.id);
@@ -153,14 +157,17 @@ class _FamilyPageState extends State<FamilyPage> {
     if (family == null) return;
     final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) =>
-            GroupDetailsPage(group: family, repository: _repository),
+        builder: (_) => GroupDetailsPage(
+          group: family,
+          repository: _repository,
+          autoRefresh: true,
+        ),
       ),
     );
     if (!mounted) return;
     if (changed == true) {
       setState(() => _monthlyPlanRefreshToken += 1);
-      await _loadFamilies();
+      await _loadFamilies(showLoading: false);
     }
   }
 
@@ -208,7 +215,7 @@ class _FamilyPageState extends State<FamilyPage> {
       }
       if (!mounted) return;
       setState(() => _monthlyPlanRefreshToken += 1);
-      await _loadFamilies();
+      await _loadFamilies(showLoading: false);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -340,6 +347,7 @@ class _FamilyPageState extends State<FamilyPage> {
     if (_loading && family == null) {
       return AppPageContainer(
         onRefresh: _refreshFamily,
+        autoRefresh: widget.autoRefresh,
         children: const [
           AppBalanceTile(
             title: 'Loading family...',
@@ -352,6 +360,7 @@ class _FamilyPageState extends State<FamilyPage> {
     if (_error != null && family == null) {
       return AppPageContainer(
         onRefresh: _refreshFamily,
+        autoRefresh: widget.autoRefresh,
         children: [
           AppBalanceTile(
             title: 'Failed to load family',
@@ -365,6 +374,7 @@ class _FamilyPageState extends State<FamilyPage> {
     if (family == null) {
       return AppPageContainer(
         onRefresh: _refreshFamily,
+        autoRefresh: widget.autoRefresh,
         children: [
           AppEmptyState(
             title: 'No family group yet',
@@ -390,6 +400,7 @@ class _FamilyPageState extends State<FamilyPage> {
 
     return AppPageContainer(
       onRefresh: _refreshFamily,
+      autoRefresh: widget.autoRefresh,
       children: [
         _HouseholdCard(
           family: family,

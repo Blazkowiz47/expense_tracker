@@ -12,11 +12,13 @@ class FriendsPage extends StatefulWidget {
     this.friendsRepository,
     this.expenseRepository,
     this.client,
+    this.autoRefresh = false,
   });
 
   final ApiFriendsRepository? friendsRepository;
   final ExpenseRepository? expenseRepository;
   final http.Client? client;
+  final bool autoRefresh;
 
   @override
   State<FriendsPage> createState() => _FriendsPageState();
@@ -66,9 +68,9 @@ class _FriendsPageState extends State<FriendsPage> {
     super.dispose();
   }
 
-  Future<void> _loadFriends() async {
+  Future<void> _loadFriends({bool showLoading = true}) async {
     setState(() {
-      _loading = true;
+      _loading = showLoading || _friends.isEmpty;
       _error = null;
     });
     try {
@@ -81,6 +83,9 @@ class _FriendsPageState extends State<FriendsPage> {
       });
     } catch (error) {
       if (!mounted) return;
+      if (!showLoading && _friends.isNotEmpty) {
+        return;
+      }
       setState(() => _error = error.toString());
     } finally {
       if (mounted) {
@@ -330,7 +335,8 @@ class _FriendsPageState extends State<FriendsPage> {
     return Stack(
       children: [
         AppPageContainer(
-          onRefresh: _loadFriends,
+          onRefresh: () => _loadFriends(showLoading: false),
+          autoRefresh: widget.autoRefresh,
           children: [
             AppSectionHeader(
               title: 'Friends',

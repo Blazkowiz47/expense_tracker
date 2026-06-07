@@ -7,18 +7,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class HomePage extends StatelessWidget {
-  const HomePage({this.onOpenFriends, this.onOpenGroups, super.key});
+  const HomePage({
+    this.onOpenFriends,
+    this.onOpenGroups,
+    this.autoRefresh = false,
+    super.key,
+  });
 
   final VoidCallback? onOpenFriends;
   final VoidCallback? onOpenGroups;
+  final bool autoRefresh;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<DashboardSnapshotCubit>().state;
     final dashboardCubit = context.read<DashboardSnapshotCubit>();
+    Future<void> refreshDashboard() => dashboardCubit.load(showLoading: false);
     if (state is DashboardSnapshotFailure) {
       return AppPageContainer(
-        onRefresh: dashboardCubit.load,
+        onRefresh: refreshDashboard,
+        autoRefresh: autoRefresh,
         children: [
           AppEmptyState(
             title: 'Dashboard unavailable',
@@ -33,7 +41,8 @@ class HomePage extends StatelessWidget {
 
     final snapshot = state.snapshot;
     return AppPageContainer(
-      onRefresh: dashboardCubit.load,
+      onRefresh: refreshDashboard,
+      autoRefresh: autoRefresh,
       children: [
         const DashboardOverallSummaryCard(),
         const SizedBox(height: 16),
