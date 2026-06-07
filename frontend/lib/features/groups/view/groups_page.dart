@@ -644,7 +644,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   Future<void> _openSettings() async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => _GroupSettingsPage(
+        builder: (_) => GroupSettingsPage(
           repository: widget.repository,
           groupId: widget.group.id,
           groupName: widget.group.name,
@@ -2856,8 +2856,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   }
 }
 
-class _GroupSettingsPage extends StatefulWidget {
-  const _GroupSettingsPage({
+class GroupSettingsPage extends StatefulWidget {
+  const GroupSettingsPage({
     required this.repository,
     required this.groupId,
     required this.groupName,
@@ -2866,6 +2866,7 @@ class _GroupSettingsPage extends StatefulWidget {
     required this.simplifyBalances,
     required this.memberCountFallback,
     required this.autoRefresh,
+    super.key,
   });
 
   final ApiGroupsRepository repository;
@@ -2878,10 +2879,10 @@ class _GroupSettingsPage extends StatefulWidget {
   final bool autoRefresh;
 
   @override
-  State<_GroupSettingsPage> createState() => _GroupSettingsPageState();
+  State<GroupSettingsPage> createState() => _GroupSettingsPageState();
 }
 
-class _GroupSettingsPageState extends State<_GroupSettingsPage> {
+class _GroupSettingsPageState extends State<GroupSettingsPage> {
   late bool _simplify;
   late List<GroupMember> _members;
   bool _settlementLoading = true;

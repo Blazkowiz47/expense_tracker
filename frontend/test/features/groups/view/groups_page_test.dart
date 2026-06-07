@@ -236,7 +236,7 @@ void main() {
 
     expect(find.text('Rao family'), findsOneWidget);
     expect(find.text('Trip to Goa'), findsNothing);
-    expect(find.textContaining('Wife'), findsOneWidget);
+    expect(find.textContaining('Wife', skipOffstage: false), findsOneWidget);
     expect(find.text('Groceries'), findsWidgets);
   });
 
@@ -255,8 +255,82 @@ void main() {
 
     expect(find.text('Rao household'), findsOneWidget);
     expect(find.text('1 active · 1 pending'), findsOneWidget);
-    expect(find.text('Pending invites'), findsOneWidget);
-    expect(find.text('nisha@example.com · Wife'), findsOneWidget);
+    expect(find.text('Pending invites', skipOffstage: false), findsOneWidget);
+    expect(
+      find.text('nisha@example.com · Wife', skipOffstage: false),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('family page surfaces household settle up suggestion', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final repository = _FakeGroupsRepository(
+      [familyGroup],
+      members: const [
+        GroupMember(
+          uid: 'member-1',
+          displayName: 'Nisha',
+          email: 'nisha@example.com',
+          phone: '',
+          role: 'Wife',
+        ),
+        GroupMember(
+          uid: 'member-2',
+          displayName: 'Sushrut',
+          email: 'sushrut@example.com',
+          phone: '',
+          role: 'Husband',
+        ),
+      ],
+      expenses: [
+        GroupExpense(
+          id: 'household-expense-1',
+          groupId: familyGroup.id,
+          createdBy: 'member-1',
+          updatedBy: 'member-1',
+          paidBy: 'member-1',
+          splitMode: 'equally',
+          splitWith: const ['member-1', 'member-2'],
+          amount: 1200,
+          category: 'Groceries',
+          description: 'Monthly grocery run',
+          attachments: const [],
+          date: DateTime.now(),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              repository: repository,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Settle up'), findsOneWidget);
+    expect(find.text('Sushrut pays Nisha ₹600.00'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Settle'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Group settings'), findsOneWidget);
+    expect(find.text('Sushrut'), findsWidgets);
   });
 
   testWidgets('group expense dialog offers bill scan and purchase date', (

@@ -3,8 +3,10 @@ import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
+import 'package:expense_tracker/features/groups/models/group_settlement.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
+import 'package:expense_tracker/features/groups/utils/group_transfer_simplifier.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/planning/view/monthly_planning_card.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
@@ -44,6 +46,7 @@ class _FamilyPageState extends State<FamilyPage> {
   List<GroupSummary> _families = const [];
   List<GroupMember> _members = const [];
   List<GroupExpense> _expenses = const [];
+  List<GroupSettlement> _settlements = const [];
   GroupSummary? _selectedFamily;
   bool _loading = true;
   bool _loadingDetails = false;
@@ -130,6 +133,7 @@ class _FamilyPageState extends State<FamilyPage> {
       if (showLoading) {
         _members = const [];
         _expenses = const [];
+        _settlements = const [];
       }
     });
     try {
@@ -145,10 +149,17 @@ class _FamilyPageState extends State<FamilyPage> {
 
       final members = await _repository.fetchMembers(family.id);
       final expenses = await _repository.fetchExpenses(family.id);
+      var settlements = const <GroupSettlement>[];
+      try {
+        settlements = await _repository.fetchSettlements(family.id);
+      } catch (_) {
+        settlements = _settlements;
+      }
       if (!mounted) return;
       setState(() {
         _members = members;
         _expenses = expenses;
+        _settlements = settlements;
       });
     } catch (error) {
       if (!mounted) return;
@@ -232,6 +243,32 @@ class _FamilyPageState extends State<FamilyPage> {
       initialCategory: 'Groceries',
       initialDescription: 'Groceries',
     );
+  }
+
+  Future<void> _openHouseholdSettleUp() async {
+    final family = _selectedFamily;
+    if (family == null) return;
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => GroupSettingsPage(
+          repository: _repository,
+          groupId: family.id,
+          groupName: family.name,
+          members: _members,
+          expenses: _expenses,
+          simplifyBalances: true,
+          memberCountFallback: _members.isEmpty
+              ? family.memberCount
+              : _members.length,
+          autoRefresh: true,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (result != null) {
+      setState(() => _monthlyPlanRefreshToken += 1);
+      await _loadSelectedFamilyDetails(showLoading: false);
+    }
   }
 
   Future<void> _openHouseholdSetup() async {
@@ -372,6 +409,126 @@ class _FamilyPageState extends State<FamilyPage> {
     return amounts.values.fold<double>(0, (sum, amount) => sum + amount.abs());
   }
 
+  String _normalizeCurrency(String value) {
+    final currency = value.trim().toUpperCase();
+    return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : 'INR';
+  }
+
+  String? _resolveMemberUid(String key) {
+    final normalizedKey = key.trim().toLowerCase();
+    if (normalizedKey.isEmpty) return null;
+    for (final member in _members) {
+      final candidates = <String>{
+        member.uid.trim().toLowerCase(),
+        member.displayName.trim().toLowerCase(),
+        member.email.trim().toLowerCase(),
+        member.phone.trim().toLowerCase(),
+        member.label.trim().toLowerCase(),
+      }..removeWhere((value) => value.isEmpty);
+      if (candidates.contains(normalizedKey)) {
+        return member.uid;
+      }
+    }
+    return null;
+  }
+
+  Map<String, Map<String, double>> _memberNetByCurrency() {
+    if (_members.isEmpty) return const {};
+
+    final netByCurrency = <String, Map<String, double>>{};
+    Map<String, double> netForCurrency(String currency) =>
+        netByCurrency.putIfAbsent(
+          currency,
+          () => <String, double>{for (final member in _members) member.uid: 0},
+        );
+
+    for (final expense in _expenses) {
+      final payerKey = expense.paidBy.isNotEmpty
+          ? expense.paidBy
+          : expense.createdBy;
+      final payerUid = _resolveMemberUid(payerKey);
+      final splitUids = expense.splitWith
+          .map(_resolveMemberUid)
+          .whereType<String>()
+          .toSet();
+      final effectiveSplitUids = splitUids.isEmpty
+          ? _members.map((member) => member.uid).toSet()
+          : splitUids;
+      if (effectiveSplitUids.isEmpty) continue;
+
+      for (final entry in expense.amountsByCurrency.entries) {
+        final currency = _normalizeCurrency(entry.key);
+        final amount = entry.value;
+        if (amount <= 0) continue;
+        final currencyNet = netForCurrency(currency);
+        final splitAmounts = expense.splitAmountsForCurrency(currency);
+        if (splitAmounts.isNotEmpty) {
+          for (final splitEntry in splitAmounts.entries) {
+            final uid = _resolveMemberUid(splitEntry.key);
+            final share = splitEntry.value;
+            if (uid == null || share <= 0) continue;
+            currencyNet[uid] = (currencyNet[uid] ?? 0) - share;
+          }
+          if (payerUid != null) {
+            currencyNet[payerUid] = (currencyNet[payerUid] ?? 0) + amount;
+          }
+          continue;
+        }
+
+        final share = amount / effectiveSplitUids.length;
+        for (final uid in effectiveSplitUids) {
+          currencyNet[uid] = (currencyNet[uid] ?? 0) - share;
+        }
+        if (payerUid != null) {
+          currencyNet[payerUid] = (currencyNet[payerUid] ?? 0) + amount;
+        }
+      }
+    }
+
+    final memberUids = _members.map((member) => member.uid).toSet();
+    for (final settlement in _settlements) {
+      if (!memberUids.contains(settlement.payerUid) ||
+          !memberUids.contains(settlement.receiverUid)) {
+        continue;
+      }
+      final currency = _normalizeCurrency(settlement.currency);
+      final currencyNet = netForCurrency(currency);
+      currencyNet[settlement.payerUid] =
+          (currencyNet[settlement.payerUid] ?? 0) + settlement.amount;
+      currencyNet[settlement.receiverUid] =
+          (currencyNet[settlement.receiverUid] ?? 0) - settlement.amount;
+    }
+
+    return netByCurrency;
+  }
+
+  String _memberLabelByUid(String uid) {
+    for (final member in _members) {
+      if (member.uid == uid) return member.label;
+    }
+    return uid;
+  }
+
+  List<_FamilySettlementSuggestion> _settlementSuggestions() {
+    final suggestions = <_FamilySettlementSuggestion>[];
+    final netByCurrency = _memberNetByCurrency();
+    for (final entry in netByCurrency.entries) {
+      final currency = entry.key;
+      for (final transfer in simplifyGroupTransfers(entry.value)) {
+        suggestions.add(
+          _FamilySettlementSuggestion(
+            fromUid: transfer.fromUid,
+            toUid: transfer.toUid,
+            amount: transfer.amount,
+            currency: currency,
+          ),
+        );
+      }
+    }
+    suggestions.sort((a, b) => b.amount.compareTo(a.amount));
+    return suggestions;
+  }
+
   String _categoryForExpense(GroupExpense expense) {
     final category = expense.category.trim();
     if (category.isNotEmpty) return category;
@@ -467,6 +624,7 @@ class _FamilyPageState extends State<FamilyPage> {
         ? monthSpent
         : trackedTotal;
     final categories = _categoryTotals();
+    final settlementSuggestions = _settlementSuggestions();
 
     return AppPageContainer(
       onRefresh: _refreshFamily,
@@ -481,6 +639,13 @@ class _FamilyPageState extends State<FamilyPage> {
           loading: _loadingDetails,
           onOpen: () => _openSelectedFamily(),
           onAddExpense: _openGroceryExpense,
+        ),
+        const SizedBox(height: 12),
+        _FamilySettlementCard(
+          suggestions: settlementSuggestions,
+          loading: _loadingDetails,
+          memberLabelByUid: _memberLabelByUid,
+          onSettleUp: _openHouseholdSettleUp,
         ),
         if (_hasPendingInitialExpenseIntent) ...[
           const SizedBox(height: 12),
@@ -595,6 +760,20 @@ class _FamilyPageState extends State<FamilyPage> {
       ],
     );
   }
+}
+
+class _FamilySettlementSuggestion {
+  const _FamilySettlementSuggestion({
+    required this.fromUid,
+    required this.toUid,
+    required this.amount,
+    required this.currency,
+  });
+
+  final String fromUid;
+  final String toUid;
+  final double amount;
+  final String currency;
 }
 
 class _HouseholdSetupInput {
@@ -761,6 +940,41 @@ class _PendingInvitesTile extends StatelessWidget {
       subtitle: Text(subtitle),
       leadingIcon: Icons.mark_email_unread_outlined,
       trailing: Text('$count', style: Theme.of(context).textTheme.titleMedium),
+    );
+  }
+}
+
+class _FamilySettlementCard extends StatelessWidget {
+  const _FamilySettlementCard({
+    required this.suggestions,
+    required this.loading,
+    required this.memberLabelByUid,
+    required this.onSettleUp,
+  });
+
+  final List<_FamilySettlementSuggestion> suggestions;
+  final bool loading;
+  final String Function(String uid) memberLabelByUid;
+  final VoidCallback onSettleUp;
+
+  @override
+  Widget build(BuildContext context) {
+    final primarySuggestion = suggestions.firstOrNull;
+    final subtitle = loading
+        ? 'Checking household balances...'
+        : primarySuggestion == null
+        ? 'No paybacks needed right now'
+        : '${memberLabelByUid(primarySuggestion.fromUid)} pays ${memberLabelByUid(primarySuggestion.toUid)} ${AppMoney.formatCurrency(primarySuggestion.amount, primarySuggestion.currency)}';
+
+    return AppBalanceTile(
+      title: 'Settle up',
+      subtitle: Text(subtitle),
+      leadingIcon: Icons.handshake_outlined,
+      trailing: FilledButton.icon(
+        onPressed: loading ? null : onSettleUp,
+        icon: const Icon(Icons.handshake_outlined),
+        label: const Text('Settle'),
+      ),
     );
   }
 }
