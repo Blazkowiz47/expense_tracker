@@ -493,24 +493,49 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             docs = [doc for doc in docs if needle in (doc["description"] + " " + doc["category"]).lower()]
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["id", "date", "category", "description", "amount"])
+        writer.writerow(["id", "date", "category", "description", "amount", "currency"])
         for doc in docs:
-            writer.writerow([doc["id"], doc["date"], doc["category"], doc["description"], f"{doc['amount']:.2f}"])
+            writer.writerow([
+                doc["id"],
+                doc["date"],
+                doc["category"],
+                doc["description"],
+                f"{doc['amount']:.2f}",
+                doc.get("currency") or "INR",
+            ])
         return PlainTextResponse(buf.getvalue(), media_type="text/csv")
 
     @app.get("/api/v1/analytics")
     def analytics(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         docs = list(app.state.db.expenses.find({"uid": user["uid"]}))
         by_category: dict[str, float] = {}
+        by_category_by_currency: dict[str, dict[str, float]] = {}
         by_month: dict[str, float] = {}
+        by_month_by_currency: dict[str, dict[str, float]] = {}
         total = 0.0
+        total_by_currency: dict[str, float] = {}
         for doc in docs:
             amount = float(doc.get("amount") or 0)
+            currency = safe_currency(doc.get("currency"), "INR") or "INR"
+            category = doc.get("category") or "Personal"
             total += amount
-            by_category[doc.get("category") or "Personal"] = by_category.get(doc.get("category") or "Personal", 0) + amount
+            total_by_currency[currency] = total_by_currency.get(currency, 0.0) + amount
+            by_category[category] = by_category.get(category, 0) + amount
+            category_totals = by_category_by_currency.setdefault(category, {})
+            category_totals[currency] = category_totals.get(currency, 0.0) + amount
             dt = doc.get("date") or now()
-            by_month[dt.strftime("%Y-%m")] = by_month.get(dt.strftime("%Y-%m"), 0) + amount
-        return {"totalAmount": total, "byCategory": by_category, "byMonth": by_month}
+            month = dt.strftime("%Y-%m")
+            by_month[month] = by_month.get(month, 0) + amount
+            month_totals = by_month_by_currency.setdefault(month, {})
+            month_totals[currency] = month_totals.get(currency, 0.0) + amount
+        return {
+            "totalAmount": total,
+            "totalAmountByCurrency": total_by_currency,
+            "byCategory": by_category,
+            "byCategoryByCurrency": by_category_by_currency,
+            "byMonth": by_month,
+            "byMonthByCurrency": by_month_by_currency,
+        }
 
     @app.get("/api/v1/planning/monthly")
     def get_monthly_plan(
@@ -563,10 +588,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "friendItems": friend_balance_items(app.state.db, user["uid"]),
             "groupItems": group_balance_items(app.state.db, user["uid"]),
             "actionItems": dashboard_action_items(app.state.db, user["uid"]),
-            "activityItems": [
-                {"title": doc["description"] or doc["category"], "subtitle": doc["date"], "amountText": f"You spent INR {doc['amount']:.2f}", "positive": False}
-                for doc in docs
-            ],
+            "activityItems": [personal_dashboard_activity_item(doc) for doc in docs],
             "accountName": user.get("displayName") or "User",
             "accountEmail": user.get("email") or "",
         }
@@ -1607,6 +1629,17 @@ def requested_conversion_currencies(body: dict[str, Any]) -> list[str]:
 
 def format_currency_amount(currency: str, amount: float) -> str:
     return f"{currency} {amount:.2f}"
+
+
+def personal_dashboard_activity_item(doc: dict[str, Any]) -> dict[str, Any]:
+    currency = safe_currency(doc.get("currency"), "INR") or "INR"
+    amount = float(doc.get("amount") or 0)
+    return {
+        "title": doc.get("description") or doc.get("category") or "Expense",
+        "subtitle": doc.get("date"),
+        "amountText": f"You spent {format_currency_amount(currency, amount)}",
+        "positive": False,
+    }
 
 
 def format_currency_amounts(amounts: dict[str, float]) -> str:

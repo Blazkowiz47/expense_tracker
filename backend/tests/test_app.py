@@ -85,6 +85,47 @@ def test_expenses_persist_in_mongo(tmp_path):
     assert listed.json()["expenses"][0]["id"] == expense_id
 
 
+def test_personal_summaries_keep_expense_currencies_separate(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    for amount, currency, description in [
+        (20, "USD", "Airport snacks"),
+        (30, "NOK", "Train ticket"),
+    ]:
+        created = client.post(
+            "/api/v1/expenses",
+            headers=headers,
+            json={
+                "amount": amount,
+                "currency": currency,
+                "category": "Travel",
+                "description": description,
+                "date": "2026-05-30T12:00:00Z",
+            },
+        )
+        assert created.status_code == 201, created.text
+
+    analytics = client.get("/api/v1/analytics", headers=headers)
+    assert analytics.status_code == 200, analytics.text
+    payload = analytics.json()
+    assert payload["totalAmountByCurrency"] == {"NOK": 30.0, "USD": 20.0}
+    assert payload["byCategoryByCurrency"]["Travel"] == {"NOK": 30.0, "USD": 20.0}
+    assert payload["byMonthByCurrency"]["2026-05"] == {"NOK": 30.0, "USD": 20.0}
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    amount_labels = {item["amountText"] for item in dashboard.json()["activityItems"]}
+    assert "You spent USD 20.00" in amount_labels
+    assert "You spent NOK 30.00" in amount_labels
+
+    exported = client.get("/api/v1/expenses-export.csv", headers=headers)
+    assert exported.status_code == 200, exported.text
+    assert "amount,currency" in exported.text
+    assert "20.00,USD" in exported.text
+    assert "30.00,NOK" in exported.text
+
+
 def test_sync_freshness_tracks_personal_expense_changes_and_deletes(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
