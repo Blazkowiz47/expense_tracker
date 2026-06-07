@@ -109,6 +109,7 @@ class DailyActionItem extends Equatable {
     required this.destination,
     this.actionType = '',
     this.occurrenceId = '',
+    this.period = '',
     this.groupId = '',
     this.expenseId = '',
     this.friendUid = '',
@@ -122,6 +123,7 @@ class DailyActionItem extends Equatable {
   final String destination;
   final String actionType;
   final String occurrenceId;
+  final String period;
   final String groupId;
   final String expenseId;
   final String friendUid;
@@ -136,6 +138,7 @@ class DailyActionItem extends Equatable {
       destination: (json['destination'] ?? 'activity').toString(),
       actionType: (json['actionType'] ?? '').toString(),
       occurrenceId: (json['occurrenceId'] ?? '').toString(),
+      period: (json['period'] ?? json['month'] ?? '').toString(),
       groupId: (json['groupId'] ?? '').toString(),
       expenseId: (json['expenseId'] ?? '').toString(),
       friendUid: (json['friendUid'] ?? '').toString(),
@@ -152,6 +155,7 @@ class DailyActionItem extends Equatable {
     destination,
     actionType,
     occurrenceId,
+    period,
     groupId,
     expenseId,
     friendUid,

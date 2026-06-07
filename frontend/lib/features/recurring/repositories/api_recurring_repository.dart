@@ -78,6 +78,91 @@ class ApiRecurringRepository {
     return RecurringTemplate.fromJson(payload);
   }
 
+  Future<RecurringTemplate> updateTemplate({
+    required String id,
+    required String title,
+    required String kind,
+    required double amount,
+    required String category,
+    required String currency,
+    required String frequency,
+    required int dayOfMonth,
+    DateTime? startDate,
+  }) {
+    return _updateTemplate(
+      id: id,
+      body: <String, dynamic>{
+        'title': title,
+        'kind': kind,
+        'amount': amount,
+        'currency': currency,
+        'category': category,
+        'frequency': frequency,
+        'dayOfMonth': dayOfMonth,
+        if (startDate != null) 'startDate': startDate.toUtc().toIso8601String(),
+      },
+    );
+  }
+
+  Future<RecurringTemplate> pauseTemplate(String id) {
+    return _updateTemplate(
+      id: id,
+      body: const <String, dynamic>{'active': false},
+    );
+  }
+
+  Future<RecurringTemplate> resumeTemplate(String id) {
+    return _updateTemplate(
+      id: id,
+      body: const <String, dynamic>{'active': true},
+    );
+  }
+
+  Future<RecurringTemplate> _updateTemplate({
+    required String id,
+    required Map<String, dynamic> body,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/recurring/templates/$id',
+    );
+    final response = await _client.put(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'update recurring template failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return RecurringTemplate.fromJson(payload);
+  }
+
+  Future<void> deleteTemplate(String id) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/recurring/templates/$id',
+    );
+    final response = await _client.delete(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+    if (response.statusCode != 204) {
+      throw Exception(
+        'delete recurring template failed (${response.statusCode}): ${response.body}',
+      );
+    }
+  }
+
   Future<List<RecurringOccurrence>> fetchOccurrences({
     required String month,
   }) async {

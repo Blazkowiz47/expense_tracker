@@ -79,4 +79,71 @@ void main() {
     expect(confirmed.actualAmount, 30500);
     expect(requests, hasLength(3));
   });
+
+  test('updates pauses resumes and deletes recurring templates', () async {
+    final requests = <http.Request>[];
+    final client = MockClient((request) async {
+      requests.add(request);
+      if (request.url.path.endsWith('/api/v1/recurring/templates/template-1') &&
+          request.method == 'PUT') {
+        expect(request.headers['authorization'], 'Bearer session-token');
+        if (request.body.contains('"active":false')) {
+          return http.Response(
+            '{"id":"template-1","title":"Rent","kind":"expense","expectedAmount":12000,"currency":"INR","category":"Rent","frequency":"monthly","dayOfMonth":5,"startDate":"2026-05-01T00:00:00Z","nextDueDate":"2026-05-05T00:00:00Z","active":false}',
+            200,
+          );
+        }
+        if (request.body.contains('"active":true')) {
+          return http.Response(
+            '{"id":"template-1","title":"Rent","kind":"expense","expectedAmount":12000,"currency":"INR","category":"Rent","frequency":"monthly","dayOfMonth":5,"startDate":"2026-05-01T00:00:00Z","nextDueDate":"2026-05-05T00:00:00Z","active":true}',
+            200,
+          );
+        }
+        expect(request.body, contains('"title":"Apartment rent"'));
+        expect(request.body, contains('"amount":13000'));
+        expect(request.body, contains('"currency":"USD"'));
+        return http.Response(
+          '{"id":"template-1","title":"Apartment rent","kind":"expense","expectedAmount":13000,"currency":"USD","category":"Housing","frequency":"monthly","dayOfMonth":7,"startDate":"2026-05-01T00:00:00Z","nextDueDate":"2026-05-07T00:00:00Z","active":true}',
+          200,
+        );
+      }
+      if (request.url.path.endsWith('/api/v1/recurring/templates/template-1') &&
+          request.method == 'DELETE') {
+        expect(request.headers['authorization'], 'Bearer session-token');
+        return http.Response('', 204);
+      }
+      return http.Response('not found', 404);
+    });
+
+    final repository = ApiRecurringRepository(
+      client: client,
+      authTokenProvider: const _FakeAuthTokenProvider(),
+    );
+
+    final updated = await repository.updateTemplate(
+      id: 'template-1',
+      title: 'Apartment rent',
+      kind: 'expense',
+      amount: 13000,
+      category: 'Housing',
+      currency: 'USD',
+      frequency: 'monthly',
+      dayOfMonth: 7,
+      startDate: DateTime.utc(2026, 5),
+    );
+    final paused = await repository.pauseTemplate('template-1');
+    final resumed = await repository.resumeTemplate('template-1');
+    await repository.deleteTemplate('template-1');
+
+    expect(updated.title, 'Apartment rent');
+    expect(updated.currency, 'USD');
+    expect(paused.active, isFalse);
+    expect(resumed.active, isTrue);
+    expect(requests.map((request) => request.method), [
+      'PUT',
+      'PUT',
+      'PUT',
+      'DELETE',
+    ]);
+  });
 }

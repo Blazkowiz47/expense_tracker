@@ -865,7 +865,11 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
 
     @app.get("/api/v1/recurring/templates")
     def recurring_templates(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
-        return {"templates": [json_ready(doc) for doc in app.state.db.recurring_templates.find({"uid": user["uid"]})]}
+        docs = app.state.db.recurring_templates.find({
+            "uid": user["uid"],
+            "deletedAt": {"$exists": False},
+        })
+        return {"templates": [json_ready(doc) for doc in docs]}
 
     @app.post("/api/v1/recurring/templates", status_code=201)
     def create_recurring(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -906,6 +910,52 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         app.state.db.recurring_templates.insert_one(doc)
         ensure_recurring_occurrences(app.state.db, user["uid"], current_month())
         return json_ready(doc)
+
+    @app.put("/api/v1/recurring/templates/{template_id}")
+    def update_recurring_template(
+        template_id: str,
+        body: dict[str, Any],
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        existing = app.state.db.recurring_templates.find_one({
+            "id": template_id,
+            "uid": user["uid"],
+            "deletedAt": {"$exists": False},
+        })
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "recurring template not found"))
+        updates = recurring_template_updates(body, existing)
+        if not updates:
+            return json_ready(existing)
+        app.state.db.recurring_templates.update_one(
+            {"id": template_id, "uid": user["uid"]},
+            {"$set": updates},
+        )
+        updated = app.state.db.recurring_templates.find_one({"id": template_id, "uid": user["uid"]})
+        reconcile_recurring_template_occurrences(app.state.db, user["uid"], updated)
+        updated = app.state.db.recurring_templates.find_one({"id": template_id, "uid": user["uid"]})
+        return json_ready(updated)
+
+    @app.delete("/api/v1/recurring/templates/{template_id}", status_code=204)
+    def delete_recurring_template(template_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        existing = app.state.db.recurring_templates.find_one({
+            "id": template_id,
+            "uid": user["uid"],
+            "deletedAt": {"$exists": False},
+        })
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "recurring template not found"))
+        current = now()
+        app.state.db.recurring_templates.update_one(
+            {"id": template_id, "uid": user["uid"]},
+            {"$set": {"active": False, "deletedAt": current, "updatedAt": current}},
+        )
+        app.state.db.recurring_occurrences.delete_many({
+            "uid": user["uid"],
+            "templateId": template_id,
+            "status": {"$ne": "confirmed"},
+        })
+        return Response(status_code=204)
 
     @app.get("/api/v1/recurring/occurrences")
     def recurring_occurrences(month: str = Query(default=""), user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -1519,6 +1569,119 @@ def month_range(month: str) -> tuple[datetime, datetime]:
     return start, end
 
 
+def parse_bool_field(value: Any, field: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+    raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be true or false"))
+
+
+def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if "title" in body:
+        title = str(body.get("title") or "").strip()
+        if not title:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "title is required"))
+        updates["title"] = title
+    if "kind" in body:
+        kind = str(body.get("kind") or "expense").strip().lower()
+        if kind not in {"expense", "income"}:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "kind must be expense or income"))
+        updates["kind"] = kind
+    if "amount" in body or "expectedAmount" in body:
+        amount = float(body.get("amount") or body.get("expectedAmount") or 0)
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "amount must be positive"))
+        updates["amount"] = amount
+        updates["expectedAmount"] = amount
+    if "currency" in body:
+        updates["currency"] = normalize_currency(body.get("currency"), "INR")
+    if "category" in body:
+        category = str(body.get("category") or "").strip()
+        if not category:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "category is required"))
+        updates["category"] = category
+    if "frequency" in body:
+        frequency = str(body.get("frequency") or "monthly").strip().lower()
+        if frequency not in {"daily", "weekly", "monthly"}:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly or monthly"))
+        updates["frequency"] = frequency
+    if "startDate" in body:
+        updates["startDate"] = parse_dt(str(body.get("startDate") or ""))
+    if "dayOfMonth" in body:
+        day_of_month = int(body.get("dayOfMonth") or 0)
+        if day_of_month < 1 or day_of_month > 31:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "dayOfMonth must be between 1 and 31"))
+        updates["dayOfMonth"] = day_of_month
+    if "active" in body:
+        active = parse_bool_field(body.get("active"), "active")
+        updates["active"] = active
+        if active and not existing.get("active", True):
+            updates["resumedAt"] = now()
+        elif not active and existing.get("active", True):
+            updates["pausedAt"] = now()
+    if not updates:
+        return {}
+    merged = {**existing, **updates}
+    if any(field in updates for field in {"startDate", "dayOfMonth", "frequency", "active"}):
+        start = aware(merged.get("startDate") or now())
+        updates["nextDueDate"] = recurring_due_date_for_month(
+            merged,
+            max(current_month(), f"{start.year:04d}-{start.month:02d}"),
+        )
+    updates["updatedAt"] = now()
+    return updates
+
+
+def reconcile_recurring_template_occurrences(db: Any, uid: str, template: dict[str, Any] | None) -> None:
+    if not template or template.get("deletedAt"):
+        return
+    template_id = template.get("id")
+    if not template_id:
+        return
+    if not template.get("active", True):
+        db.recurring_occurrences.delete_many({
+            "uid": uid,
+            "templateId": template_id,
+            "status": {"$ne": "confirmed"},
+        })
+        return
+    ensure_recurring_occurrences(db, uid, current_month())
+    cursor = db.recurring_occurrences.find({
+        "uid": uid,
+        "templateId": template_id,
+        "status": {"$ne": "confirmed"},
+    })
+    for occurrence in cursor:
+        period = normalize_month(str(occurrence.get("period") or current_month()))
+        start, end = month_range(period)
+        template_start = aware(template.get("startDate") or start)
+        active_from = aware(template.get("resumedAt") or template_start)
+        due_date = recurring_due_date_for_month(template, period)
+        if template_start >= end or active_from >= end or due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
+            db.recurring_occurrences.delete_one({"id": occurrence["id"], "uid": uid})
+            continue
+        db.recurring_occurrences.update_one(
+            {"id": occurrence["id"], "uid": uid},
+            {
+                "$set": {
+                    "kind": template.get("kind") or "expense",
+                    "title": template.get("title") or "Recurring item",
+                    "category": template.get("category") or "Personal",
+                    "currency": template.get("currency") or "INR",
+                    "expectedAmount": float(template.get("expectedAmount") or template.get("amount") or 0),
+                    "dueDate": due_date,
+                    "updatedAt": now(),
+                }
+            },
+        )
+
+
 def recurring_due_date_for_month(template: dict[str, Any], month: str) -> datetime:
     year, month_number = [int(part) for part in month.split("-")]
     frequency = str(template.get("frequency") or "monthly").lower()
@@ -1534,12 +1697,17 @@ def ensure_recurring_occurrences(db: Any, uid: str, month: str) -> int:
     period = normalize_month(month)
     start, end = month_range(period)
     created = 0
-    for template in db.recurring_templates.find({"uid": uid, "active": True}):
+    for template in db.recurring_templates.find({
+        "uid": uid,
+        "active": True,
+        "deletedAt": {"$exists": False},
+    }):
         template_start = aware(template.get("startDate") or start)
-        if template_start >= end:
+        active_from = aware(template.get("resumedAt") or template_start)
+        if template_start >= end or active_from >= end:
             continue
         due_date = recurring_due_date_for_month(template, period)
-        if due_date < start or due_date >= end or due_date < template_start:
+        if due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
             continue
         doc = {
             "id": uuid.uuid4().hex,
@@ -1779,6 +1947,7 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "destination": "recurring",
             "actionType": "confirm_recurring",
             "occurrenceId": occurrence.get("id") or "",
+            "period": occurrence.get("period") or period,
         })
 
     plan = monthly_plan_out(db, uid, period)

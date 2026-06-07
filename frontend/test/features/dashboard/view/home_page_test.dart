@@ -79,6 +79,7 @@ void main() {
 
     expect(openedAction?.actionType, 'confirm_recurring');
     expect(openedAction?.occurrenceId, 'occ-rent');
+    expect(openedAction?.period, '2026-05');
   });
 
   testWidgets('home auto-refresh skips reload when dashboard is fresh', (
@@ -149,6 +150,7 @@ class _ActionSnapshotRepository implements DashboardSnapshotRepository {
           destination: 'recurring',
           actionType: 'confirm_recurring',
           occurrenceId: 'occ-rent',
+          period: '2026-05',
         ),
         DailyActionItem(
           title: 'Groceries is over budget',

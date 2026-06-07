@@ -654,6 +654,107 @@ def test_recurring_payment_confirmation_creates_or_updates_expense(tmp_path):
     assert expenses[0]["amount"] == 12400
 
 
+def test_recurring_template_lifecycle_updates_generated_occurrences(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+    current = now()
+    period = current_month()
+    next_period = (
+        f"{current.year + 1:04d}-01"
+        if current.month == 12
+        else f"{current.year:04d}-{current.month + 1:02d}"
+    )
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Rent",
+            "kind": "expense",
+            "amount": 12000,
+            "currency": "INR",
+            "category": "Rent",
+            "frequency": "monthly",
+            "dayOfMonth": 5,
+            "startDate": f"{period}-01T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    template_id = created.json()["id"]
+
+    occurrence = client.get(
+        f"/api/v1/recurring/occurrences?month={period}",
+        headers=headers,
+    ).json()["occurrences"][0]
+    assert occurrence["expectedAmount"] == 12000
+    assert occurrence["currency"] == "INR"
+
+    updated = client.put(
+        f"/api/v1/recurring/templates/{template_id}",
+        headers=headers,
+        json={
+            "title": "Apartment rent",
+            "amount": 13000,
+            "currency": "USD",
+            "category": "Housing",
+            "dayOfMonth": 7,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["title"] == "Apartment rent"
+    assert updated.json()["currency"] == "USD"
+
+    updated_occurrence = client.get(
+        f"/api/v1/recurring/occurrences?month={period}",
+        headers=headers,
+    ).json()["occurrences"][0]
+    assert updated_occurrence["id"] == occurrence["id"]
+    assert updated_occurrence["title"] == "Apartment rent"
+    assert updated_occurrence["expectedAmount"] == 13000
+    assert updated_occurrence["currency"] == "USD"
+    assert updated_occurrence["category"] == "Housing"
+
+    paused = client.put(
+        f"/api/v1/recurring/templates/{template_id}",
+        headers=headers,
+        json={"active": False},
+    )
+    assert paused.status_code == 200, paused.text
+    assert paused.json()["active"] is False
+    assert client.get(
+        f"/api/v1/recurring/occurrences?month={period}",
+        headers=headers,
+    ).json()["occurrences"] == []
+
+    resumed = client.put(
+        f"/api/v1/recurring/templates/{template_id}",
+        headers=headers,
+        json={"active": True},
+    )
+    assert resumed.status_code == 200, resumed.text
+    assert client.get(
+        f"/api/v1/recurring/occurrences?month={period}",
+        headers=headers,
+    ).json()["occurrences"] == []
+    resumed_occurrences = client.get(
+        f"/api/v1/recurring/occurrences?month={next_period}",
+        headers=headers,
+    ).json()["occurrences"]
+    assert len(resumed_occurrences) == 1
+    assert resumed_occurrences[0]["expectedAmount"] == 13000
+
+    deleted = client.delete(
+        f"/api/v1/recurring/templates/{template_id}",
+        headers=headers,
+    )
+    assert deleted.status_code == 204, deleted.text
+    assert client.get("/api/v1/recurring/templates", headers=headers).json()["templates"] == []
+    assert client.get(
+        f"/api/v1/recurring/occurrences?month={next_period}",
+        headers=headers,
+    ).json()["occurrences"] == []
+
+
 def test_dashboard_includes_daily_action_items(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")
@@ -715,6 +816,7 @@ def test_dashboard_includes_daily_action_items(tmp_path):
         item["destination"] == "recurring"
         and item["actionType"] == "confirm_recurring"
         and item["occurrenceId"]
+        and item["period"] == period
         and "Confirm Rent" in item["title"]
         for item in actions
     )
@@ -760,6 +862,7 @@ def test_dashboard_includes_prior_month_overdue_recurring_action(tmp_path):
         item["destination"] == "recurring"
         and item["actionType"] == "confirm_recurring"
         and item["occurrenceId"] == "old-insurance"
+        and item["period"] == f"{due_date.year:04d}-{due_date.month:02d}"
         and item["title"] == "Confirm Insurance"
         and item["subtitle"].startswith("Overdue")
         for item in actions

@@ -251,6 +251,7 @@ class _HomeShellPageState extends State<HomeShellPage>
   }
 
   void _openRecurringPage({
+    String? initialMonth,
     String? initialOccurrenceId,
     bool openConfirmOnLaunch = false,
   }) {
@@ -258,6 +259,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       platformPageRoute(
         builder: (_) => RecurringPage(
           autoRefresh: true,
+          initialMonth: initialMonth,
           initialOccurrenceId: initialOccurrenceId,
           openConfirmOnLaunch: openConfirmOnLaunch,
         ),
@@ -307,6 +309,7 @@ class _HomeShellPageState extends State<HomeShellPage>
         final occurrenceId = item.occurrenceId.trim();
         if (occurrenceId.isNotEmpty) {
           _openRecurringPage(
+            initialMonth: item.period,
             initialOccurrenceId: occurrenceId,
             openConfirmOnLaunch: true,
           );

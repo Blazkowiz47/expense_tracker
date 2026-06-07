@@ -15,6 +15,7 @@ class RecurringPage extends StatefulWidget {
   const RecurringPage({
     this.repository,
     this.freshnessRepository,
+    this.initialMonth,
     this.initialOccurrenceId,
     this.openConfirmOnLaunch = false,
     this.autoRefresh = false,
@@ -23,6 +24,7 @@ class RecurringPage extends StatefulWidget {
 
   final ApiRecurringRepository? repository;
   final FreshnessRepository? freshnessRepository;
+  final String? initialMonth;
   final String? initialOccurrenceId;
   final bool openConfirmOnLaunch;
   final bool autoRefresh;
@@ -50,7 +52,7 @@ class _RecurringPageState extends State<RecurringPage> {
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _month = _monthKey(now);
+    _month = _validMonthKey(widget.initialMonth) ?? _monthKey(now);
     if (widget.repository == null) {
       _client = http.Client();
       _repository = ApiRecurringRepository(client: _client!);
@@ -179,6 +181,81 @@ class _RecurringPageState extends State<RecurringPage> {
     }
   }
 
+  Future<void> _showEditDialog(RecurringTemplate template) async {
+    final draft = await showDialog<_RecurringDraft>(
+      context: context,
+      builder: (context) => _CreateRecurringDialog(template: template),
+    );
+    if (draft == null) return;
+    setState(() => _saving = true);
+    try {
+      await _repository.updateTemplate(
+        id: template.id,
+        title: draft.title,
+        kind: draft.kind,
+        amount: draft.amount,
+        category: draft.category,
+        currency: draft.currency,
+        frequency: draft.frequency,
+        dayOfMonth: draft.dayOfMonth,
+        startDate: template.startDate,
+      );
+      await _load();
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _toggleTemplateActive(RecurringTemplate template) async {
+    setState(() => _saving = true);
+    try {
+      if (template.active) {
+        await _repository.pauseTemplate(template.id);
+      } else {
+        await _repository.resumeTemplate(template.id);
+      }
+      await _load();
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _deleteTemplate(RecurringTemplate template) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete rule?'),
+        content: Text(
+          'Delete ${template.title}? Confirmed history stays saved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _saving = true);
+    try {
+      await _repository.deleteTemplate(template.id);
+      await _load();
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
   Future<void> _confirmOccurrence(RecurringOccurrence occurrence) async {
     final amount = await showDialog<double>(
       context: context,
@@ -279,7 +356,14 @@ class _RecurringPageState extends State<RecurringPage> {
                     subtitle: 'Monthly rules create expected items here.',
                   )
                 else
-                  ..._templates.map(_TemplateTile.new),
+                  ..._templates.map(
+                    (item) => _TemplateTile(
+                      template: item,
+                      onEdit: () => _showEditDialog(item),
+                      onToggleActive: () => _toggleTemplateActive(item),
+                      onDelete: () => _deleteTemplate(item),
+                    ),
+                  ),
                 const SizedBox(height: 88),
               ],
             ),
@@ -493,45 +577,154 @@ class _OccurrenceCard extends StatelessWidget {
 }
 
 class _TemplateTile extends StatelessWidget {
-  const _TemplateTile(this.template);
+  const _TemplateTile({
+    required this.template,
+    required this.onEdit,
+    required this.onToggleActive,
+    required this.onDelete,
+  });
 
   final RecurringTemplate template;
+  final VoidCallback onEdit;
+  final VoidCallback onToggleActive;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
+      onTap: onEdit,
       leading: Icon(
         template.kind == 'income'
             ? Icons.account_balance_wallet_outlined
             : Icons.event_repeat,
       ),
       title: Text(template.title),
-      subtitle: Text(
-        '${_frequencyLabel(template.frequency)} · day ${template.dayOfMonth}',
+      subtitle: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            '${_frequencyLabel(template.frequency)} · day ${template.dayOfMonth}',
+          ),
+          Chip(
+            visualDensity: VisualDensity.compact,
+            label: Text(template.active ? 'Active' : 'Paused'),
+          ),
+        ],
       ),
-      trailing: Text(
-        AppMoney.formatCurrency(template.amount, template.currency),
+      trailing: SizedBox(
+        width: 168,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Expanded(
+              child: Text(
+                AppMoney.formatCurrency(template.amount, template.currency),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+              ),
+            ),
+            PopupMenuButton<_TemplateAction>(
+              tooltip: 'Rule actions',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (action) {
+                switch (action) {
+                  case _TemplateAction.edit:
+                    onEdit();
+                  case _TemplateAction.toggleActive:
+                    onToggleActive();
+                  case _TemplateAction.delete:
+                    onDelete();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: _TemplateAction.edit,
+                  child: _TemplateActionRow(
+                    icon: Icons.edit_outlined,
+                    label: 'Edit',
+                  ),
+                ),
+                PopupMenuItem(
+                  value: _TemplateAction.toggleActive,
+                  child: _TemplateActionRow(
+                    icon: template.active
+                        ? Icons.pause_circle_outline
+                        : Icons.play_circle_outline,
+                    label: template.active ? 'Pause' : 'Resume',
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _TemplateAction.delete,
+                  child: _TemplateActionRow(
+                    icon: Icons.delete_outline,
+                    label: 'Delete',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
+enum _TemplateAction { edit, toggleActive, delete }
+
+class _TemplateActionRow extends StatelessWidget {
+  const _TemplateActionRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
+    );
+  }
+}
+
 class _CreateRecurringDialog extends StatefulWidget {
-  const _CreateRecurringDialog();
+  const _CreateRecurringDialog({this.template});
+
+  final RecurringTemplate? template;
 
   @override
   State<_CreateRecurringDialog> createState() => _CreateRecurringDialogState();
 }
 
 class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
-  final _titleController = TextEditingController();
-  final _amountController = TextEditingController();
-  final _dayController = TextEditingController(text: '15');
-  final _categoryController = TextEditingController(text: 'Salary');
+  late final TextEditingController _titleController;
+  late final TextEditingController _amountController;
+  late final TextEditingController _dayController;
+  late final TextEditingController _categoryController;
   var _kind = 'income';
   var _currency = 'INR';
   var _frequency = 'monthly';
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final template = widget.template;
+    _kind = template?.kind ?? 'income';
+    _currency = template?.currency ?? 'INR';
+    _frequency = template?.frequency ?? 'monthly';
+    _titleController = TextEditingController(text: template?.title ?? '');
+    _amountController = TextEditingController(
+      text: template == null ? '' : template.amount.toStringAsFixed(0),
+    );
+    _dayController = TextEditingController(
+      text: (template?.dayOfMonth ?? 15).toString(),
+    );
+    _categoryController = TextEditingController(
+      text: template?.category ?? 'Salary',
+    );
+  }
 
   @override
   void dispose() {
@@ -570,8 +763,9 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final editing = widget.template != null;
     return AlertDialog(
-      title: const Text('Add recurring'),
+      title: Text(editing ? 'Edit recurring' : 'Add recurring'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -806,6 +1000,17 @@ class _RecurringDraft {
 
 String _monthKey(DateTime date) {
   return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}';
+}
+
+String? _validMonthKey(String? value) {
+  final raw = value?.trim();
+  if (raw == null || raw.isEmpty) return null;
+  final parts = raw.split('-');
+  if (parts.length != 2) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  if (year == null || month == null || month < 1 || month > 12) return null;
+  return '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
 }
 
 String _monthTitle(String month) {
