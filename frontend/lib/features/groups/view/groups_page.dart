@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
@@ -36,6 +39,7 @@ class GroupsPage extends StatefulWidget {
     this.groupType = GroupType.split,
     this.repository,
     this.client,
+    this.freshnessRepository,
     this.autoRefresh = false,
     super.key,
   });
@@ -43,6 +47,7 @@ class GroupsPage extends StatefulWidget {
   final GroupType groupType;
   final ApiGroupsRepository? repository;
   final http.Client? client;
+  final FreshnessRepository? freshnessRepository;
   final bool autoRefresh;
 
   @override
@@ -52,10 +57,14 @@ class GroupsPage extends StatefulWidget {
 class _GroupsPageState extends State<GroupsPage> {
   http.Client? _ownedClient;
   late final ApiGroupsRepository _repository;
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
   List<GroupSummary> _groups = const [];
   bool _loading = true;
+  bool _loadedGroups = false;
   bool _creating = false;
   String? _error;
+  DateTime? _groupsFreshnessCursor;
 
   bool get _isFamily => widget.groupType == GroupType.family;
 
@@ -84,11 +93,18 @@ class _GroupsPageState extends State<GroupsPage> {
       _ownedClient = client;
     }
     _repository = widget.repository ?? ApiGroupsRepository(client: client);
+    _freshnessRepository =
+        widget.freshnessRepository ??
+        FreshnessRepository(client: widget.client);
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
     _loadGroups();
   }
 
   @override
   void dispose() {
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
     _ownedClient?.close();
     super.dispose();
   }
@@ -99,7 +115,10 @@ class _GroupsPageState extends State<GroupsPage> {
         .toList(growable: false);
   }
 
-  Future<void> _loadGroups({bool showLoading = true}) async {
+  Future<void> _loadGroups({
+    bool showLoading = true,
+    bool markFreshness = true,
+  }) async {
     setState(() {
       _loading = showLoading || _groups.isEmpty;
       _error = null;
@@ -114,7 +133,13 @@ class _GroupsPageState extends State<GroupsPage> {
       }
       final groups = await _repository.fetchGroups();
       if (!mounted) return;
-      setState(() => _groups = _filterGroups(groups));
+      setState(() {
+        _groups = _filterGroups(groups);
+        _loadedGroups = true;
+      });
+      if (markFreshness) {
+        unawaited(_markGroupsFreshnessSeen());
+      }
     } catch (error) {
       if (!mounted) return;
       if (!hadCached && (showLoading || _groups.isEmpty)) {
@@ -125,6 +150,29 @@ class _GroupsPageState extends State<GroupsPage> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<void> _autoRefreshGroups() async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _groupsFreshnessCursor,
+      sections: const ['groups'],
+    );
+    final groups = freshness.sections['groups'];
+    if (groups != null && !groups.changed && _loadedGroups) {
+      _groupsFreshnessCursor = freshness.serverTime;
+      return;
+    }
+    await _loadGroups(showLoading: false, markFreshness: false);
+    _groupsFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _markGroupsFreshnessSeen() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['groups'],
+      );
+      _groupsFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
   }
 
   Future<void> _openCreateGroupDialog() async {
@@ -184,6 +232,7 @@ class _GroupsPageState extends State<GroupsPage> {
       children: [
         AppPageContainer(
           onRefresh: () => _loadGroups(showLoading: false),
+          onAutoRefresh: _autoRefreshGroups,
           autoRefresh: widget.autoRefresh,
           children: [
             AppSectionHeader(
@@ -413,6 +462,7 @@ class GroupDetailsPage extends StatefulWidget {
     this.initialExpenseCategory = 'Groceries',
     this.initialExpenseDescription,
     this.initialBillUpload = false,
+    this.freshnessRepository,
     this.autoRefresh = false,
     super.key,
   });
@@ -424,6 +474,7 @@ class GroupDetailsPage extends StatefulWidget {
   final String initialExpenseCategory;
   final String? initialExpenseDescription;
   final bool initialBillUpload;
+  final FreshnessRepository? freshnessRepository;
   final bool autoRefresh;
 
   @override
@@ -431,15 +482,19 @@ class GroupDetailsPage extends StatefulWidget {
 }
 
 class _GroupDetailsPageState extends State<GroupDetailsPage> {
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
   List<GroupExpense> _expenses = const [];
   List<GroupMember> _members = const [];
   bool _loading = true;
+  bool _loadedGroupData = false;
   bool _simplifyBalances = true;
   _GroupBusyAction _busyAction = _GroupBusyAction.none;
   bool _didMutateGroupData = false;
   bool _didOpenInitialExpense = false;
   late int _memberCount;
   String? _error;
+  DateTime? _groupFreshnessCursor;
   final _billRepository = BillAiRepository();
   final _billPicker = ImagePicker();
 
@@ -652,6 +707,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           expenses: _expenses,
           simplifyBalances: _simplifyBalances,
           memberCountFallback: _memberCount,
+          freshnessRepository: _freshnessRepository,
           autoRefresh: true,
         ),
       ),
@@ -726,16 +782,58 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   @override
   void initState() {
     super.initState();
+    _freshnessRepository = widget.freshnessRepository ?? FreshnessRepository();
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
     _memberCount = widget.group.memberCount;
     _loadData();
   }
 
-  Future<void> _loadData({bool showLoading = true}) async {
+  @override
+  void dispose() {
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadData({
+    bool showLoading = true,
+    bool markFreshness = true,
+  }) async {
     await Future.wait([
       _loadMembers(),
       _loadExpenses(showLoading: showLoading),
     ]);
+    if (mounted) {
+      _loadedGroupData = true;
+    }
+    if (markFreshness) {
+      unawaited(_markGroupFreshnessSeen());
+    }
     _openInitialExpenseAction();
+  }
+
+  Future<void> _autoRefreshGroupData() async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _groupFreshnessCursor,
+      sections: const ['groups'],
+    );
+    final groups = freshness.sections['groups'];
+    if (groups != null && !groups.changed && _loadedGroupData) {
+      _groupFreshnessCursor = freshness.serverTime;
+      return;
+    }
+    await _loadData(showLoading: false, markFreshness: false);
+    _groupFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _markGroupFreshnessSeen() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['groups'],
+      );
+      _groupFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
   }
 
   void _openInitialExpenseAction() {
@@ -2622,6 +2720,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           children: [
             AppPageContainer(
               onRefresh: () => _loadData(showLoading: false),
+              onAutoRefresh: _autoRefreshGroupData,
               autoRefresh: widget.autoRefresh,
               children: [
                 AppCard(
@@ -2866,6 +2965,7 @@ class GroupSettingsPage extends StatefulWidget {
     required this.simplifyBalances,
     required this.memberCountFallback,
     required this.autoRefresh,
+    this.freshnessRepository,
     super.key,
   });
 
@@ -2877,29 +2977,44 @@ class GroupSettingsPage extends StatefulWidget {
   final bool simplifyBalances;
   final int memberCountFallback;
   final bool autoRefresh;
+  final FreshnessRepository? freshnessRepository;
 
   @override
   State<GroupSettingsPage> createState() => _GroupSettingsPageState();
 }
 
 class _GroupSettingsPageState extends State<GroupSettingsPage> {
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
   late bool _simplify;
   late List<GroupMember> _members;
   bool _settlementLoading = true;
+  bool _loadedSettings = false;
   String? _settlingMemberUid;
   String? _updatingRoleUid;
   List<GroupSettlement> _settlements = const [];
   Map<String, Map<String, double>> _settlementNetByCurrency = const {};
+  DateTime? _settingsFreshnessCursor;
 
   @override
   void initState() {
     super.initState();
+    _freshnessRepository = widget.freshnessRepository ?? FreshnessRepository();
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
     _simplify = widget.simplifyBalances;
     _members = widget.members;
     _loadSettlementBalances();
   }
 
-  Future<void> _loadSettlementBalances() async {
+  @override
+  void dispose() {
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadSettlementBalances({bool markFreshness = true}) async {
     setState(() => _settlementLoading = true);
     try {
       final settlements = await widget.repository.fetchSettlements(
@@ -2931,14 +3046,18 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         _settlements = settlements;
         _settlementNetByCurrency = netByCurrency;
         _settlementLoading = false;
+        _loadedSettings = true;
       });
+      if (markFreshness) {
+        unawaited(_markSettingsFreshnessSeen());
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _settlementLoading = false);
     }
   }
 
-  Future<void> _refreshSettings() async {
+  Future<void> _refreshSettings({bool markFreshness = true}) async {
     try {
       final members = await widget.repository.fetchMembers(widget.groupId);
       if (!mounted) return;
@@ -2946,7 +3065,33 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     } catch (_) {
       // Keep the current member list and still refresh settlement totals.
     }
-    await _loadSettlementBalances();
+    await _loadSettlementBalances(markFreshness: false);
+    if (markFreshness) {
+      unawaited(_markSettingsFreshnessSeen());
+    }
+  }
+
+  Future<void> _autoRefreshSettings() async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _settingsFreshnessCursor,
+      sections: const ['groups'],
+    );
+    final groups = freshness.sections['groups'];
+    if (groups != null && !groups.changed && _loadedSettings) {
+      _settingsFreshnessCursor = freshness.serverTime;
+      return;
+    }
+    await _refreshSettings(markFreshness: false);
+    _settingsFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _markSettingsFreshnessSeen() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['groups'],
+      );
+      _settingsFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
   }
 
   String _normalizeSettlementCurrency(String value) {
@@ -3268,6 +3413,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       appBar: AppBar(title: const Text('Group settings')),
       body: AppPageContainer(
         onRefresh: _refreshSettings,
+        onAutoRefresh: _autoRefreshSettings,
         autoRefresh: widget.autoRefresh,
         children: [
           AppCard(

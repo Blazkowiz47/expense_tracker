@@ -1,4 +1,6 @@
+import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
@@ -37,6 +39,7 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   final List<GroupMember> members;
   final List<GroupExpense>? expenses;
   final List<GroupSettlement> settlements = [];
+  int fetchGroupCount = 0;
   ({
     String groupId,
     String memberUid,
@@ -50,7 +53,10 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   Future<List<GroupSummary>> getCachedGroups() async => const [];
 
   @override
-  Future<List<GroupSummary>> fetchGroups() async => groups;
+  Future<List<GroupSummary>> fetchGroups() async {
+    fetchGroupCount += 1;
+    return groups;
+  }
 
   @override
   Future<List<GroupMember>> getCachedMembers(String groupId) async => const [];
@@ -119,6 +125,26 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   }
 }
 
+class _FakeFreshnessRepository extends FreshnessRepository {
+  _FakeFreshnessRepository(this._responses)
+    : super(client: MockClient((_) async => http.Response('{}', 200)));
+
+  final List<FreshnessSnapshot> _responses;
+  final List<({DateTime? since, List<String> sections})> requests = [];
+
+  @override
+  Future<FreshnessSnapshot> fetchFreshness({
+    DateTime? since,
+    Iterable<String> sections = const [],
+  }) async {
+    requests.add((since: since, sections: sections.toList(growable: false)));
+    final index = requests.length - 1;
+    return _responses[index < _responses.length
+        ? index
+        : _responses.length - 1];
+  }
+}
+
 class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
   _FakeMonthlyPlanRepository()
     : super(client: MockClient((_) async => http.Response('{}', 200)));
@@ -177,6 +203,13 @@ class _FakeUserProfileRepository extends UserProfileRepository {
   Future<void> ensureUserDocument(AuthUser user) async {}
 }
 
+FreshnessSnapshot _freshness(DateTime serverTime) {
+  return FreshnessSnapshot(
+    serverTime: serverTime,
+    sections: const {'groups': FreshnessSection(changed: false)},
+  );
+}
+
 void main() {
   const splitGroup = GroupSummary(
     id: 'split-1',
@@ -219,6 +252,40 @@ void main() {
 
     expect(find.text('Trip to Goa'), findsOneWidget);
     expect(find.text('Rao family'), findsNothing);
+  });
+
+  testWidgets('groups auto-refresh skips reload when freshness is unchanged', (
+    tester,
+  ) async {
+    final repository = _FakeGroupsRepository([splitGroup]);
+    final freshnessRepository = _FakeFreshnessRepository([
+      _freshness(DateTime.parse('2026-06-07T10:00:00Z')),
+      _freshness(DateTime.parse('2026-06-07T10:00:45Z')),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GroupsPage(
+            repository: repository,
+            freshnessRepository: freshnessRepository,
+            autoRefresh: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 45));
+    await tester.pump();
+
+    expect(repository.fetchGroupCount, 1);
+    expect(freshnessRepository.requests, hasLength(2));
+    expect(freshnessRepository.requests.last.sections, ['groups']);
+    expect(
+      freshnessRepository.requests.last.since,
+      DateTime.parse('2026-06-07T10:00:00Z'),
+    );
   });
 
   testWidgets('family page shows only family groups', (tester) async {
