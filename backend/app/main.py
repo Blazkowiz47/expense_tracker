@@ -515,14 +515,17 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     @app.get("/api/v1/planning/monthly")
     def get_monthly_plan(
         month: str = "",
+        groupId: str = "",
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
         plan_month = normalize_month(month)
-        return monthly_plan_out(app.state.db, user["uid"], plan_month)
+        owner_uid, group_id = monthly_plan_scope(app.state.db, user["uid"], groupId)
+        return monthly_plan_out(app.state.db, owner_uid, plan_month, group_id=group_id)
 
     @app.put("/api/v1/planning/monthly")
     def save_monthly_plan(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         plan_month = normalize_month(str(body.get("month") or ""))
+        owner_uid, group_id = monthly_plan_scope(app.state.db, user["uid"], body.get("groupId"))
         raw_budgets = body.get("budgets") if isinstance(body.get("budgets"), dict) else {}
         budgets: dict[str, float] = {}
         for category, amount in raw_budgets.items():
@@ -535,18 +538,20 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "budget amounts must be numbers")) from None
             budgets[label] = value
         doc = {
-            "uid": user["uid"],
+            "uid": owner_uid,
             "month": plan_month,
+            "scope": "group" if group_id else "personal",
+            "groupId": group_id,
             "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
             "budgets": budgets,
             "updatedAt": now(),
         }
         app.state.db.monthly_plans.update_one(
-            {"uid": user["uid"], "month": plan_month},
+            {"uid": owner_uid, "month": plan_month},
             {"$set": doc, "$setOnInsert": {"createdAt": now()}},
             upsert=True,
         )
-        return monthly_plan_out(app.state.db, user["uid"], plan_month)
+        return monthly_plan_out(app.state.db, owner_uid, plan_month, group_id=group_id)
 
     @app.get("/api/v1/dashboard/snapshot")
     def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -725,6 +730,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 app.state.db.groups.delete_one({"id": group_id})
                 app.state.db.group_expenses.delete_many({"groupId": group_id})
                 app.state.db.group_settlements.delete_many({"groupId": group_id})
+                app.state.db.monthly_plans.delete_many({"uid": monthly_plan_group_owner(group_id)})
                 return {"left": True, "deleted": True}
             app.state.db.groups.update_one({"id": group_id}, {"$set": {"memberUids": members, "memberCount": len(members), "updatedAt": now()}, "$unset": {f"memberRoles.{user['uid']}": ""}})
             return {"left": True, "deleted": False}
@@ -1610,25 +1616,28 @@ def format_currency_amounts(amounts: dict[str, float]) -> str:
     return ", ".join(format_currency_amount(currency, abs(amount)) for currency, amount in sorted(non_zero))
 
 
-def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
+def monthly_plan_group_owner(group_id: str) -> str:
+    return f"group:{group_id}"
+
+
+def monthly_plan_scope(db: Any, uid: str, raw_group_id: Any = "") -> tuple[str, str | None]:
+    group_id = str(raw_group_id or "").strip()
+    if not group_id:
+        return uid, None
+    require_group_member(db, group_id, uid)
+    return monthly_plan_group_owner(group_id), group_id
+
+
+def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None) -> dict[str, Any]:
     plan = db.monthly_plans.find_one({"uid": uid, "month": month}) or {}
     plan_currency = safe_currency(plan.get("currency"), "INR") or "INR"
     raw_budgets = plan.get("budgets") if isinstance(plan.get("budgets"), dict) else {}
     budgets = {str(key): float(value or 0) for key, value in raw_budgets.items()}
     start, end = month_range(month)
-    expenses = db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}})
     actuals: dict[str, float] = {}
-    for expense in expenses:
-        amount = expense_amount_for_currency(expense, plan_currency)
-        if amount is None:
-            continue
-        category = str(expense.get("category") or "Personal").strip() or "Personal"
-        actuals[category] = actuals.get(category, 0.0) + amount
-    family_groups = list(db.groups.find({"memberUids": uid, "groupType": "family"}))
-    family_group_ids = [group.get("id") for group in family_groups if group.get("id")]
-    if family_group_ids:
+    if group_id:
         family_expenses = db.group_expenses.find({
-            "groupId": {"$in": family_group_ids},
+            "groupId": group_id,
             "date": {"$gte": start, "$lt": end},
         })
         for expense in family_expenses:
@@ -1637,6 +1646,27 @@ def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
                 continue
             category = str(expense.get("category") or "Personal").strip() or "Personal"
             actuals[category] = actuals.get(category, 0.0) + amount
+    else:
+        expenses = db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}})
+        for expense in expenses:
+            amount = expense_amount_for_currency(expense, plan_currency)
+            if amount is None:
+                continue
+            category = str(expense.get("category") or "Personal").strip() or "Personal"
+            actuals[category] = actuals.get(category, 0.0) + amount
+        family_groups = list(db.groups.find({"memberUids": uid, "groupType": "family"}))
+        family_group_ids = [group.get("id") for group in family_groups if group.get("id")]
+        if family_group_ids:
+            family_expenses = db.group_expenses.find({
+                "groupId": {"$in": family_group_ids},
+                "date": {"$gte": start, "$lt": end},
+            })
+            for expense in family_expenses:
+                amount = expense_amount_for_currency(expense, plan_currency)
+                if amount is None:
+                    continue
+                category = str(expense.get("category") or "Personal").strip() or "Personal"
+                actuals[category] = actuals.get(category, 0.0) + amount
     rows = []
     for category in sorted(set(budgets.keys()) | set(actuals.keys())):
         budget = budgets.get(category, 0.0)
@@ -1653,6 +1683,7 @@ def monthly_plan_out(db: Any, uid: str, month: str) -> dict[str, Any]:
     total_actual = sum(actuals.values())
     return json_ready({
         "month": month,
+        "groupId": group_id,
         "currency": plan_currency,
         "totalBudget": total_budget,
         "totalActual": total_actual,

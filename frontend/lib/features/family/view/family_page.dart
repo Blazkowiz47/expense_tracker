@@ -509,6 +509,8 @@ class _FamilyPageState extends State<FamilyPage> {
         MonthlyPlanningCard(
           repository: widget.monthlyPlanRepository,
           refreshToken: _monthlyPlanRefreshToken,
+          groupId: family.id,
+          title: 'Household plan',
         ),
         if (_families.length > 1) ...[
           const SizedBox(height: 8),

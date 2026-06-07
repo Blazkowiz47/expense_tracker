@@ -1,6 +1,7 @@
 class MonthlyPlan {
   const MonthlyPlan({
     required this.month,
+    this.groupId,
     required this.currency,
     required this.totalBudget,
     required this.totalActual,
@@ -9,6 +10,7 @@ class MonthlyPlan {
   });
 
   final String month;
+  final String? groupId;
   final String currency;
   final double totalBudget;
   final double totalActual;
@@ -18,6 +20,9 @@ class MonthlyPlan {
   factory MonthlyPlan.fromJson(Map<String, dynamic> json) {
     return MonthlyPlan(
       month: (json['month'] ?? '').toString(),
+      groupId: (json['groupId'] as String?)?.trim().isNotEmpty == true
+          ? (json['groupId'] as String).trim()
+          : null,
       currency: (json['currency'] ?? 'INR').toString(),
       totalBudget: (json['totalBudget'] as num?)?.toDouble() ?? 0,
       totalActual: (json['totalActual'] as num?)?.toDouble() ?? 0,

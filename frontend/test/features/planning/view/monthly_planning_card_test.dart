@@ -13,13 +13,20 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
   Map<String, double>? savedBudgets;
   String? savedCurrency;
   int fetchCount = 0;
+  final fetchedGroupIds = <String?>[];
+  String? savedGroupId;
 
   @override
-  Future<MonthlyPlan> fetchPlan({required String month}) async {
+  Future<MonthlyPlan> fetchPlan({
+    required String month,
+    String? groupId,
+  }) async {
     fetchCount += 1;
+    fetchedGroupIds.add(groupId);
     final actual = fetchCount == 1 ? 1500.0 : 1750.0;
     return MonthlyPlan(
       month: '2026-06',
+      groupId: groupId,
       currency: 'INR',
       totalBudget: 5000,
       totalActual: actual,
@@ -48,17 +55,20 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
   @override
   Future<MonthlyPlan> savePlan({
     required String month,
+    String? groupId,
     required String currency,
     required Map<String, double> budgets,
   }) async {
     savedBudgets = budgets;
     savedCurrency = currency;
+    savedGroupId = groupId;
     final totalBudget = budgets.values.fold<double>(
       0,
       (total, value) => total + value,
     );
     return MonthlyPlan(
       month: month,
+      groupId: groupId,
       currency: currency,
       totalBudget: totalBudget,
       totalActual: 1500,
@@ -126,6 +136,7 @@ void main() {
     expect(repository.savedBudgets?['Groceries'], 5000);
     expect(repository.savedBudgets?['Car'], 2500);
     expect(repository.savedCurrency, 'USD');
+    expect(repository.savedGroupId, isNull);
     expect(find.textContaining('USD 1500.00 spent'), findsOneWidget);
   });
 
@@ -153,5 +164,42 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.fetchCount, 2);
     expect(find.textContaining('INR 1750.00 spent'), findsOneWidget);
+  });
+
+  testWidgets('passes household group id and reloads when it changes', (
+    tester,
+  ) async {
+    final repository = _FakeMonthlyPlanRepository();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthlyPlanningCard(
+            repository: repository,
+            groupId: 'family-1',
+            title: 'Household plan',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repository.fetchedGroupIds, ['family-1']);
+    expect(find.text('Household plan'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthlyPlanningCard(
+            repository: repository,
+            groupId: 'family-2',
+            title: 'Household plan',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repository.fetchedGroupIds, ['family-1', 'family-2']);
   });
 }

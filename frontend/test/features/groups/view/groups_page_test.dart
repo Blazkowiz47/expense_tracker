@@ -124,7 +124,10 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   @override
-  Future<MonthlyPlan> fetchPlan({required String month}) async {
+  Future<MonthlyPlan> fetchPlan({
+    required String month,
+    String? groupId,
+  }) async {
     return const MonthlyPlan(
       month: '2026-06',
       currency: 'INR',

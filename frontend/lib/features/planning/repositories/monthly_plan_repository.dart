@@ -16,11 +16,18 @@ class MonthlyPlanRepository {
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;
 
-  Future<MonthlyPlan> fetchPlan({required String month}) async {
+  Future<MonthlyPlan> fetchPlan({
+    required String month,
+    String? groupId,
+  }) async {
     final token = await _authTokenProvider.getBearerToken();
+    final query = {
+      'month': month,
+      if (groupId?.trim().isNotEmpty == true) 'groupId': groupId!.trim(),
+    };
     final uri = Uri.parse(
       '${ApiConfig.baseUrl}/api/v1/planning/monthly',
-    ).replace(queryParameters: {'month': month});
+    ).replace(queryParameters: query);
     final response = await _client.get(
       uri,
       headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
@@ -37,6 +44,7 @@ class MonthlyPlanRepository {
 
   Future<MonthlyPlan> savePlan({
     required String month,
+    String? groupId,
     required String currency,
     required Map<String, double> budgets,
   }) async {
@@ -51,6 +59,7 @@ class MonthlyPlanRepository {
       },
       body: jsonEncode({
         'month': month,
+        if (groupId?.trim().isNotEmpty == true) 'groupId': groupId!.trim(),
         'currency': currency,
         'budgets': budgets,
       }),

@@ -369,6 +369,89 @@ def test_family_roles_and_expenses_feed_monthly_plan(tmp_path):
     assert bob_groceries["actual"] == 220
 
 
+def test_household_scoped_monthly_plan_isolates_group_actuals(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+    headers_c = register(client, "cara@example.com")
+
+    primary = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={
+            "name": "Home",
+            "groupType": "family",
+            "members": ["bob@example.com"],
+        },
+    )
+    assert primary.status_code == 201, primary.text
+    primary_id = primary.json()["id"]
+
+    secondary = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Parents", "groupType": "family"},
+    )
+    assert secondary.status_code == 201, secondary.text
+    secondary_id = secondary.json()["id"]
+
+    for group_id, amount in [(primary_id, 220), (secondary_id, 90)]:
+        created = client.post(
+            f"/api/v1/groups/{group_id}/expenses",
+            headers=headers_a,
+            json={
+                "description": "Groceries",
+                "amount": amount,
+                "category": "Groceries",
+                "date": "2026-05-12T12:00:00Z",
+            },
+        )
+        assert created.status_code == 201, created.text
+
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers_a,
+        json={
+            "month": "2026-05",
+            "groupId": primary_id,
+            "currency": "INR",
+            "budgets": {"Groceries": 500},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    scoped_payload = saved.json()
+    assert scoped_payload["groupId"] == primary_id
+    scoped_groceries = next(
+        item for item in scoped_payload["categories"] if item["category"] == "Groceries"
+    )
+    assert scoped_groceries["actual"] == 220
+    assert scoped_groceries["remaining"] == 280
+
+    bob_plan = client.get(
+        f"/api/v1/planning/monthly?month=2026-05&groupId={primary_id}",
+        headers=headers_b,
+    )
+    assert bob_plan.status_code == 200, bob_plan.text
+    bob_groceries = next(
+        item for item in bob_plan.json()["categories"] if item["category"] == "Groceries"
+    )
+    assert bob_groceries["budget"] == 500
+    assert bob_groceries["actual"] == 220
+
+    outsider_plan = client.get(
+        f"/api/v1/planning/monthly?month=2026-05&groupId={primary_id}",
+        headers=headers_c,
+    )
+    assert outsider_plan.status_code == 403, outsider_plan.text
+
+    global_plan = client.get("/api/v1/planning/monthly?month=2026-05", headers=headers_a)
+    assert global_plan.status_code == 200, global_plan.text
+    global_groceries = next(
+        item for item in global_plan.json()["categories"] if item["category"] == "Groceries"
+    )
+    assert global_groceries["actual"] == 310
+
+
 def test_group_create_rejects_uninvitable_initial_members(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client, "alice@example.com")

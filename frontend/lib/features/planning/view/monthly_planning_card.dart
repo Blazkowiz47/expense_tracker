@@ -7,10 +7,18 @@ import 'package:flutter/material.dart';
 const _planCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
 
 class MonthlyPlanningCard extends StatefulWidget {
-  const MonthlyPlanningCard({this.repository, this.refreshToken, super.key});
+  const MonthlyPlanningCard({
+    this.repository,
+    this.refreshToken,
+    this.groupId,
+    this.title = 'Monthly plan',
+    super.key,
+  });
 
   final MonthlyPlanRepository? repository;
   final Object? refreshToken;
+  final String? groupId;
+  final String title;
 
   @override
   State<MonthlyPlanningCard> createState() => _MonthlyPlanningCardState();
@@ -47,8 +55,9 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
   @override
   void didUpdateWidget(covariant MonthlyPlanningCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.refreshToken != oldWidget.refreshToken) {
-      _load(showLoading: false);
+    if (widget.refreshToken != oldWidget.refreshToken ||
+        widget.groupId != oldWidget.groupId) {
+      _load(showLoading: widget.groupId != oldWidget.groupId);
     }
   }
 
@@ -58,7 +67,10 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
       _error = null;
     });
     try {
-      final plan = await _repository.fetchPlan(month: _month);
+      final plan = await _repository.fetchPlan(
+        month: _month,
+        groupId: widget.groupId,
+      );
       if (!mounted) return;
       setState(() {
         _plan = plan;
@@ -97,6 +109,7 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
     try {
       final plan = await _repository.savePlan(
         month: _month,
+        groupId: widget.groupId,
         currency: updated.currency,
         budgets: updated.budgets,
       );
@@ -144,10 +157,13 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
 
     final plan = _plan;
     if (plan == null || plan.totalBudget <= 0) {
+      final scoped = widget.groupId?.trim().isNotEmpty == true;
       return AppEmptyState(
-        title: 'Plan this month',
-        subtitle: 'Set category budgets and compare them with actual spend.',
-        actionLabel: 'Set monthly plan',
+        title: scoped ? widget.title : 'Plan this month',
+        subtitle: scoped
+            ? 'Set category budgets for this household and compare them with shared spend.'
+            : 'Set category budgets and compare them with actual spend.',
+        actionLabel: scoped ? 'Set household plan' : 'Set monthly plan',
         onAction: _editPlan,
       );
     }
@@ -165,7 +181,7 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
             children: [
               Expanded(
                 child: Text(
-                  'Monthly plan',
+                  widget.title,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
