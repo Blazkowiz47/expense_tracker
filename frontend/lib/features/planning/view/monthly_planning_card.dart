@@ -4,6 +4,8 @@ import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:flutter/material.dart';
 
+const _planCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
+
 class MonthlyPlanningCard extends StatefulWidget {
   const MonthlyPlanningCard({this.repository, this.refreshToken, super.key});
 
@@ -77,12 +79,13 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
 
   Future<void> _editPlan() async {
     final current = _plan;
-    final updated = await showDialog<Map<String, double>>(
+    final updated = await showDialog<_BudgetDialogResult>(
       context: context,
       builder: (context) => _BudgetDialog(
         categories: mergeMonthlyCategories(
           current?.categories.map((category) => category.category) ?? const [],
         ),
+        initialCurrency: current?.currency ?? 'INR',
         initialBudgets: current?.budgetsByCategory ?? const {},
       ),
     );
@@ -94,8 +97,8 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
     try {
       final plan = await _repository.savePlan(
         month: _month,
-        currency: current?.currency ?? 'INR',
-        budgets: updated,
+        currency: updated.currency,
+        budgets: updated.budgets,
       );
       if (!mounted) return;
       setState(() {
@@ -239,9 +242,14 @@ class _BudgetRow extends StatelessWidget {
 }
 
 class _BudgetDialog extends StatefulWidget {
-  const _BudgetDialog({required this.categories, required this.initialBudgets});
+  const _BudgetDialog({
+    required this.categories,
+    required this.initialCurrency,
+    required this.initialBudgets,
+  });
 
   final List<String> categories;
+  final String initialCurrency;
   final Map<String, double> initialBudgets;
 
   @override
@@ -252,10 +260,12 @@ class _BudgetDialogState extends State<_BudgetDialog> {
   late final List<String> _categories;
   late final Map<String, TextEditingController> _controllers;
   late final TextEditingController _newCategoryController;
+  late String _currency;
 
   @override
   void initState() {
     super.initState();
+    _currency = _normalizePlanCurrency(widget.initialCurrency);
     _categories = mergeMonthlyCategories([
       ...widget.categories,
       ...widget.initialBudgets.keys,
@@ -307,7 +317,9 @@ class _BudgetDialogState extends State<_BudgetDialog> {
         budgets[category] = value;
       }
     }
-    Navigator.of(context).pop(budgets);
+    Navigator.of(
+      context,
+    ).pop(_BudgetDialogResult(currency: _currency, budgets: budgets));
   }
 
   @override
@@ -320,6 +332,27 @@ class _BudgetDialogState extends State<_BudgetDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              DropdownButtonFormField<String>(
+                initialValue: _currency,
+                decoration: const InputDecoration(
+                  labelText: 'Plan currency',
+                  border: OutlineInputBorder(),
+                ),
+                items: _planCurrencyOptions
+                    .map(
+                      (currency) => DropdownMenuItem<String>(
+                        value: currency,
+                        child: Text(currency),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _currency = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
               for (final category in _categories) ...[
                 TextField(
                   controller: _controllers[category],
@@ -328,7 +361,7 @@ class _BudgetDialogState extends State<_BudgetDialog> {
                   ),
                   decoration: InputDecoration(
                     labelText: category,
-                    prefixText: 'INR ',
+                    prefixText: '$_currency ',
                     border: const OutlineInputBorder(),
                   ),
                 ),
@@ -369,4 +402,16 @@ class _BudgetDialogState extends State<_BudgetDialog> {
       ],
     );
   }
+}
+
+String _normalizePlanCurrency(String value) {
+  final normalized = value.trim().toUpperCase();
+  return _planCurrencyOptions.contains(normalized) ? normalized : 'INR';
+}
+
+class _BudgetDialogResult {
+  const _BudgetDialogResult({required this.currency, required this.budgets});
+
+  final String currency;
+  final Map<String, double> budgets;
 }

@@ -11,6 +11,7 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   Map<String, double>? savedBudgets;
+  String? savedCurrency;
   int fetchCount = 0;
 
   @override
@@ -51,6 +52,7 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
     required Map<String, double> budgets,
   }) async {
     savedBudgets = budgets;
+    savedCurrency = currency;
     final totalBudget = budgets.values.fold<double>(
       0,
       (total, value) => total + value,
@@ -103,6 +105,11 @@ void main() {
     expect(_textFieldWithLabel('Rent and housing'), findsOneWidget);
     expect(_textFieldWithLabel('Pet care'), findsOneWidget);
 
+    await tester.tap(find.text('INR').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('USD').last);
+    await tester.pumpAndSettle();
+
     await tester.ensureVisible(_textFieldWithLabel('Add category'));
     await tester.pumpAndSettle();
     await tester.enterText(_textFieldWithLabel('Add category'), 'Car');
@@ -118,6 +125,8 @@ void main() {
 
     expect(repository.savedBudgets?['Groceries'], 5000);
     expect(repository.savedBudgets?['Car'], 2500);
+    expect(repository.savedCurrency, 'USD');
+    expect(find.textContaining('USD 1500.00 spent'), findsOneWidget);
   });
 
   testWidgets('refreshes when refresh token changes', (tester) async {
