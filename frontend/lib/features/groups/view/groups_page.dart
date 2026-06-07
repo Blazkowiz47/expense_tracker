@@ -1,10 +1,12 @@
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
+import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
@@ -432,6 +434,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   bool _didOpenInitialExpense = false;
   late int _memberCount;
   String? _error;
+  final _billRepository = BillAiRepository();
+  final _billPicker = ImagePicker();
 
   bool get _busy => _busyAction != _GroupBusyAction.none;
 
@@ -950,6 +954,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     String initialCurrency = 'INR',
     String initialTargetCurrency = 'INR',
     String initialCategory = 'Groceries',
+    DateTime? initialDate,
     bool showMonthlyCategory = false,
     List<String>? initialAttachments,
     DateTime? initialUpdatedAt,
@@ -971,6 +976,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         var currency = _normalizedGroupCurrency(initialCurrency);
         var targetCurrency = _normalizedGroupCurrency(initialTargetCurrency);
         var category = _normalizedCategory(initialCategory);
+        var expenseDate = initialDate ?? DateTime.now();
         final selected = {...(initialSplitWith ?? participants)};
         var splitWithAll = selected.length == participants.length;
         final attachmentItems = [
@@ -986,6 +992,147 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         ];
         var requiresExplicitAttachmentSave = false;
         var didInlineAttachmentUpload = false;
+        var extractingBill = false;
+        String? billMessage;
+        BillExtractionResult? billResult;
+
+        Future<void> scanBill(StateSetter setDialogState) async {
+          setDialogState(() {
+            extractingBill = true;
+            billMessage = 'Reading bill...';
+          });
+          try {
+            final image = await _billPicker.pickImage(
+              source: ImageSource.gallery,
+              imageQuality: 85,
+            );
+            if (image == null) {
+              setDialogState(() {
+                extractingBill = false;
+                billMessage = null;
+              });
+              return;
+            }
+
+            final bytes = await image.readAsBytes();
+            final mimeType =
+                lookupMimeType(image.name, headerBytes: bytes) ?? 'image/jpeg';
+            final itemId =
+                '${DateTime.now().microsecondsSinceEpoch}-${image.name.hashCode}-scan';
+            setDialogState(() {
+              attachmentItems.add(
+                _AttachmentUploadItem(
+                  id: itemId,
+                  label: image.name,
+                  progress: 0,
+                  uploading: true,
+                  localPreviewBytes: bytes,
+                  localPreviewPath: image.path,
+                  pendingUploadBytes: isEditing ? null : bytes,
+                  uploadFileName: image.name,
+                  uploadContentType: mimeType,
+                ),
+              );
+            });
+
+            final result = await _billRepository.uploadAndWait(
+              bytes: bytes,
+              fileName: image.name,
+              contentType: mimeType,
+            );
+            if (!mounted) return;
+
+            final primaryDescription = result.merchant.trim().isNotEmpty
+                ? result.merchant.trim()
+                : result.notes.trim();
+            setDialogState(() {
+              if (primaryDescription.isNotEmpty) {
+                descriptionController.text = primaryDescription;
+              }
+              if (result.amount > 0) {
+                amountController.text = result.amount.toStringAsFixed(2);
+              }
+              currency = _normalizedGroupCurrency(result.currency);
+              category = _normalizedCategory(result.category);
+              expenseDate = result.date;
+              billResult = result;
+              billMessage =
+                  'Bill ready (${(result.confidence * 100).toStringAsFixed(0)}% confidence).';
+            });
+
+            if (isEditing) {
+              final url = await widget.repository.uploadAttachment(
+                groupId: widget.group.id,
+                expenseId: expenseId,
+                bytes: bytes,
+                fileName: image.name,
+                contentType: mimeType,
+                onProgress: (sent, total) {
+                  if (total <= 0) return;
+                  final progress = sent / total;
+                  setDialogState(() {
+                    final idx = attachmentItems.indexWhere(
+                      (item) => item.id == itemId,
+                    );
+                    if (idx >= 0) {
+                      attachmentItems[idx] = attachmentItems[idx].copyWith(
+                        progress: progress,
+                      );
+                    }
+                  });
+                },
+              );
+              if (!mounted) return;
+              setDialogState(() {
+                final idx = attachmentItems.indexWhere(
+                  (item) => item.id == itemId,
+                );
+                if (idx >= 0) {
+                  attachmentItems[idx] = attachmentItems[idx].copyWith(
+                    uploading: false,
+                    progress: 1,
+                    url: url,
+                    error: null,
+                    pendingUploadBytes: null,
+                  );
+                  didInlineAttachmentUpload = true;
+                }
+              });
+            } else {
+              setDialogState(() {
+                final idx = attachmentItems.indexWhere(
+                  (item) => item.id == itemId,
+                );
+                if (idx >= 0) {
+                  attachmentItems[idx] = attachmentItems[idx].copyWith(
+                    uploading: false,
+                    progress: 1,
+                    pendingUploadBytes: bytes,
+                    uploadFileName: image.name,
+                    uploadContentType: mimeType,
+                  );
+                }
+              });
+            }
+          } catch (error) {
+            if (!mounted) return;
+            setDialogState(() {
+              extractingBill = false;
+              billMessage = 'Bill extraction failed.';
+              final lastIndex = attachmentItems.lastIndexWhere(
+                (item) => item.uploading,
+              );
+              if (lastIndex >= 0) {
+                attachmentItems[lastIndex] = attachmentItems[lastIndex]
+                    .copyWith(uploading: false, error: error.toString());
+              }
+            });
+            return;
+          }
+          if (!mounted) return;
+          setDialogState(() => extractingBill = false);
+        }
+
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             insetPadding: const EdgeInsets.symmetric(
@@ -1105,6 +1252,34 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         },
                       ),
                     ],
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final selectedDate = await showDatePicker(
+                            context: context,
+                            initialDate: expenseDate,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 365),
+                            ),
+                          );
+                          if (selectedDate == null) return;
+                          setDialogState(() {
+                            expenseDate = DateTime(
+                              selectedDate.year,
+                              selectedDate.month,
+                              selectedDate.day,
+                              expenseDate.hour,
+                              expenseDate.minute,
+                            );
+                          });
+                        },
+                        icon: const Icon(Icons.calendar_today_outlined),
+                        label: Text(DateFormatter.formatDate(expenseDate)),
+                      ),
+                    ),
                     const SizedBox(height: 14),
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
@@ -1513,6 +1688,26 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       runSpacing: 8,
                       children: [
                         ActionChip(
+                          avatar: extractingBill
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.document_scanner_outlined,
+                                  size: 16,
+                                ),
+                          label: Text(
+                            extractingBill ? 'Reading bill...' : 'Scan bill',
+                          ),
+                          onPressed: extractingBill
+                              ? null
+                              : () => scanBill(setDialogState),
+                        ),
+                        ActionChip(
                           avatar: const Icon(
                             Icons.photo_library_outlined,
                             size: 16,
@@ -1778,6 +1973,32 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         ),
                       ],
                     ),
+                    if (billMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          billMessage!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                    if (billResult != null) ...[
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          [
+                            if (billResult!.merchant.trim().isNotEmpty)
+                              billResult!.merchant.trim(),
+                            if (billResult!.amount > 0)
+                              '${billResult!.currency} ${billResult!.amount.toStringAsFixed(2)}',
+                            billResult!.category,
+                          ].where((item) => item.trim().isNotEmpty).join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1812,6 +2033,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   'currency': currency,
                   'targetCurrencies': [targetCurrency],
                   'category': showMonthlyCategory ? category : '',
+                  'date': expenseDate,
                   'paidBy': paidBy,
                   'splitMode': splitMode,
                   'splitWith': selected.toList(growable: false),
@@ -1865,6 +2087,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       ),
     );
     final category = (payload['category'] as String?) ?? '';
+    final date = payload['date'] is DateTime
+        ? payload['date'] as DateTime
+        : DateTime.now();
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
@@ -1891,7 +2116,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         targetCurrencies: targetCurrencies,
         category: category,
         attachments: attachments,
-        date: DateTime.now(),
+        date: date,
       );
 
       var failedUploads = 0;
@@ -1966,6 +2191,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       initialCurrency: expense.currency,
       initialCategory: expense.category,
       initialTargetCurrency: _targetCurrencyForExpense(expense),
+      initialDate: expense.date,
       showMonthlyCategory: widget.group.groupType == GroupType.family,
       initialAttachments: expense.attachments,
       initialUpdatedAt: expense.updatedAt,
@@ -2000,6 +2226,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       ),
     );
     final category = (payload['category'] as String?) ?? '';
+    final date = payload['date'] is DateTime
+        ? payload['date'] as DateTime
+        : expense.date;
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
@@ -2024,6 +2253,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               .map((member) => _resolvePayerLabel(member, participants))
               .toSet()
         : participants.toSet();
+    final dateChanged =
+        date.toUtc().difference(expense.date.toUtc()).inMilliseconds.abs() >
+        1000;
     final fieldChanged =
         description != expense.description ||
         currency != expense.currency ||
@@ -2033,7 +2265,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         (amount - expense.amount).abs() > 0.000001 ||
         paidBy != originalPaidBy ||
         splitMode != originalSplitMode ||
-        !setEquals(splitWith.toSet(), originalSplitWith);
+        !setEquals(splitWith.toSet(), originalSplitWith) ||
+        dateChanged;
     if (!fieldChanged && !requiresExplicitAttachmentSave) {
       if (didInlineAttachmentUpload) {
         final locallyUpdated = GroupExpense(
@@ -2074,7 +2307,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         targetCurrencies: targetCurrencies,
         category: category,
         attachments: attachments,
-        date: expense.date,
+        date: date,
       );
       _replaceExpenseInList(updatedExpense);
       if (!mounted) return;

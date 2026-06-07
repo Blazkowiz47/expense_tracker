@@ -1,4 +1,7 @@
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
+import 'package:expense_tracker/features/auth/models/auth_user.dart';
+import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
@@ -7,7 +10,9 @@ import 'package:expense_tracker/features/groups/repositories/api_groups_reposito
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
+import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -89,6 +94,35 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
   }
 }
 
+class _FakeAuthRepository implements AuthRepository {
+  @override
+  Stream<AuthUser?> authStateChanges() => Stream<AuthUser?>.value(
+    const AuthUser(
+      uid: 'member-1',
+      email: 'nisha@example.com',
+      displayName: 'Nisha',
+    ),
+  );
+
+  @override
+  Future<void> login({required String email, required String password}) async {}
+
+  @override
+  Future<void> register({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {}
+
+  @override
+  Future<void> signOut() async {}
+}
+
+class _FakeUserProfileRepository extends UserProfileRepository {
+  @override
+  Future<void> ensureUserDocument(AuthUser user) async {}
+}
+
 void main() {
   const splitGroup = GroupSummary(
     id: 'split-1',
@@ -136,5 +170,36 @@ void main() {
     expect(find.text('Trip to Goa'), findsNothing);
     expect(find.textContaining('Wife'), findsOneWidget);
     expect(find.text('Groceries'), findsWidgets);
+  });
+
+  testWidgets('group expense dialog offers bill scan and purchase date', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: GroupDetailsPage(
+            group: familyGroup,
+            repository: _FakeGroupsRepository([familyGroup]),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add expense'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add group expense'), findsOneWidget);
+    expect(find.text('Scan bill'), findsOneWidget);
+    expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
+    expect(find.text('Monthly category'), findsOneWidget);
   });
 }

@@ -460,9 +460,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       _QuickAction(
         label: 'Scan bill',
         icon: Icons.document_scanner_outlined,
-        onTap: () => _runAction(
-          () => _openAddExpense(initialBillUpload: true, forcePersonal: true),
-        ),
+        onTap: () => _runAction(() => _openAddExpense(initialBillUpload: true)),
       ),
       _QuickAction(
         label: 'Recurring',
