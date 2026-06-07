@@ -12,15 +12,20 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
   _FakeRecurringRepository({
     List<RecurringTemplate>? templates,
     List<RecurringOccurrence>? occurrences,
+    this.failPause = false,
+    this.failConfirm = false,
   }) : _templates = List<RecurringTemplate>.of(templates ?? const []),
        _occurrences = List<RecurringOccurrence>.of(
          occurrences ?? [_defaultOccurrence()],
        ),
        super(client: MockClient((_) async => http.Response('{}', 200)));
 
+  final bool failPause;
+  final bool failConfirm;
   var _templates = <RecurringTemplate>[];
   final List<RecurringOccurrence> _occurrences;
   int fetchTemplateCount = 0;
+  String? confirmedOccurrenceId;
   String? updatedTemplateId;
   String? pausedTemplateId;
   String? resumedTemplateId;
@@ -93,6 +98,9 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
   @override
   Future<RecurringTemplate> pauseTemplate(String id) async {
     pausedTemplateId = id;
+    if (failPause) {
+      throw Exception('stale rule');
+    }
     return _setActive(id, false);
   }
 
@@ -106,6 +114,33 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
   Future<void> deleteTemplate(String id) async {
     deletedTemplateId = id;
     _templates = _templates.where((item) => item.id != id).toList();
+  }
+
+  @override
+  Future<RecurringOccurrence> confirmOccurrence({
+    required String occurrenceId,
+    required double actualAmount,
+    required DateTime actualDate,
+  }) async {
+    confirmedOccurrenceId = occurrenceId;
+    if (failConfirm) {
+      throw Exception('stale occurrence');
+    }
+    final existing = _occurrences.firstWhere((item) => item.id == occurrenceId);
+    return RecurringOccurrence(
+      id: existing.id,
+      templateId: existing.templateId,
+      period: existing.period,
+      kind: existing.kind,
+      title: existing.title,
+      category: existing.category,
+      currency: existing.currency,
+      expectedAmount: existing.expectedAmount,
+      actualAmount: actualAmount,
+      dueDate: existing.dueDate,
+      actualDate: actualDate,
+      status: 'confirmed',
+    );
   }
 
   RecurringTemplate _setActive(String id, bool active) {
@@ -270,6 +305,61 @@ void main() {
     expect(repository.deletedTemplateId, 'template-rent');
     expect(find.text('No rules saved'), findsOneWidget);
   });
+
+  testWidgets('shows an error and refreshes when pausing a stale rule fails', (
+    tester,
+  ) async {
+    final repository = _FakeRecurringRepository(
+      templates: [_template()],
+      occurrences: const [],
+      failPause: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: RecurringPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Rule actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pause'));
+    await tester.pumpAndSettle();
+
+    expect(repository.pausedTemplateId, 'template-rent');
+    expect(repository.fetchTemplateCount, greaterThan(1));
+    expect(
+      find.text('Could not pause this recurring rule. Refreshed latest data.'),
+      findsOneWidget,
+    );
+    expect(find.text('Active'), findsOneWidget);
+  });
+
+  testWidgets(
+    'shows an error and refreshes when confirming stale occurrence fails',
+    (tester) async {
+      final repository = _FakeRecurringRepository(failConfirm: true);
+
+      await tester.pumpWidget(
+        MaterialApp(home: RecurringPage(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(repository.confirmedOccurrenceId, 'occ-rent');
+      expect(repository.fetchTemplateCount, greaterThan(1));
+      expect(
+        find.text(
+          'Could not confirm this recurring item. Refreshed latest data.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Confirm'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'auto-refresh skips recurring reload when freshness is unchanged',

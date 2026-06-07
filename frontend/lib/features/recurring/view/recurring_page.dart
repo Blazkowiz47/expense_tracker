@@ -159,26 +159,24 @@ class _RecurringPageState extends State<RecurringPage> {
       builder: (context) => const _CreateRecurringDialog(),
     );
     if (draft == null) return;
-    setState(() => _saving = true);
-    try {
-      final now = DateTime.now();
-      final startDay = math.min(draft.dayOfMonth, _lastDayOfMonth(now));
-      await _repository.createTemplate(
-        title: draft.title,
-        kind: draft.kind,
-        amount: draft.amount,
-        category: draft.category,
-        currency: draft.currency,
-        frequency: draft.frequency,
-        dayOfMonth: draft.dayOfMonth,
-        startDate: DateTime(now.year, now.month, startDay),
-      );
-      await _load();
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
+    await _runRecurringAction(
+      failureMessage:
+          'Could not save this recurring rule. Refreshed latest data.',
+      action: () async {
+        final now = DateTime.now();
+        final startDay = math.min(draft.dayOfMonth, _lastDayOfMonth(now));
+        await _repository.createTemplate(
+          title: draft.title,
+          kind: draft.kind,
+          amount: draft.amount,
+          category: draft.category,
+          currency: draft.currency,
+          frequency: draft.frequency,
+          dayOfMonth: draft.dayOfMonth,
+          startDate: DateTime(now.year, now.month, startDay),
+        );
+      },
+    );
   }
 
   Future<void> _showEditDialog(RecurringTemplate template) async {
@@ -187,41 +185,38 @@ class _RecurringPageState extends State<RecurringPage> {
       builder: (context) => _CreateRecurringDialog(template: template),
     );
     if (draft == null) return;
-    setState(() => _saving = true);
-    try {
-      await _repository.updateTemplate(
-        id: template.id,
-        title: draft.title,
-        kind: draft.kind,
-        amount: draft.amount,
-        category: draft.category,
-        currency: draft.currency,
-        frequency: draft.frequency,
-        dayOfMonth: draft.dayOfMonth,
-        startDate: template.startDate,
-      );
-      await _load();
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
+    await _runRecurringAction(
+      failureMessage:
+          'Could not update this recurring rule. Refreshed latest data.',
+      action: () async {
+        await _repository.updateTemplate(
+          id: template.id,
+          title: draft.title,
+          kind: draft.kind,
+          amount: draft.amount,
+          category: draft.category,
+          currency: draft.currency,
+          frequency: draft.frequency,
+          dayOfMonth: draft.dayOfMonth,
+          startDate: template.startDate,
+        );
+      },
+    );
   }
 
   Future<void> _toggleTemplateActive(RecurringTemplate template) async {
-    setState(() => _saving = true);
-    try {
-      if (template.active) {
-        await _repository.pauseTemplate(template.id);
-      } else {
-        await _repository.resumeTemplate(template.id);
-      }
-      await _load();
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
+    await _runRecurringAction(
+      failureMessage: template.active
+          ? 'Could not pause this recurring rule. Refreshed latest data.'
+          : 'Could not resume this recurring rule. Refreshed latest data.',
+      action: () async {
+        if (template.active) {
+          await _repository.pauseTemplate(template.id);
+        } else {
+          await _repository.resumeTemplate(template.id);
+        }
+      },
+    );
   }
 
   Future<void> _deleteTemplate(RecurringTemplate template) async {
@@ -245,15 +240,13 @@ class _RecurringPageState extends State<RecurringPage> {
       ),
     );
     if (confirmed != true) return;
-    setState(() => _saving = true);
-    try {
-      await _repository.deleteTemplate(template.id);
-      await _load();
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
+    await _runRecurringAction(
+      failureMessage:
+          'Could not delete this recurring rule. Refreshed latest data.',
+      action: () async {
+        await _repository.deleteTemplate(template.id);
+      },
+    );
   }
 
   Future<void> _confirmOccurrence(RecurringOccurrence occurrence) async {
@@ -262,14 +255,34 @@ class _RecurringPageState extends State<RecurringPage> {
       builder: (context) => _ConfirmActualDialog(occurrence: occurrence),
     );
     if (amount == null) return;
+    await _runRecurringAction(
+      failureMessage:
+          'Could not confirm this recurring item. Refreshed latest data.',
+      action: () async {
+        await _repository.confirmOccurrence(
+          occurrenceId: occurrence.id,
+          actualAmount: amount,
+          actualDate: DateTime.now(),
+        );
+      },
+    );
+  }
+
+  Future<void> _runRecurringAction({
+    required Future<void> Function() action,
+    required String failureMessage,
+  }) async {
     setState(() => _saving = true);
     try {
-      await _repository.confirmOccurrence(
-        occurrenceId: occurrence.id,
-        actualAmount: amount,
-        actualDate: DateTime.now(),
-      );
+      await action();
       await _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failureMessage)));
+        await _load(showLoading: false);
+      }
     } finally {
       if (mounted) {
         setState(() => _saving = false);
