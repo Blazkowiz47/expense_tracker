@@ -533,10 +533,20 @@ def test_dashboard_includes_daily_action_items(tmp_path):
     dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
     assert dashboard.status_code == 200, dashboard.text
     actions = dashboard.json()["actionItems"]
-    assert any(item["destination"] == "recurring" and "Confirm Rent" in item["title"] for item in actions)
+    assert any(
+        item["destination"] == "recurring"
+        and item["actionType"] == "confirm_recurring"
+        and item["occurrenceId"]
+        and "Confirm Rent" in item["title"]
+        for item in actions
+    )
     assert any(item["destination"] == "family" and item["severity"] == "critical" for item in actions)
     assert any(
-        item["destination"] == "family" and item["title"].startswith("Attach receipt")
+        item["destination"] == "family"
+        and item["actionType"] == "attach_group_receipt"
+        and item["groupId"] == group_id
+        and item["expenseId"] == expense.json()["id"]
+        and item["title"].startswith("Attach receipt")
         for item in actions
     )
 
@@ -570,6 +580,8 @@ def test_dashboard_includes_prior_month_overdue_recurring_action(tmp_path):
     actions = dashboard.json()["actionItems"]
     assert any(
         item["destination"] == "recurring"
+        and item["actionType"] == "confirm_recurring"
+        and item["occurrenceId"] == "old-insurance"
         and item["title"] == "Confirm Insurance"
         and item["subtitle"].startswith("Overdue")
         for item in actions
@@ -619,7 +631,10 @@ def test_dashboard_group_action_skips_settled_group_items(tmp_path):
     assert dashboard.status_code == 200, dashboard.text
     actions = dashboard.json()["actionItems"]
     assert any(
-        item["destination"] == "groups" and item["title"] == "Review Weekend Trip balance"
+        item["destination"] == "groups"
+        and item["actionType"] == "review_group_balance"
+        and item["groupId"] == unsettled.json()["id"]
+        and item["title"] == "Review Weekend Trip balance"
         for item in actions
     )
 

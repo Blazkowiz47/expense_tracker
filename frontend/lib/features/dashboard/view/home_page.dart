@@ -12,6 +12,7 @@ class HomePage extends StatefulWidget {
     this.onOpenGroups,
     this.onOpenFamily,
     this.onOpenRecurring,
+    this.onOpenAction,
     this.autoRefresh = false,
     super.key,
   });
@@ -20,6 +21,7 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onOpenGroups;
   final VoidCallback? onOpenFamily;
   final VoidCallback? onOpenRecurring;
+  final void Function(DailyActionItem item)? onOpenAction;
   final bool autoRefresh;
 
   @override
@@ -70,6 +72,7 @@ class _HomePageState extends State<HomePage> {
           onOpenGroups: widget.onOpenGroups,
           onOpenFamily: widget.onOpenFamily,
           onOpenRecurring: widget.onOpenRecurring,
+          onOpenAction: widget.onOpenAction,
         ),
         const SizedBox(height: 16),
         Row(
@@ -114,6 +117,7 @@ class _DailyActionCenterCard extends StatelessWidget {
     this.onOpenGroups,
     this.onOpenFamily,
     this.onOpenRecurring,
+    this.onOpenAction,
   });
 
   final List<DailyActionItem> items;
@@ -121,6 +125,7 @@ class _DailyActionCenterCard extends StatelessWidget {
   final VoidCallback? onOpenGroups;
   final VoidCallback? onOpenFamily;
   final VoidCallback? onOpenRecurring;
+  final void Function(DailyActionItem item)? onOpenAction;
 
   @override
   Widget build(BuildContext context) {
@@ -155,18 +160,18 @@ class _DailyActionCenterCard extends StatelessWidget {
             )
           else
             ...items.take(5).map((item) {
-              return _DailyActionTile(
-                item: item,
-                onTap: _tapFor(item.destination),
-              );
+              return _DailyActionTile(item: item, onTap: _tapFor(item));
             }),
         ],
       ),
     );
   }
 
-  VoidCallback? _tapFor(String destination) {
-    switch (destination) {
+  VoidCallback? _tapFor(DailyActionItem item) {
+    if (onOpenAction != null) {
+      return () => onOpenAction!(item);
+    }
+    switch (item.destination) {
       case 'friends':
         return onOpenFriends;
       case 'groups':

@@ -107,12 +107,26 @@ class DailyActionItem extends Equatable {
     required this.subtitle,
     required this.severity,
     required this.destination,
+    this.actionType = '',
+    this.occurrenceId = '',
+    this.groupId = '',
+    this.expenseId = '',
+    this.friendUid = '',
+    this.memberUid = '',
+    this.category = '',
   });
 
   final String title;
   final String subtitle;
   final String severity;
   final String destination;
+  final String actionType;
+  final String occurrenceId;
+  final String groupId;
+  final String expenseId;
+  final String friendUid;
+  final String memberUid;
+  final String category;
 
   factory DailyActionItem.fromJson(Map<String, dynamic> json) {
     return DailyActionItem(
@@ -120,11 +134,30 @@ class DailyActionItem extends Equatable {
       subtitle: (json['subtitle'] ?? '').toString(),
       severity: (json['severity'] ?? 'info').toString(),
       destination: (json['destination'] ?? 'activity').toString(),
+      actionType: (json['actionType'] ?? '').toString(),
+      occurrenceId: (json['occurrenceId'] ?? '').toString(),
+      groupId: (json['groupId'] ?? '').toString(),
+      expenseId: (json['expenseId'] ?? '').toString(),
+      friendUid: (json['friendUid'] ?? '').toString(),
+      memberUid: (json['memberUid'] ?? '').toString(),
+      category: (json['category'] ?? '').toString(),
     );
   }
 
   @override
-  List<Object?> get props => [title, subtitle, severity, destination];
+  List<Object?> get props => [
+    title,
+    subtitle,
+    severity,
+    destination,
+    actionType,
+    occurrenceId,
+    groupId,
+    expenseId,
+    friendUid,
+    memberUid,
+    category,
+  ];
 }
 
 class ActivityItem extends Equatable {

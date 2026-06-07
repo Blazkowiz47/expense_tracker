@@ -45,6 +45,35 @@ void main() {
     await tester.pump();
     expect(familyOpened, isTrue);
   });
+
+  testWidgets('home page forwards structured daily action item', (
+    tester,
+  ) async {
+    final cubit = DashboardSnapshotCubit(
+      repository: const _ActionSnapshotRepository(),
+    );
+    await cubit.load();
+    addTearDown(cubit.close);
+    DailyActionItem? openedAction;
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(onOpenAction: (item) => openedAction = item),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Confirm rent'));
+    await tester.pump();
+
+    expect(openedAction?.actionType, 'confirm_recurring');
+    expect(openedAction?.occurrenceId, 'occ-rent');
+  });
 }
 
 class _ActionSnapshotRepository implements DashboardSnapshotRepository {
@@ -64,6 +93,8 @@ class _ActionSnapshotRepository implements DashboardSnapshotRepository {
           subtitle: 'Due today - INR 12000.00',
           severity: 'info',
           destination: 'recurring',
+          actionType: 'confirm_recurring',
+          occurrenceId: 'occ-rent',
         ),
         DailyActionItem(
           title: 'Groceries is over budget',

@@ -9,6 +9,7 @@ import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/account/view/account_page.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
+import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/dashboard/view/home_page.dart';
@@ -16,6 +17,8 @@ import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
+import 'package:expense_tracker/features/groups/models/group_summary.dart';
+import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
 import 'package:flutter/cupertino.dart';
@@ -37,6 +40,7 @@ class _HomeShellPageState extends State<HomeShellPage>
     with SingleTickerProviderStateMixin {
   late int _selectedIndex;
   http.Client? _httpClient;
+  late final http.Client _actionHttpClient;
   late final bool _ownsHttpClient;
   late final DashboardSnapshotCubit _dashboardCubit;
   late final AnimationController _actionMenuController;
@@ -77,6 +81,7 @@ class _HomeShellPageState extends State<HomeShellPage>
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    _actionHttpClient = http.Client();
     _ownsHttpClient = widget.repository == null;
     final repository = widget.repository ?? _buildApiRepository();
     _dashboardCubit = DashboardSnapshotCubit(repository: repository)..load();
@@ -104,6 +109,7 @@ class _HomeShellPageState extends State<HomeShellPage>
     if (_ownsHttpClient) {
       _httpClient?.close();
     }
+    _actionHttpClient.close();
     super.dispose();
   }
 
@@ -244,10 +250,93 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
-  void _openRecurringPage() {
+  void _openRecurringPage({
+    String? initialOccurrenceId,
+    bool openConfirmOnLaunch = false,
+  }) {
     Navigator.of(context).push<void>(
-      platformPageRoute(builder: (_) => const RecurringPage(autoRefresh: true)),
+      platformPageRoute(
+        builder: (_) => RecurringPage(
+          autoRefresh: true,
+          initialOccurrenceId: initialOccurrenceId,
+          openConfirmOnLaunch: openConfirmOnLaunch,
+        ),
+      ),
     );
+  }
+
+  void _openGroupExpenseAction(DailyActionItem item) {
+    final groupId = item.groupId.trim();
+    final expenseId = item.expenseId.trim();
+    if (groupId.isEmpty || expenseId.isEmpty) {
+      _openDashboardActionDestination(item.destination);
+      return;
+    }
+    final groupName = item.subtitle.trim().isNotEmpty
+        ? item.subtitle.trim()
+        : 'Group';
+    final group = GroupSummary(
+      id: groupId,
+      name: groupName,
+      groupType: item.destination == 'family'
+          ? GroupType.family
+          : GroupType.split,
+      memberCount: 0,
+    );
+    Navigator.of(context)
+        .push<bool>(
+          platformPageRoute(
+            builder: (_) => GroupDetailsPage(
+              group: group,
+              repository: ApiGroupsRepository(client: _actionHttpClient),
+              initialExpenseId: expenseId,
+              autoRefresh: true,
+            ),
+          ),
+        )
+        .then((changed) {
+          if (changed == true && mounted) {
+            _dashboardCubit.load(showLoading: false);
+          }
+        });
+  }
+
+  void _openDashboardAction(DailyActionItem item) {
+    switch (item.actionType) {
+      case 'confirm_recurring':
+        final occurrenceId = item.occurrenceId.trim();
+        if (occurrenceId.isNotEmpty) {
+          _openRecurringPage(
+            initialOccurrenceId: occurrenceId,
+            openConfirmOnLaunch: true,
+          );
+          return;
+        }
+        break;
+      case 'attach_group_receipt':
+        _openGroupExpenseAction(item);
+        return;
+    }
+    _openDashboardActionDestination(item.destination);
+  }
+
+  void _openDashboardActionDestination(String destination) {
+    switch (destination) {
+      case 'friends':
+        _openFriendsPage();
+        return;
+      case 'groups':
+        _openSharedSpace(GroupType.split);
+        return;
+      case 'family':
+        _onDestinationSelected(1);
+        return;
+      case 'recurring':
+        _openRecurringPage();
+        return;
+      default:
+        _onDestinationSelected(2);
+    }
   }
 
   Widget _pageForDestination(_ShellDestination destination, int index) {
@@ -259,6 +348,7 @@ class _HomeShellPageState extends State<HomeShellPage>
         onOpenGroups: () => _openSharedSpace(GroupType.split),
         onOpenFamily: () => _onDestinationSelected(1),
         onOpenRecurring: _openRecurringPage,
+        onOpenAction: _openDashboardAction,
       );
     }
     if (destination.label == 'Family') {

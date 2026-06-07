@@ -7,9 +7,17 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 class RecurringPage extends StatefulWidget {
-  const RecurringPage({this.repository, this.autoRefresh = false, super.key});
+  const RecurringPage({
+    this.repository,
+    this.initialOccurrenceId,
+    this.openConfirmOnLaunch = false,
+    this.autoRefresh = false,
+    super.key,
+  });
 
   final ApiRecurringRepository? repository;
+  final String? initialOccurrenceId;
+  final bool openConfirmOnLaunch;
   final bool autoRefresh;
 
   @override
@@ -23,6 +31,7 @@ class _RecurringPageState extends State<RecurringPage> {
   var _occurrences = <RecurringOccurrence>[];
   var _loading = true;
   var _saving = false;
+  var _didOpenInitialOccurrence = false;
   String? _error;
   late String _month;
 
@@ -62,6 +71,7 @@ class _RecurringPageState extends State<RecurringPage> {
         _occurrences = results[1] as List<RecurringOccurrence>;
         _loading = false;
       });
+      _openInitialOccurrenceAction();
     } catch (error) {
       if (!mounted) return;
       if (!showLoading && (_templates.isNotEmpty || _occurrences.isNotEmpty)) {
@@ -73,6 +83,25 @@ class _RecurringPageState extends State<RecurringPage> {
         _loading = false;
       });
     }
+  }
+
+  void _openInitialOccurrenceAction() {
+    if (_didOpenInitialOccurrence || !widget.openConfirmOnLaunch) return;
+    final occurrenceId = widget.initialOccurrenceId?.trim();
+    if (occurrenceId == null || occurrenceId.isEmpty) return;
+    RecurringOccurrence? target;
+    for (final occurrence in _occurrences) {
+      if (occurrence.id == occurrenceId) {
+        target = occurrence;
+        break;
+      }
+    }
+    if (target == null) return;
+    _didOpenInitialOccurrence = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _confirmOccurrence(target!);
+    });
   }
 
   Future<void> _showCreateDialog() async {

@@ -1638,6 +1638,8 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "subtitle": f"{due_label} - {format_currency_amount(currency, amount)}",
             "severity": "warning" if overdue else "info",
             "destination": "recurring",
+            "actionType": "confirm_recurring",
+            "occurrenceId": occurrence.get("id") or "",
         })
 
     plan = monthly_plan_out(db, uid, period)
@@ -1655,6 +1657,8 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "subtitle": f"{format_currency_amount(plan_currency, over_amount)} over this month",
             "severity": "critical",
             "destination": "family",
+            "actionType": "review_budget_category",
+            "category": category,
         })
 
     for item in friend_balance_items(db, uid)[:1]:
@@ -1664,6 +1668,8 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "subtitle": f"{item.get('subtitle') or 'balance'} - {item.get('amountText') or ''}".strip(" -"),
             "severity": "info",
             "destination": "friends",
+            "actionType": "settle_friend",
+            "friendUid": item.get("friendUid") or "",
         })
 
     for item in group_balance_items(db, uid):
@@ -1674,6 +1680,8 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "subtitle": f"{item.get('subtitle') or 'balance'} - {item.get('amountText') or ''}".strip(" -"),
             "severity": "info",
             "destination": "groups",
+            "actionType": "review_group_balance",
+            "groupId": item.get("groupId") or "",
         })
         break
 
@@ -1702,6 +1710,9 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
                 "subtitle": str(meta.get("name") or "Group"),
                 "severity": "info",
                 "destination": str(meta.get("destination") or "groups"),
+                "actionType": "attach_group_receipt",
+                "groupId": expense.get("groupId") or "",
+                "expenseId": expense.get("id") or "",
             })
             break
 
@@ -1754,6 +1765,7 @@ def friend_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "subtitle": "owes you" if amount > 0 else "you owe",
             "amountText": f"INR {abs(amount):.2f}",
             "positive": amount > 0,
+            "friendUid": friend_uid,
         })
     return items
 
@@ -1791,6 +1803,7 @@ def group_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
             subtitle = "mixed balances"
             positive = True
         items.append({
+            "groupId": group.get("id") or "",
             "title": group.get("name") or "Group",
             "subtitle": subtitle,
             "amountText": format_currency_amounts(non_zero),
