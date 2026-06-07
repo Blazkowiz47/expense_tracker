@@ -168,6 +168,8 @@ class ApiGroupsRepository {
     required String name,
     required GroupType groupType,
     List<String> members = const [],
+    String ownerRole = '',
+    Map<String, String> memberRolesByContact = const {},
   }) async {
     final response = await _request(
       method: 'POST',
@@ -176,6 +178,9 @@ class ApiGroupsRepository {
         'name': name,
         'groupType': groupType.name,
         'members': members,
+        if (ownerRole.trim().isNotEmpty) 'ownerRole': ownerRole.trim(),
+        if (memberRolesByContact.isNotEmpty)
+          'memberRolesByContact': memberRolesByContact,
       },
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;

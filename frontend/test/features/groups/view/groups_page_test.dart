@@ -136,6 +136,20 @@ void main() {
     groupType: GroupType.family,
     memberCount: 4,
   );
+  const pendingFamilyGroup = GroupSummary(
+    id: 'family-pending-1',
+    name: 'Rao household',
+    groupType: GroupType.family,
+    memberCount: 1,
+    pendingInviteCount: 1,
+    pendingInvites: [
+      GroupPendingInvite(
+        contact: 'nisha@example.com',
+        emailNormalized: 'nisha@example.com',
+        role: 'Wife',
+      ),
+    ],
+  );
 
   testWidgets('groups page shows only split groups', (tester) async {
     await tester.pumpWidget(
@@ -170,6 +184,25 @@ void main() {
     expect(find.text('Trip to Goa'), findsNothing);
     expect(find.textContaining('Wife'), findsOneWidget);
     expect(find.text('Groceries'), findsWidgets);
+  });
+
+  testWidgets('family page surfaces pending household invites', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FamilyPage(
+            repository: _FakeGroupsRepository([pendingFamilyGroup]),
+            monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rao household'), findsOneWidget);
+    expect(find.text('1 active · 1 pending'), findsOneWidget);
+    expect(find.text('Pending invites'), findsOneWidget);
+    expect(find.text('nisha@example.com · Wife'), findsOneWidget);
   });
 
   testWidgets('group expense dialog offers bill scan and purchase date', (

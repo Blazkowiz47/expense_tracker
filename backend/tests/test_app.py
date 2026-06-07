@@ -369,7 +369,7 @@ def test_family_roles_and_expenses_feed_monthly_plan(tmp_path):
     assert bob_groceries["actual"] == 220
 
 
-def test_group_create_rejects_unknown_initial_members(tmp_path):
+def test_group_create_rejects_uninvitable_initial_members(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client, "alice@example.com")
 
@@ -379,12 +379,12 @@ def test_group_create_rejects_unknown_initial_members(tmp_path):
         json={
             "name": "Our household",
             "groupType": "family",
-            "members": ["missing-spouse@example.com"],
+            "members": ["missing-phone-number"],
         },
     )
     assert created.status_code == 404, created.text
     assert created.json()["error"]["code"] == "MEMBER_NOT_FOUND"
-    assert "missing-spouse@example.com" in created.json()["error"]["message"]
+    assert "missing-phone-number" in created.json()["error"]["message"]
 
     groups = client.get("/api/v1/groups", headers=headers)
     assert groups.status_code == 200
@@ -693,6 +693,50 @@ def test_group_expense_normalizes_member_aliases_and_custom_split(tmp_path):
     balances = groups.json()["groups"][0]["displayData"]["memberBalances"]
     assert balances[alice_uid]["net"] == -90
     assert balances[bob_uid]["net"] == 90
+
+
+def test_pending_family_invite_auto_joins_when_member_registers(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={
+            "name": "Household",
+            "groupType": "family",
+            "members": ["bob@example.com"],
+            "ownerRole": "Husband",
+            "memberRolesByContact": {"bob@example.com": "Wife"},
+        },
+    )
+    assert group.status_code == 201, group.text
+    assert group.json()["memberCount"] == 1
+    assert group.json()["pendingInviteCount"] == 1
+    assert group.json()["pendingInvites"][0]["contact"] == "bob@example.com"
+    assert group.json()["pendingInvites"][0]["role"] == "Wife"
+    group_id = group.json()["id"]
+
+    headers_b = register(client, "bob@example.com")
+
+    bob_groups = client.get("/api/v1/groups", headers=headers_b)
+    assert bob_groups.status_code == 200, bob_groups.text
+    assert [item["id"] for item in bob_groups.json()["groups"]] == [group_id]
+    assert bob_groups.json()["groups"][0]["memberCount"] == 2
+    assert bob_groups.json()["groups"][0]["pendingInviteCount"] == 0
+
+    members = client.get(f"/api/v1/groups/{group_id}/members", headers=headers_b)
+    assert members.status_code == 200, members.text
+    roles_by_email = {
+        member["email"]: member["role"]
+        for member in members.json()["members"]
+    }
+    assert roles_by_email["alice@example.com"] == "Husband"
+    assert roles_by_email["bob@example.com"] == "Wife"
+
+    alice_groups = client.get("/api/v1/groups", headers=headers_a)
+    assert alice_groups.status_code == 200, alice_groups.text
+    assert alice_groups.json()["groups"][0]["pendingInviteCount"] == 0
 
 
 def test_sync_freshness_tracks_group_expense_tombstones(tmp_path):

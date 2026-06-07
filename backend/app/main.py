@@ -379,8 +379,9 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             ph.hash(str(body["password"])),
         )
         app.state.db.users.insert_one(user)
+        accepted_invites = accept_pending_group_invites(app.state.db, user)
         token = create_session(app.state.db, uid)
-        return {"token": token, "user": user_public(user)}
+        return {"token": token, "user": user_public(user), "acceptedGroupInvites": accepted_invites}
 
     @app.post("/api/v1/auth/login")
     def login(body: dict[str, Any]) -> dict[str, Any]:
@@ -649,16 +650,36 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     def create_group(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         require_json(body, "name")
         members = [user["uid"]]
+        member_roles = {user["uid"]: normalize_family_role(body.get("ownerRole") or "")}
+        pending_invites: list[dict[str, Any]] = []
+        pending_email_set: set[str] = set()
         unresolved_members: list[str] = []
         for contact in body.get("members") or []:
             raw_contact = str(contact).strip()
             if not raw_contact:
                 continue
             resolved = resolve_user(app.state.db, raw_contact)
+            role = group_member_role_for_contact(body, raw_contact, resolved.get("uid") if resolved else None)
             if resolved and resolved["uid"] not in members:
                 members.append(resolved["uid"])
+                if role:
+                    member_roles[resolved["uid"]] = role
             elif not resolved:
-                unresolved_members.append(raw_contact)
+                invite_email = normalize_pending_invite_email(raw_contact)
+                if invite_email:
+                    if invite_email not in pending_email_set:
+                        pending_email_set.add(invite_email)
+                        pending_invites.append(
+                            {
+                                "contact": raw_contact,
+                                "emailNormalized": invite_email,
+                                "role": role,
+                                "invitedBy": user["uid"],
+                                "createdAt": now(),
+                            }
+                        )
+                else:
+                    unresolved_members.append(raw_contact)
         if unresolved_members:
             raise HTTPException(
                 status_code=404,
@@ -671,7 +692,8 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "currencyCodes": [normalize_currency(body.get("currency") or body.get("defaultCurrency") or "INR")],
             "createdBy": user["uid"],
             "memberUids": members,
-            "memberRoles": {user["uid"]: normalize_family_role(body.get("ownerRole") or "")},
+            "memberRoles": member_roles,
+            "pendingInvites": pending_invites,
             "memberCount": len(members),
             "createdAt": now(),
             "updatedAt": now(),
@@ -959,6 +981,7 @@ def ensure_indexes(db: Any) -> None:
     db.friendship_tombstones.create_index([("uids", ASCENDING), ("deletedAt", ASCENDING)])
     db.friend_settlements.create_index([("uids", ASCENDING), ("createdAt", ASCENDING)])
     db.groups.create_index("memberUids")
+    db.groups.create_index("pendingInvites.emailNormalized")
     db.group_expenses.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
     db.group_expenses.create_index([("groupId", ASCENDING), ("updatedAt", ASCENDING)])
     db.group_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
@@ -1795,6 +1818,71 @@ def resolve_user(db: Any, email_or_phone: str) -> dict[str, Any] | None:
     return db.users.find_one({"phone": query})
 
 
+def normalize_pending_invite_email(contact: str) -> str | None:
+    email = contact.strip().lower()
+    if "@" not in email:
+        return None
+    return normalize_email(email)
+
+
+def group_member_role_for_contact(body: dict[str, Any], contact: str, uid: str | None = None) -> str:
+    raw_roles = body.get("memberRolesByContact") or body.get("memberRoles") or {}
+    if not isinstance(raw_roles, dict):
+        return ""
+    contact_key = contact.strip()
+    lower_key = contact_key.lower()
+    for key in [contact_key, lower_key, uid or ""]:
+        if key and key in raw_roles:
+            return normalize_family_role(raw_roles[key])
+    return ""
+
+
+def group_pending_invites(group: dict[str, Any]) -> list[dict[str, Any]]:
+    invites = []
+    for invite in group.get("pendingInvites") or []:
+        if not isinstance(invite, dict):
+            continue
+        contact = str(invite.get("contact") or invite.get("emailNormalized") or "").strip()
+        email = normalize_pending_invite_email(str(invite.get("emailNormalized") or contact))
+        if not contact or not email:
+            continue
+        invites.append(
+            {
+                "contact": contact,
+                "emailNormalized": email,
+                "role": normalize_family_role(invite.get("role") or ""),
+                "createdAt": invite.get("createdAt"),
+            }
+        )
+    return invites
+
+
+def accept_pending_group_invites(db: Any, user: dict[str, Any]) -> int:
+    email = normalize_email(str(user.get("emailNormalized") or user.get("email") or ""))
+    if not email:
+        return 0
+    accepted = 0
+    for group in list(db.groups.find({"pendingInvites.emailNormalized": email})):
+        pending = group_pending_invites(group)
+        accepted_invites = [invite for invite in pending if invite["emailNormalized"] == email]
+        if not accepted_invites:
+            continue
+        remaining_invites = [invite for invite in pending if invite["emailNormalized"] != email]
+        member_uids = list(dict.fromkeys([*(group.get("memberUids") or []), user["uid"]]))
+        role = next((invite["role"] for invite in accepted_invites if invite["role"]), "")
+        updates: dict[str, Any] = {
+            "memberUids": member_uids,
+            "memberCount": len(member_uids),
+            "pendingInvites": remaining_invites,
+            "updatedAt": now(),
+        }
+        if role:
+            updates[f"memberRoles.{user['uid']}"] = role
+        db.groups.update_one({"id": group["id"]}, {"$set": updates})
+        accepted += len(accepted_invites)
+    return accepted
+
+
 def require_group_member(db: Any, group_id: str, uid: str) -> dict[str, Any]:
     group = db.groups.find_one({"id": group_id})
     if not group:
@@ -1810,7 +1898,17 @@ def group_out(db: Any, group: dict[str, Any]) -> dict[str, Any]:
     users = list(db.users.find({"uid": {"$in": member_uids}}))
     currency_codes = group_currency_codes(group, expenses)
     display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes)
-    return json_ready({**group, "currencyCodes": currency_codes, "memberCount": len(group.get("memberUids", [])), "displayData": display_data})
+    pending_invites = group_pending_invites(group)
+    return json_ready(
+        {
+            **group,
+            "currencyCodes": currency_codes,
+            "memberCount": len(group.get("memberUids", [])),
+            "pendingInvites": pending_invites,
+            "pendingInviteCount": len(pending_invites),
+            "displayData": display_data,
+        }
+    )
 
 
 def group_member_aliases(member_uids: list[str], users: list[dict[str, Any]]) -> dict[str, str]:

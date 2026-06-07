@@ -228,6 +228,10 @@ class _FamilyPageState extends State<FamilyPage> {
         name: input.householdName,
         groupType: GroupType.family,
         members: input.spouseEmail.isEmpty ? const [] : [input.spouseEmail],
+        ownerRole: input.yourRole,
+        memberRolesByContact: input.spouseEmail.isEmpty
+            ? const {}
+            : {input.spouseEmail: input.spouseRole},
       );
       final members = await _repository.fetchMembers(created.id);
       for (final member in members) {
@@ -258,9 +262,12 @@ class _FamilyPageState extends State<FamilyPage> {
       setState(() => _monthlyPlanRefreshToken += 1);
       await _loadFamilies(showLoading: false);
       if (!mounted) return;
+      final setupMessage = created.pendingInviteCount > 0
+          ? 'Household set up. Invite pending for ${input.spouseEmail.trim()}.'
+          : 'Household set up.';
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Household set up.')));
+      ).showSnackBar(SnackBar(content: Text(setupMessage)));
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -483,6 +490,12 @@ class _FamilyPageState extends State<FamilyPage> {
           actionLabel: 'Manage',
           onAction: () => _openSelectedFamily(),
         ),
+        if (family.pendingInviteCount > 0) ...[
+          _PendingInvitesTile(
+            count: family.pendingInviteCount,
+            invites: family.pendingInvites,
+          ),
+        ],
         if (_loadingDetails && _members.isEmpty)
           const AppBalanceTile(
             title: 'Loading members...',
@@ -677,6 +690,34 @@ class _HouseholdSetupDialogState extends State<_HouseholdSetupDialog> {
   }
 }
 
+class _PendingInvitesTile extends StatelessWidget {
+  const _PendingInvitesTile({required this.count, required this.invites});
+
+  final int count;
+  final List<GroupPendingInvite> invites;
+
+  @override
+  Widget build(BuildContext context) {
+    final inviteLabels = invites
+        .map((invite) {
+          final role = invite.roleLabel;
+          return role == 'Member' ? invite.label : '${invite.label} · $role';
+        })
+        .where((label) => label.trim().isNotEmpty)
+        .toList(growable: false);
+    final subtitle = inviteLabels.isEmpty
+        ? '$count pending invite${count == 1 ? '' : 's'}'
+        : inviteLabels.join('\n');
+
+    return AppBalanceTile(
+      title: 'Pending invites',
+      subtitle: Text(subtitle),
+      leadingIcon: Icons.mark_email_unread_outlined,
+      trailing: Text('$count', style: Theme.of(context).textTheme.titleMedium),
+    );
+  }
+}
+
 class _HouseholdCard extends StatelessWidget {
   const _HouseholdCard({
     required this.family,
@@ -735,7 +776,9 @@ class _HouseholdCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$memberCount member${memberCount == 1 ? '' : 's'} · shared household',
+                      family.pendingInviteCount <= 0
+                          ? '$memberCount member${memberCount == 1 ? '' : 's'} · shared household'
+                          : '$memberCount active · ${family.pendingInviteCount} pending',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
