@@ -1989,24 +1989,46 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
     ensure_recurring_occurrences(db, uid, add_months(period, -1))
     ensure_recurring_occurrences(db, uid, period)
 
-    recurring_docs = db.recurring_occurrences.find({
+    recurring_docs = list(db.recurring_occurrences.find({
         "uid": uid,
         "status": {"$ne": "confirmed"},
         "dueDate": {"$lt": tomorrow_start},
-    }).sort("dueDate", ASCENDING).limit(3)
+    }).sort("dueDate", ASCENDING).limit(100))
+    recurring_groups: list[list[dict[str, Any]]] = []
+    recurring_group_indexes: dict[str, int] = {}
     for occurrence in recurring_docs:
+        key = str(occurrence.get("templateId") or occurrence.get("id") or "")
+        if not key or key not in recurring_group_indexes:
+            recurring_group_indexes[key] = len(recurring_groups)
+            recurring_groups.append([])
+        recurring_groups[recurring_group_indexes[key]].append(occurrence)
+
+    for group in recurring_groups[:3]:
+        occurrence = group[0]
         due_date = aware(occurrence.get("dueDate") or current)
         overdue = due_date < today_start
         amount = float(occurrence.get("expectedAmount") or 0)
         currency = safe_currency(occurrence.get("currency"), "INR") or "INR"
-        due_label = "Overdue" if overdue else "Due today"
+        overdue_count = sum(1 for item in group if aware(item.get("dueDate") or current) < today_start)
+        due_today_count = len(group) - overdue_count
+        if len(group) == 1:
+            due_label = "Overdue" if overdue else "Due today"
+            subtitle = f"{due_label} - {format_currency_amount(currency, amount)}"
+        elif overdue_count and due_today_count:
+            subtitle = f"{overdue_count} overdue, {due_today_count} due today - {format_currency_amount(currency, amount)} each"
+        elif overdue_count:
+            subtitle = f"{overdue_count} overdue - {format_currency_amount(currency, amount)} each"
+        else:
+            subtitle = f"{due_today_count} due today - {format_currency_amount(currency, amount)} each"
         items.append({
             "title": f"Confirm {occurrence.get('title') or 'recurring item'}",
-            "subtitle": f"{due_label} - {format_currency_amount(currency, amount)}",
-            "severity": "warning" if overdue else "info",
+            "subtitle": subtitle,
+            "severity": "warning" if overdue_count else "info",
             "destination": "recurring",
             "actionType": "confirm_recurring",
             "occurrenceId": occurrence.get("id") or "",
+            "occurrenceCount": len(group),
+            "templateId": occurrence.get("templateId") or "",
             "period": occurrence.get("period") or period,
         })
 

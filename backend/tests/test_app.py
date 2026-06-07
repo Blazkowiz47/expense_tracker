@@ -891,6 +891,44 @@ def test_dashboard_materializes_prior_month_weekly_overdue_actions(tmp_path):
     )
 
 
+def test_dashboard_collapses_daily_recurring_actions_by_template(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+    period = current_month()
+    today = now()
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Daily medicine",
+            "kind": "expense",
+            "amount": 25,
+            "currency": "INR",
+            "category": "Health",
+            "frequency": "daily",
+            "dayOfMonth": 1,
+            "startDate": f"{period}-01T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    medicine_actions = [
+        item
+        for item in dashboard.json()["actionItems"]
+        if item["actionType"] == "confirm_recurring" and item["title"] == "Confirm Daily medicine"
+    ]
+    assert len(medicine_actions) == 1
+    assert medicine_actions[0]["occurrenceCount"] == today.day
+    if today.day > 1:
+        assert "overdue" in medicine_actions[0]["subtitle"]
+        assert "each" in medicine_actions[0]["subtitle"]
+    else:
+        assert medicine_actions[0]["subtitle"].startswith("Due today")
+
+
 def test_dashboard_includes_daily_action_items(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")
