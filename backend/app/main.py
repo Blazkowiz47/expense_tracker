@@ -34,7 +34,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, DESCENDING, MongoClient
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -318,6 +318,29 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/v1/sync/freshness")
+    def sync_freshness(
+        since: str | None = None,
+        sections: str = "",
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        since_dt = parse_dt(since) if since else None
+        server_time = now()
+        section_names = parse_freshness_sections(sections)
+        return {
+            "serverTime": iso(server_time),
+            "sections": {
+                section: freshness_section_payload(
+                    app.state.db,
+                    user["uid"],
+                    section,
+                    since_dt,
+                    server_time,
+                )
+                for section in section_names
+            },
+        }
+
     @app.post("/api/v1/auth/register", status_code=201)
     def register(body: dict[str, Any]) -> dict[str, Any]:
         require_json(body, "email", "password")
@@ -420,6 +443,10 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
 
     @app.delete("/api/v1/expenses/{expense_id}", status_code=204)
     def delete_expense(expense_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        existing = app.state.db.expenses.find_one({"id": expense_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
+        record_expense_tombstone(app.state.db, existing, user["uid"])
         result = app.state.db.expenses.delete_one({"id": expense_id, "uid": user["uid"]})
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
@@ -584,6 +611,9 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         target = resolve_user(app.state.db, str(body.get("emailOrPhone") or ""))
         if target:
             pair = sorted([user["uid"], target["uid"]])
+            existing = app.state.db.friendships.find_one({"key": "_".join(pair)})
+            if existing:
+                record_friendship_tombstone(app.state.db, existing, user["uid"])
             app.state.db.friendships.delete_one({"key": "_".join(pair)})
         return {"removed": True}
 
@@ -632,7 +662,18 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         parts = [part for part in path.split("/") if part]
         if parts == ["leave"] and request.method == "POST":
             members = [uid for uid in group["memberUids"] if uid != user["uid"]]
+            record_group_tombstone(
+                app.state.db,
+                group,
+                user["uid"],
+                "deleted" if not members else "left",
+            )
             if not members:
+                record_group_expense_tombstones_for_group(
+                    app.state.db,
+                    group,
+                    user["uid"],
+                )
                 app.state.db.groups.delete_one({"id": group_id})
                 app.state.db.group_expenses.delete_many({"groupId": group_id})
                 return {"left": True, "deleted": True}
@@ -685,6 +726,9 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             touch_group(app.state.db, group_id)
             return group_expense_out(updated)
         if len(parts) == 2 and parts[0] == "expenses" and request.method == "DELETE":
+            existing = app.state.db.group_expenses.find_one({"groupId": group_id, "id": parts[1]})
+            if existing:
+                record_group_expense_tombstone(app.state.db, group, existing, user["uid"])
             app.state.db.group_expenses.delete_one({"groupId": group_id, "id": parts[1]})
             touch_group(app.state.db, group_id)
             return Response(status_code=204)
@@ -884,14 +928,23 @@ def ensure_indexes(db: Any) -> None:
     db.sessions.create_index("tokenHash", unique=True)
     db.sessions.create_index("expiresAt")
     db.expenses.create_index([("uid", ASCENDING), ("date", ASCENDING)])
+    db.expenses.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
+    db.expense_tombstones.create_index([("uid", ASCENDING), ("deletedAt", ASCENDING)])
     db.monthly_plans.create_index([("uid", ASCENDING), ("month", ASCENDING)], unique=True)
     db.friendships.create_index("key", unique=True)
+    db.friendships.create_index([("uids", ASCENDING), ("updatedAt", ASCENDING)])
+    db.friendship_tombstones.create_index([("uids", ASCENDING), ("deletedAt", ASCENDING)])
     db.friend_settlements.create_index([("uids", ASCENDING), ("createdAt", ASCENDING)])
     db.groups.create_index("memberUids")
     db.group_expenses.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
+    db.group_expenses.create_index([("groupId", ASCENDING), ("updatedAt", ASCENDING)])
+    db.group_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
+    db.group_expense_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
     db.recurring_templates.create_index([("uid", ASCENDING), ("active", ASCENDING)])
+    db.recurring_templates.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.recurring_occurrences.create_index([("uid", ASCENDING), ("period", ASCENDING)])
+    db.recurring_occurrences.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.recurring_occurrences.create_index([("uid", ASCENDING), ("templateId", ASCENDING), ("period", ASCENDING)], unique=True)
 
 
@@ -914,6 +967,244 @@ def create_session(db: Any, uid: str) -> str:
     token = secrets.token_urlsafe(32)
     db.sessions.insert_one({"uid": uid, "tokenHash": token_hash(token), "createdAt": now(), "expiresAt": now() + timedelta(days=30)})
     return token
+
+
+FRESHNESS_SECTIONS = {"dashboard", "groups", "friends", "recurring", "activity"}
+
+
+def parse_freshness_sections(raw: str) -> list[str]:
+    requested = [
+        section.strip().lower()
+        for section in raw.split(",")
+        if section.strip()
+    ]
+    if not requested:
+        return ["dashboard", "groups", "friends", "recurring", "activity"]
+    sections = [section for section in requested if section in FRESHNESS_SECTIONS]
+    if not sections:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("INVALID_ARGUMENT", "sections must include a known freshness section"),
+        )
+    return sections
+
+
+def max_time(*values: datetime | None) -> datetime | None:
+    latest: datetime | None = None
+    for value in values:
+        if value is None:
+            continue
+        candidate = aware(value)
+        if latest is None or candidate > latest:
+            latest = candidate
+    return latest
+
+
+def latest_collection_time(
+    db: Any,
+    collection_name: str,
+    filters: dict[str, Any],
+    field: str,
+) -> datetime | None:
+    doc = db[collection_name].find_one(filters, sort=[(field, DESCENDING)])
+    value = doc.get(field) if doc else None
+    return aware(value) if isinstance(value, datetime) else None
+
+
+def user_group_ids(db: Any, uid: str) -> list[str]:
+    return [
+        doc["id"]
+        for doc in db.groups.find({"memberUids": uid}, {"id": 1})
+        if doc.get("id")
+    ]
+
+
+def personal_expense_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(
+        latest_collection_time(db, "expenses", {"uid": uid}, "updatedAt"),
+        latest_collection_time(db, "expense_tombstones", {"uid": uid}, "deletedAt"),
+    )
+
+
+def group_freshness(db: Any, uid: str) -> datetime | None:
+    group_ids = user_group_ids(db, uid)
+    expense_latest = None
+    if group_ids:
+        expense_latest = latest_collection_time(
+            db,
+            "group_expenses",
+            {"groupId": {"$in": group_ids}},
+            "updatedAt",
+        )
+    return max_time(
+        latest_collection_time(db, "groups", {"memberUids": uid}, "updatedAt"),
+        expense_latest,
+        latest_collection_time(db, "group_tombstones", {"memberUids": uid}, "deletedAt"),
+        latest_collection_time(db, "group_expense_tombstones", {"memberUids": uid}, "deletedAt"),
+    )
+
+
+def friends_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(
+        latest_collection_time(db, "friendships", {"uids": uid}, "updatedAt"),
+        latest_collection_time(db, "friendship_tombstones", {"uids": uid}, "deletedAt"),
+        latest_collection_time(db, "friend_settlements", {"uids": uid}, "createdAt"),
+    )
+
+
+def recurring_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(
+        latest_collection_time(db, "recurring_templates", {"uid": uid}, "updatedAt"),
+        latest_collection_time(db, "recurring_occurrences", {"uid": uid}, "updatedAt"),
+    )
+
+
+def activity_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(personal_expense_freshness(db, uid), group_freshness(db, uid))
+
+
+def dashboard_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(
+        latest_collection_time(db, "users", {"uid": uid}, "updatedAt"),
+        personal_expense_freshness(db, uid),
+        group_freshness(db, uid),
+        friends_freshness(db, uid),
+        recurring_freshness(db, uid),
+    )
+
+
+def section_latest_time(db: Any, uid: str, section: str) -> datetime | None:
+    if section == "dashboard":
+        return dashboard_freshness(db, uid)
+    if section == "groups":
+        return group_freshness(db, uid)
+    if section == "friends":
+        return friends_freshness(db, uid)
+    if section == "recurring":
+        return recurring_freshness(db, uid)
+    if section == "activity":
+        return activity_freshness(db, uid)
+    return None
+
+
+def tombstone_since_filter(field: str, since: datetime | None) -> dict[str, Any]:
+    return {} if since is None else {field: {"$gt": since}}
+
+
+def activity_tombstones_since(db: Any, uid: str, since: datetime | None) -> dict[str, Any]:
+    personal_deleted = [
+        doc.get("expenseId")
+        for doc in db.expense_tombstones.find(
+            {"uid": uid, **tombstone_since_filter("deletedAt", since)}
+        )
+        if doc.get("expenseId")
+    ]
+    group_deleted = [
+        {
+            "groupId": doc.get("groupId"),
+            "expenseId": doc.get("expenseId"),
+        }
+        for doc in db.group_expense_tombstones.find(
+            {"memberUids": uid, **tombstone_since_filter("deletedAt", since)}
+        )
+        if doc.get("groupId") and doc.get("expenseId")
+    ]
+    return {"personalDeletedIds": personal_deleted, "groupDeleted": group_deleted}
+
+
+def group_tombstones_since(db: Any, uid: str, since: datetime | None) -> dict[str, Any]:
+    deleted_group_ids = [
+        doc.get("groupId")
+        for doc in db.group_tombstones.find(
+            {"memberUids": uid, **tombstone_since_filter("deletedAt", since)}
+        )
+        if doc.get("groupId")
+    ]
+    return {"deletedGroupIds": deleted_group_ids}
+
+
+def freshness_section_payload(
+    db: Any,
+    uid: str,
+    section: str,
+    since: datetime | None,
+    server_time: datetime,
+) -> dict[str, Any]:
+    latest = section_latest_time(db, uid, section)
+    changed = since is None or (latest is not None and latest > since)
+    payload: dict[str, Any] = {
+        "changed": changed,
+        "watermark": iso(latest or server_time),
+    }
+    if section == "activity":
+        payload.update(activity_tombstones_since(db, uid, since))
+    if section == "groups":
+        payload.update(group_tombstones_since(db, uid, since))
+    return payload
+
+
+def record_expense_tombstone(db: Any, expense: dict[str, Any], deleted_by: str) -> None:
+    db.expense_tombstones.insert_one(
+        {
+            "id": uuid.uuid4().hex,
+            "uid": expense.get("uid"),
+            "expenseId": expense.get("id"),
+            "deletedBy": deleted_by,
+            "deletedAt": now(),
+        }
+    )
+
+
+def record_group_tombstone(db: Any, group: dict[str, Any], deleted_by: str, reason: str) -> None:
+    db.group_tombstones.insert_one(
+        {
+            "id": uuid.uuid4().hex,
+            "groupId": group.get("id"),
+            "memberUids": list(group.get("memberUids") or []),
+            "reason": reason,
+            "deletedBy": deleted_by,
+            "deletedAt": now(),
+        }
+    )
+
+
+def record_group_expense_tombstone(
+    db: Any,
+    group: dict[str, Any],
+    expense: dict[str, Any],
+    deleted_by: str,
+) -> None:
+    db.group_expense_tombstones.insert_one(
+        {
+            "id": uuid.uuid4().hex,
+            "groupId": group.get("id"),
+            "expenseId": expense.get("id"),
+            "memberUids": list(group.get("memberUids") or []),
+            "deletedBy": deleted_by,
+            "deletedAt": now(),
+        }
+    )
+
+
+def record_group_expense_tombstones_for_group(
+    db: Any,
+    group: dict[str, Any],
+    deleted_by: str,
+) -> None:
+    for expense in db.group_expenses.find({"groupId": group.get("id")}):
+        record_group_expense_tombstone(db, group, expense, deleted_by)
+
+
+def record_friendship_tombstone(db: Any, friendship: dict[str, Any], deleted_by: str) -> None:
+    db.friendship_tombstones.insert_one(
+        {
+            "id": uuid.uuid4().hex,
+            "key": friendship.get("key"),
+            "uids": list(friendship.get("uids") or []),
+            "deletedBy": deleted_by,
+            "deletedAt": now(),
+        }
+    )
 
 
 def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None, created_at: datetime | None = None) -> dict[str, Any]:

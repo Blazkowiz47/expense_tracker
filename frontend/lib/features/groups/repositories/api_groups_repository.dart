@@ -90,6 +90,23 @@ class ApiGroupsRepository {
     return cached.map(GroupExpense.fromJson).toList(growable: false);
   }
 
+  Future<void> removeCachedExpenseIds(
+    String groupId,
+    Iterable<String> expenseIds,
+  ) async {
+    final ids = expenseIds.toSet();
+    if (ids.isEmpty) return;
+    final cacheKey = await _scopedCacheKey(_expensesKey(groupId));
+    final cached = await _readListCache(cacheKey);
+    if (cached.isEmpty) return;
+    await _saveListCache(
+      cacheKey,
+      cached
+          .where((item) => !ids.contains(item['id']?.toString() ?? ''))
+          .toList(growable: false),
+    );
+  }
+
   Future<List<GroupMember>> getCachedMembers(String groupId) async {
     final cached = await _readListCache(
       await _scopedCacheKey(_membersKey(groupId)),

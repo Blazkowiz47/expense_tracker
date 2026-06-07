@@ -84,6 +84,59 @@ def test_expenses_persist_in_mongo(tmp_path):
     assert listed.json()["expenses"][0]["id"] == expense_id
 
 
+def test_sync_freshness_tracks_personal_expense_changes_and_deletes(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    baseline = client.get(
+        "/api/v1/sync/freshness?sections=activity,dashboard",
+        headers=headers,
+    )
+    assert baseline.status_code == 200, baseline.text
+    cursor = baseline.json()["serverTime"]
+
+    unchanged = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=activity",
+        headers=headers,
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["sections"]["activity"]["changed"] is False
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 99.5,
+            "category": "Food",
+            "description": "Dinner",
+            "date": "2026-05-30T12:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    expense_id = created.json()["id"]
+
+    changed = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=activity,dashboard",
+        headers=headers,
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["sections"]["activity"]["changed"] is True
+    assert changed.json()["sections"]["dashboard"]["changed"] is True
+    cursor = changed.json()["serverTime"]
+
+    deleted = client.delete(f"/api/v1/expenses/{expense_id}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+
+    tombstone = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=activity",
+        headers=headers,
+    )
+    assert tombstone.status_code == 200, tombstone.text
+    activity = tombstone.json()["sections"]["activity"]
+    assert activity["changed"] is True
+    assert activity["personalDeletedIds"] == [expense_id]
+
+
 def test_bill_upload_extraction_and_create_expense(tmp_path):
     client, app = make_client(tmp_path)
     headers = register(client)
@@ -401,6 +454,57 @@ def test_group_expense_normalizes_member_aliases_and_custom_split(tmp_path):
     balances = groups.json()["groups"][0]["displayData"]["memberBalances"]
     assert balances[alice_uid]["net"] == -90
     assert balances[bob_uid]["net"] == 90
+
+
+def test_sync_freshness_tracks_group_expense_tombstones(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Family", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    expense = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Pharmacy",
+            "amount": 90,
+            "date": "2026-05-20T10:00:00Z",
+        },
+    )
+    assert expense.status_code == 201, expense.text
+    expense_id = expense.json()["id"]
+
+    baseline = client.get(
+        "/api/v1/sync/freshness?sections=activity,groups",
+        headers=headers_b,
+    )
+    assert baseline.status_code == 200, baseline.text
+    cursor = baseline.json()["serverTime"]
+
+    deleted = client.delete(
+        f"/api/v1/groups/{group_id}/expenses/{expense_id}",
+        headers=headers_a,
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    freshness = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=activity,groups",
+        headers=headers_b,
+    )
+    assert freshness.status_code == 200, freshness.text
+    sections = freshness.json()["sections"]
+    assert sections["activity"]["changed"] is True
+    assert sections["activity"]["groupDeleted"] == [
+        {"groupId": group_id, "expenseId": expense_id}
+    ]
+    assert sections["groups"]["changed"] is True
 
 
 def test_group_expense_saves_currency_snapshots_for_group_currencies(tmp_path):

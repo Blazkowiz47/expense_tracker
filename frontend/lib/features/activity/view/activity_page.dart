@@ -1,8 +1,10 @@
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
+import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
+import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
@@ -19,12 +21,14 @@ class ActivityPage extends StatefulWidget {
   const ActivityPage({
     this.groupsRepository,
     this.groupsClient,
+    this.freshnessRepository,
     this.autoRefresh = false,
     super.key,
   });
 
   final ApiGroupsRepository? groupsRepository;
   final http.Client? groupsClient;
+  final FreshnessRepository? freshnessRepository;
   final bool autoRefresh;
 
   @override
@@ -37,8 +41,11 @@ class _ActivityPageState extends State<ActivityPage> {
   ExpenseRepository? _repository;
   http.Client? _ownedGroupsClient;
   late final ApiGroupsRepository _groupsRepository;
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
   List<Expense> _expenses = const [];
   List<_GroupExpenseEntry> _groupExpenses = const [];
+  DateTime? _activityFreshnessCursor;
   _ActivityRange _range = _ActivityRange.week;
   bool _loadedRepository = false;
   bool _loadingExpenses = false;
@@ -52,11 +59,16 @@ class _ActivityPageState extends State<ActivityPage> {
     }
     _groupsRepository =
         widget.groupsRepository ?? ApiGroupsRepository(client: client);
+    _freshnessRepository = widget.freshnessRepository ?? FreshnessRepository();
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
   }
 
   @override
   void dispose() {
     _ownedGroupsClient?.close();
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
     super.dispose();
   }
 
@@ -83,6 +95,59 @@ class _ActivityPageState extends State<ActivityPage> {
       _expenses = personalExpenses;
       _groupExpenses = groupExpenses;
       _loadingExpenses = false;
+    });
+  }
+
+  Future<void> _autoRefreshActivityData() async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _activityFreshnessCursor,
+      sections: const ['activity'],
+    );
+    final activity = freshness.sections['activity'];
+    if (activity != null) {
+      await _applyActivityTombstones(activity);
+      _activityFreshnessCursor = freshness.serverTime;
+      if (!activity.changed &&
+          (_expenses.isNotEmpty || _groupExpenses.isNotEmpty)) {
+        return;
+      }
+    }
+    await _refreshActivityData(showLoading: false);
+    _activityFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _applyActivityTombstones(FreshnessSection activity) async {
+    final personalDeleted = activity.personalDeletedIds.toSet();
+    final groupDeleted = activity.groupDeleted;
+    if (personalDeleted.isEmpty && groupDeleted.isEmpty) return;
+
+    _repository?.removeCachedDeletedIds(personalDeleted);
+    final groupDeletedByGroup = <String, Set<String>>{};
+    for (final tombstone in groupDeleted) {
+      groupDeletedByGroup
+          .putIfAbsent(tombstone.groupId, () => <String>{})
+          .add(tombstone.expenseId);
+    }
+    for (final entry in groupDeletedByGroup.entries) {
+      await _groupsRepository.removeCachedExpenseIds(entry.key, entry.value);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      if (personalDeleted.isNotEmpty) {
+        _expenses = _expenses
+            .where((expense) => !personalDeleted.contains(expense.id))
+            .toList(growable: false);
+      }
+      if (groupDeletedByGroup.isNotEmpty) {
+        _groupExpenses = _groupExpenses
+            .where((entry) {
+              final deletedIds = groupDeletedByGroup[entry.group.id];
+              return deletedIds == null ||
+                  !deletedIds.contains(entry.expense.id);
+            })
+            .toList(growable: false);
+      }
     });
   }
 
@@ -340,6 +405,7 @@ class _ActivityPageState extends State<ActivityPage> {
 
         return AppPageContainer(
           onRefresh: () => _refreshActivityData(showLoading: false),
+          onAutoRefresh: _autoRefreshActivityData,
           autoRefresh: widget.autoRefresh,
           children: [
             _SpendSummaryCard(

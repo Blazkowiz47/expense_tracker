@@ -160,6 +160,12 @@ class ExpenseRepository {
 
   Expense? getExpenseById(String id) => _expensesCache[id];
 
+  void removeCachedDeletedIds(Iterable<String> ids) {
+    for (final id in ids) {
+      _expensesCache.remove(id);
+    }
+  }
+
   List<Expense> getUnsyncedExpenses() => const [];
 
   List<Expense> getExpensesByDateRange(DateTime start, DateTime end) {
