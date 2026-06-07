@@ -18,10 +18,23 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 class _FakeGroupsRepository extends ApiGroupsRepository {
-  _FakeGroupsRepository(this.groups)
-    : super(client: MockClient((_) async => http.Response('{}', 200)));
+  _FakeGroupsRepository(
+    this.groups, {
+    this.members = const [
+      GroupMember(
+        uid: 'member-1',
+        displayName: 'Nisha',
+        email: 'nisha@example.com',
+        phone: '',
+        role: 'Wife',
+      ),
+    ],
+    this.expenses,
+  }) : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   final List<GroupSummary> groups;
+  final List<GroupMember> members;
+  final List<GroupExpense>? expenses;
 
   @override
   Future<List<GroupSummary>> getCachedGroups() async => const [];
@@ -37,35 +50,29 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
       const [];
 
   @override
-  Future<List<GroupMember>> fetchMembers(String groupId) async => const [
-    GroupMember(
-      uid: 'member-1',
-      displayName: 'Nisha',
-      email: 'nisha@example.com',
-      phone: '',
-      role: 'Wife',
-    ),
-  ];
+  Future<List<GroupMember>> fetchMembers(String groupId) async => members;
 
   @override
-  Future<List<GroupExpense>> fetchExpenses(String groupId) async => [
-    GroupExpense(
-      id: 'expense-1',
-      groupId: groupId,
-      createdBy: 'member-1',
-      updatedBy: 'member-1',
-      paidBy: 'member-1',
-      splitMode: 'equally',
-      splitWith: const ['member-1'],
-      amount: 1200,
-      category: 'Groceries',
-      description: 'Monthly grocery run',
-      attachments: const [],
-      date: DateTime.now(),
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ),
-  ];
+  Future<List<GroupExpense>> fetchExpenses(String groupId) async =>
+      expenses ??
+      [
+        GroupExpense(
+          id: 'expense-1',
+          groupId: groupId,
+          createdBy: 'member-1',
+          updatedBy: 'member-1',
+          paidBy: 'member-1',
+          splitMode: 'equally',
+          splitWith: const ['member-1'],
+          amount: 1200,
+          category: 'Groceries',
+          description: 'Monthly grocery run',
+          attachments: const [],
+          date: DateTime.now(),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ];
 }
 
 class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
@@ -236,6 +243,74 @@ void main() {
     expect(find.text('Scan bill'), findsOneWidget);
     expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
     expect(find.text('Monthly category'), findsOneWidget);
+  });
+
+  testWidgets('group settle up dialog defaults to active balance currency', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final repository = _FakeGroupsRepository(
+      [familyGroup],
+      members: const [
+        GroupMember(
+          uid: 'member-1',
+          displayName: 'Nisha',
+          email: 'nisha@example.com',
+          phone: '',
+          role: 'Wife',
+        ),
+        GroupMember(
+          uid: 'member-2',
+          displayName: 'Sushrut',
+          email: 'sushrut@example.com',
+          phone: '',
+          role: 'Husband',
+        ),
+      ],
+      expenses: [
+        GroupExpense(
+          id: 'expense-usd',
+          groupId: familyGroup.id,
+          createdBy: 'member-1',
+          updatedBy: 'member-1',
+          paidBy: 'member-1',
+          splitMode: 'equally',
+          splitWith: const ['member-1', 'member-2'],
+          amount: 120,
+          currency: 'USD',
+          convertedAmounts: const {'USD': 120, 'NOK': 1300},
+          category: 'Travel',
+          description: 'Airport dinner',
+          attachments: const [],
+          date: DateTime.now(),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: GroupDetailsPage(group: familyGroup, repository: repository),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Settle up'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Settle up'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Settle up with Sushrut'), findsOneWidget);
+    expect(find.text('Currency'), findsOneWidget);
+    expect(find.text('NOK'), findsWidgets);
   });
 
   testWidgets('family page opens grocery expense form from household card', (

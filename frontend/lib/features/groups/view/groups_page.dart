@@ -2781,7 +2781,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
   bool _settlementLoading = true;
   String? _settlingMemberUid;
   String? _updatingRoleUid;
-  Map<String, double> _settlementNetByUid = const {};
+  Map<String, Map<String, double>> _settlementNetByCurrency = const {};
 
   @override
   void initState() {
@@ -2805,9 +2805,10 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     try {
       await _expenseRepository.refresh();
       final expenses = _expenseRepository.getExpenses();
-      final netByUid = <String, double>{};
+      final netByCurrency = <String, Map<String, double>>{};
       for (final member in _members) {
-        netByUid[member.uid] = 0;
+        netByCurrency.putIfAbsent('INR', () => <String, double>{})[member.uid] =
+            0;
       }
       for (final expense in expenses) {
         final category = (expense.category ?? '').trim().toLowerCase();
@@ -2815,16 +2816,21 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
         final meta = _parseGroupSettlementMeta(expense.description ?? '');
         if (meta == null) continue;
         if (meta.groupId != widget.groupId) continue;
-        if (!netByUid.containsKey(meta.memberUid)) continue;
+        if (!_members.any((member) => member.uid == meta.memberUid)) continue;
+        final currency = _normalizeSettlementCurrency(expense.currency);
+        final currencyNet = netByCurrency.putIfAbsent(
+          currency,
+          () => <String, double>{for (final member in _members) member.uid: 0},
+        );
         final signedDelta = meta.direction == 'received'
             ? expense.amount
             : -expense.amount;
-        netByUid[meta.memberUid] =
-            (netByUid[meta.memberUid] ?? 0) + signedDelta;
+        currencyNet[meta.memberUid] =
+            (currencyNet[meta.memberUid] ?? 0) + signedDelta;
       }
       if (!mounted) return;
       setState(() {
-        _settlementNetByUid = netByUid;
+        _settlementNetByCurrency = netByCurrency;
         _settlementLoading = false;
       });
     } catch (_) {
@@ -2861,10 +2867,46 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     );
   }
 
+  String _normalizeSettlementCurrency(String value) {
+    final currency = value.trim().toUpperCase();
+    return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : 'INR';
+  }
+
+  List<String> _settlementCurrencyOptions() {
+    final currencies = <String>{'INR'};
+    for (final expense in widget.expenses) {
+      currencies.addAll(
+        expense.amountsByCurrency.keys.map(_normalizeSettlementCurrency),
+      );
+    }
+    currencies.addAll(_settlementNetByCurrency.keys);
+    final sorted = currencies.toList()..sort();
+    if (sorted.remove('INR')) {
+      sorted.insert(0, 'INR');
+    }
+    return sorted;
+  }
+
+  String _preferredSettlementCurrency(GroupMember member) {
+    final netByCurrency = _memberNetByCurrency();
+    String? selected;
+    var selectedMagnitude = 0.0;
+    for (final entry in netByCurrency.entries) {
+      final amount = (entry.value[member.uid] ?? 0).abs();
+      if (amount > selectedMagnitude) {
+        selected = entry.key;
+        selectedMagnitude = amount;
+      }
+    }
+    return selected ?? _settlementCurrencyOptions().first;
+  }
+
   Future<_GroupSettleUpInput?> _openSettleUpDialog(GroupMember member) async {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var direction = 'paid';
+    var currency = _preferredSettlementCurrency(member);
+    final currencyOptions = _settlementCurrencyOptions();
     return showDialog<_GroupSettleUpInput>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -2889,15 +2931,34 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
                   },
                 ),
                 const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: currency,
+                  decoration: const InputDecoration(
+                    labelText: 'Currency',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: currencyOptions
+                      .map(
+                        (item) =>
+                            DropdownMenuItem(value: item, child: Text(item)),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => currency = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
                 TextFormField(
                   controller: controller,
                   autofocus: true,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Amount',
-                    prefixText: AppMoney.inputPrefix,
+                    prefixText: '$currency ',
                     hintText: '0.00',
                   ),
                   validator: (value) {
@@ -2921,7 +2982,11 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
                 if (!(formKey.currentState?.validate() ?? false)) return;
                 final amount = double.parse(controller.text.trim());
                 Navigator.of(context).pop(
-                  _GroupSettleUpInput(amount: amount, direction: direction),
+                  _GroupSettleUpInput(
+                    amount: amount,
+                    direction: direction,
+                    currency: currency,
+                  ),
                 );
               },
               child: const Text('Record'),
@@ -2939,14 +3004,14 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     try {
       final description =
           'Group settle up with ${member.label} '
-          '[type:groupSettlement][group:${widget.groupId}][uid:${member.uid}][dir:${input.direction}]';
+          '[type:groupSettlement][group:${widget.groupId}][uid:${member.uid}][dir:${input.direction}][currency:${input.currency}]';
       await _expenseRepository.createExpense(
         Expense(
           core: ExpenseCore(
             id: DateTime.now().microsecondsSinceEpoch.toString(),
             title: 'Group settlement',
             amount: input.amount,
-            currency: 'INR',
+            currency: input.currency,
             category: 'Settlement',
             createdAt: DateTime.now(),
           ),
@@ -2958,7 +3023,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Recorded ${AppMoney.format(input.amount)} with ${member.label}.',
+            'Recorded ${AppMoney.formatCurrency(input.amount, input.currency)} with ${member.label}.',
           ),
         ),
       );
@@ -2999,7 +3064,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     }
   }
 
-  Map<String, double> _memberNetByUid() {
+  Map<String, Map<String, double>> _memberNetByCurrency() {
     final memberCount = _members.isNotEmpty
         ? _members.length
         : widget.memberCountFallback;
@@ -3007,10 +3072,13 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       return const {};
     }
 
-    final netByUid = <String, double>{};
-    for (final member in _members) {
-      netByUid[member.uid] = 0;
-    }
+    final netByCurrency = <String, Map<String, double>>{};
+
+    Map<String, double> netForCurrency(String currency) =>
+        netByCurrency.putIfAbsent(
+          currency,
+          () => <String, double>{for (final member in _members) member.uid: 0},
+        );
 
     String? resolveMemberUid(String key) {
       final normalizedKey = key.trim().toLowerCase();
@@ -3031,7 +3099,6 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     }
 
     for (final expense in widget.expenses) {
-      if (expense.amount <= 0) continue;
       final payerKey = expense.paidBy.isNotEmpty
           ? expense.paidBy
           : expense.createdBy;
@@ -3043,21 +3110,30 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
       final effectiveSplitUids = splitUids.isEmpty
           ? _members.map((member) => member.uid).toSet()
           : splitUids;
-      final share = expense.amount / effectiveSplitUids.length;
+      for (final entry in expense.amountsByCurrency.entries) {
+        final currency = _normalizeSettlementCurrency(entry.key);
+        final amount = entry.value;
+        if (amount <= 0) continue;
+        final currencyNet = netForCurrency(currency);
+        final share = amount / effectiveSplitUids.length;
 
-      for (final uid in effectiveSplitUids) {
-        netByUid[uid] = (netByUid[uid] ?? 0) - share;
-      }
-      if (payerUid != null) {
-        netByUid[payerUid] = (netByUid[payerUid] ?? 0) + expense.amount;
+        for (final uid in effectiveSplitUids) {
+          currencyNet[uid] = (currencyNet[uid] ?? 0) - share;
+        }
+        if (payerUid != null) {
+          currencyNet[payerUid] = (currencyNet[payerUid] ?? 0) + amount;
+        }
       }
     }
 
-    _settlementNetByUid.forEach((uid, value) {
-      netByUid[uid] = (netByUid[uid] ?? 0) + value;
+    _settlementNetByCurrency.forEach((currency, netByUid) {
+      final currencyNet = netForCurrency(currency);
+      netByUid.forEach((uid, value) {
+        currencyNet[uid] = (currencyNet[uid] ?? 0) + value;
+      });
     });
 
-    return netByUid;
+    return netByCurrency;
   }
 
   String _memberLabelByUid(String uid) {
@@ -3069,12 +3145,32 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
     return uid;
   }
 
+  String _primarySettlementCurrency(
+    Map<String, Map<String, double>> netByCurrency,
+  ) {
+    var selected = _settlementCurrencyOptions().first;
+    var selectedMagnitude = 0.0;
+    for (final entry in netByCurrency.entries) {
+      final magnitude = entry.value.values.fold<double>(
+        0,
+        (sum, amount) => sum + amount.abs(),
+      );
+      if (magnitude > selectedMagnitude) {
+        selected = entry.key;
+        selectedMagnitude = magnitude;
+      }
+    }
+    return selected;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authUid = context.select(
       (AuthCubit cubit) => cubit.state.user?.uid ?? '',
     );
-    final netByUid = _memberNetByUid();
+    final netByCurrency = _memberNetByCurrency();
+    final primaryCurrency = _primarySettlementCurrency(netByCurrency);
+    final netByUid = netByCurrency[primaryCurrency] ?? const <String, double>{};
     final transferSuggestions = _simplify
         ? simplifyGroupTransfers(netByUid)
         : const <GroupTransferSuggestion>[];
@@ -3100,15 +3196,33 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
               child: LinearProgressIndicator(minHeight: 2),
             ),
           ..._members.map((member) {
-            final net = netByUid[member.uid] ?? 0;
-            final status = net.abs() <= 0.005
+            final memberNetByCurrency = <String, double>{};
+            for (final entry in netByCurrency.entries) {
+              final amount = entry.value[member.uid] ?? 0;
+              if (amount.abs() > 0.005) {
+                memberNetByCurrency[entry.key] = amount;
+              }
+            }
+            final positiveAmounts = memberNetByCurrency.map(
+              (currency, amount) => MapEntry(currency, amount.abs()),
+            );
+            final allPositive = memberNetByCurrency.values.every(
+              (amount) => amount > 0,
+            );
+            final allNegative = memberNetByCurrency.values.every(
+              (amount) => amount < 0,
+            );
+            final status = memberNetByCurrency.isEmpty
                 ? 'settled up'
-                : net > 0
-                ? 'gets back ${AppMoney.format(net)}'
-                : 'owes ${AppMoney.format(-net)}';
-            final statusColor = net.abs() <= 0.005
+                : allPositive
+                ? 'gets back ${AppMoney.formatCurrencyAmounts(positiveAmounts)}'
+                : allNegative
+                ? 'owes ${AppMoney.formatCurrencyAmounts(positiveAmounts)}'
+                : 'mixed ${AppMoney.formatCurrencyAmounts(positiveAmounts)}';
+            final primaryNet = netByUid[member.uid] ?? 0;
+            final statusColor = memberNetByCurrency.isEmpty
                 ? Theme.of(context).colorScheme.outline
-                : net > 0
+                : primaryNet > 0
                 ? AppMoney.positiveColor
                 : Theme.of(context).colorScheme.error;
             return AppCard(
@@ -3211,7 +3325,7 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
                         (item) => Padding(
                           padding: const EdgeInsets.only(bottom: 6),
                           child: Text(
-                            '${_memberLabelByUid(item.fromUid)} pays ${_memberLabelByUid(item.toUid)} ${AppMoney.format(item.amount)}',
+                            '${_memberLabelByUid(item.fromUid)} pays ${_memberLabelByUid(item.toUid)} ${AppMoney.formatCurrency(item.amount, primaryCurrency)}',
                           ),
                         ),
                       ),
@@ -3308,10 +3422,15 @@ class _AttachmentUploadItem {
 }
 
 class _GroupSettleUpInput {
-  const _GroupSettleUpInput({required this.amount, required this.direction});
+  const _GroupSettleUpInput({
+    required this.amount,
+    required this.direction,
+    required this.currency,
+  });
 
   final double amount;
   final String direction;
+  final String currency;
 }
 
 class _GroupSettlementMeta {
