@@ -12,6 +12,7 @@ import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/utils/group_balance_calculator.dart';
 import 'package:expense_tracker/features/groups/utils/group_transfer_simplifier.dart';
+import 'package:expense_tracker/features/planning/models/monthly_category_catalog.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -401,17 +402,6 @@ class GroupDetailsPage extends StatefulWidget {
 }
 
 class _GroupDetailsPageState extends State<GroupDetailsPage> {
-  static const _monthlyCategories = <String>[
-    'Groceries',
-    'Utilities',
-    'Rent and housing',
-    'School and kids',
-    'Travel',
-    'Food',
-    'Health',
-    'Personal',
-  ];
-
   List<GroupExpense> _expenses = const [];
   List<GroupMember> _members = const [];
   bool _loading = true;
@@ -562,11 +552,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   }
 
   String _normalizedCategory(String value) {
-    final lower = value.trim().toLowerCase();
-    return _monthlyCategories.firstWhere(
-      (category) => category.toLowerCase() == lower,
-      orElse: () => _monthlyCategories.first,
-    );
+    return normalizeMonthlyCategory(value);
   }
 
   Future<_SplitSelectionResult?> _openSplitOptionsPage({
@@ -958,7 +944,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                           labelText: 'Monthly category',
                           border: OutlineInputBorder(),
                         ),
-                        items: _monthlyCategories
+                        items: householdMonthlyCategories
                             .map(
                               (item) => DropdownMenuItem<String>(
                                 value: item,

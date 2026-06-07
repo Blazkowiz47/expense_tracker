@@ -1,4 +1,5 @@
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/features/planning/models/monthly_category_catalog.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:flutter/material.dart';
@@ -13,17 +14,6 @@ class MonthlyPlanningCard extends StatefulWidget {
 }
 
 class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
-  static const _defaultCategories = <String>[
-    'Food',
-    'Groceries',
-    'Transport',
-    'Shopping',
-    'Bills',
-    'Travel',
-    'Health',
-    'Personal',
-  ];
-
   late final MonthlyPlanRepository _repository;
   late final bool _ownsRepository;
   MonthlyPlan? _plan;
@@ -77,7 +67,9 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
     final updated = await showDialog<Map<String, double>>(
       context: context,
       builder: (context) => _BudgetDialog(
-        categories: _defaultCategories,
+        categories: mergeMonthlyCategories(
+          current?.categories.map((category) => category.category) ?? const [],
+        ),
         initialBudgets: current?.budgetsByCategory ?? const {},
       ),
     );
@@ -244,19 +236,26 @@ class _BudgetDialog extends StatefulWidget {
 }
 
 class _BudgetDialogState extends State<_BudgetDialog> {
+  late final List<String> _categories;
   late final Map<String, TextEditingController> _controllers;
+  late final TextEditingController _newCategoryController;
 
   @override
   void initState() {
     super.initState();
+    _categories = mergeMonthlyCategories([
+      ...widget.categories,
+      ...widget.initialBudgets.keys,
+    ]).toList();
     _controllers = {
-      for (final category in widget.categories)
+      for (final category in _categories)
         category: TextEditingController(
           text: (widget.initialBudgets[category] ?? 0) > 0
               ? widget.initialBudgets[category]!.toStringAsFixed(0)
               : '',
         ),
     };
+    _newCategoryController = TextEditingController();
   }
 
   @override
@@ -264,15 +263,35 @@ class _BudgetDialogState extends State<_BudgetDialog> {
     for (final controller in _controllers.values) {
       controller.dispose();
     }
+    _newCategoryController.dispose();
     super.dispose();
+  }
+
+  void _addCategory() {
+    final label = _newCategoryController.text.trim();
+    if (label.isEmpty) return;
+    final existing = _categories.any(
+      (category) => category.toLowerCase() == label.toLowerCase(),
+    );
+    if (existing) {
+      _newCategoryController.clear();
+      return;
+    }
+    setState(() {
+      _categories.add(label);
+      _controllers[label] = TextEditingController();
+      _newCategoryController.clear();
+    });
   }
 
   void _save() {
     final budgets = <String, double>{};
-    for (final entry in _controllers.entries) {
-      final value = double.tryParse(entry.value.text.trim()) ?? 0;
+    for (final category in _categories) {
+      final controller = _controllers[category];
+      if (controller == null) continue;
+      final value = double.tryParse(controller.text.trim()) ?? 0;
       if (value > 0) {
-        budgets[entry.key] = value;
+        budgets[category] = value;
       }
     }
     Navigator.of(context).pop(budgets);
@@ -288,20 +307,42 @@ class _BudgetDialogState extends State<_BudgetDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final entry in _controllers.entries) ...[
+              for (final category in _categories) ...[
                 TextField(
-                  controller: entry.value,
+                  controller: _controllers[category],
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
                   decoration: InputDecoration(
-                    labelText: entry.key,
+                    labelText: category,
                     prefixText: 'INR ',
                     border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 10),
               ],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _newCategoryController,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        labelText: 'Add category',
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _addCategory(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    tooltip: 'Add category',
+                    onPressed: _addCategory,
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
