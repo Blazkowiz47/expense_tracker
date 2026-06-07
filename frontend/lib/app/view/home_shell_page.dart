@@ -152,6 +152,7 @@ class _HomeShellPageState extends State<HomeShellPage>
             openAddExpenseOnLaunch: true,
             initialExpenseCategory: 'Groceries',
             initialExpenseDescription: initialBillUpload ? null : 'Groceries',
+            initialBillUpload: initialBillUpload,
           ),
         ),
       );
@@ -179,6 +180,54 @@ class _HomeShellPageState extends State<HomeShellPage>
         ),
       ),
     );
+  }
+
+  void _openHouseholdBillScan() {
+    Navigator.of(context).push<void>(
+      platformPageRoute(
+        builder: (_) => const FamilyPage(
+          autoRefresh: true,
+          openAddExpenseOnLaunch: true,
+          initialExpenseCategory: 'Other',
+          initialBillUpload: true,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openScanBill() async {
+    if (_destinations[_selectedIndex].label == 'Family') {
+      _openHouseholdBillScan();
+      return;
+    }
+    final target = await showDialog<_BillScanTarget>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Where should this bill go?'),
+        content: const Text('Choose household for shared family spending.'),
+        actions: [
+          TextButton.icon(
+            onPressed: () =>
+                Navigator.of(context).pop(_BillScanTarget.personal),
+            icon: const Icon(Icons.person_outline),
+            label: const Text('Personal bill'),
+          ),
+          FilledButton.icon(
+            onPressed: () =>
+                Navigator.of(context).pop(_BillScanTarget.household),
+            icon: const Icon(Icons.home_outlined),
+            label: const Text('Household bill'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || target == null) return;
+    switch (target) {
+      case _BillScanTarget.household:
+        _openHouseholdBillScan();
+      case _BillScanTarget.personal:
+        _openAddExpense(initialBillUpload: true, forcePersonal: true);
+    }
   }
 
   void _openSharedSpace(GroupType groupType) {
@@ -484,7 +533,9 @@ class _HomeShellPageState extends State<HomeShellPage>
       _QuickAction(
         label: 'Scan bill',
         icon: Icons.document_scanner_outlined,
-        onTap: () => _runAction(() => _openAddExpense(initialBillUpload: true)),
+        onTap: () => _runAction(() {
+          _openScanBill();
+        }),
       ),
       _QuickAction(
         label: 'Recurring',
@@ -647,6 +698,8 @@ class _ShellDestination {
   final IconData selectedIcon;
   final Widget page;
 }
+
+enum _BillScanTarget { household, personal }
 
 class _QuickAction {
   const _QuickAction({

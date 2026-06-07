@@ -414,6 +414,7 @@ class GroupDetailsPage extends StatefulWidget {
     this.initialAddExpense = false,
     this.initialExpenseCategory = 'Groceries',
     this.initialExpenseDescription,
+    this.initialBillUpload = false,
     this.autoRefresh = false,
     super.key,
   });
@@ -424,6 +425,7 @@ class GroupDetailsPage extends StatefulWidget {
   final bool initialAddExpense;
   final String initialExpenseCategory;
   final String? initialExpenseDescription;
+  final bool initialBillUpload;
   final bool autoRefresh;
 
   @override
@@ -680,6 +682,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         _addExpense(
           initialCategory: widget.initialExpenseCategory,
           initialDescription: widget.initialExpenseDescription,
+          initialBillUpload: widget.initialBillUpload,
         );
       });
       return;
@@ -973,6 +976,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     String initialCategory = 'Groceries',
     DateTime? initialDate,
     bool showMonthlyCategory = false,
+    bool initialBillUpload = false,
     List<String>? initialAttachments,
     DateTime? initialUpdatedAt,
     String? initialUpdatedBy,
@@ -1012,6 +1016,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         var extractingBill = false;
         String? billMessage;
         BillExtractionResult? billResult;
+        var didStartInitialBillUpload = false;
 
         Future<void> scanBill(StateSetter setDialogState) async {
           setDialogState(() {
@@ -1151,44 +1156,120 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         }
 
         return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 24,
-            ),
-            title: Text(title),
-            content: SingleChildScrollView(
-              child: SizedBox(
-                width: dialogWidth,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
+          builder: (context, setDialogState) {
+            if (initialBillUpload && !didStartInitialBillUpload) {
+              didStartInitialBillUpload = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                scanBill(setDialogState);
+              });
+            }
+            return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 24,
+              ),
+              title: Text(title),
+              content: SingleChildScrollView(
+                child: SizedBox(
+                  width: dialogWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: descriptionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Description',
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final amountField = TextField(
-                          controller: amountController,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: InputDecoration(
-                            labelText: 'Amount',
-                            prefixText: '$currency ',
-                          ),
-                        );
-                        final currencyField = DropdownButtonFormField<String>(
-                          initialValue: currency,
+                      const SizedBox(height: 12),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final amountField = TextField(
+                            controller: amountController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: 'Amount',
+                              prefixText: '$currency ',
+                            ),
+                          );
+                          final currencyField = DropdownButtonFormField<String>(
+                            initialValue: currency,
+                            decoration: const InputDecoration(
+                              labelText: 'Currency',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: _groupCurrencyOptions
+                                .map(
+                                  (item) => DropdownMenuItem<String>(
+                                    value: item,
+                                    child: Text(item),
+                                  ),
+                                )
+                                .toList(growable: false),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setDialogState(() => currency = value);
+                              }
+                            },
+                          );
+                          final targetCurrencyField =
+                              DropdownButtonFormField<String>(
+                                initialValue: targetCurrency,
+                                decoration: const InputDecoration(
+                                  labelText: 'Convert to',
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: _groupCurrencyOptions
+                                    .map(
+                                      (item) => DropdownMenuItem<String>(
+                                        value: item,
+                                        child: Text(item),
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    setDialogState(
+                                      () => targetCurrency = value,
+                                    );
+                                  }
+                                },
+                              );
+                          if (constraints.maxWidth < 640) {
+                            return Column(
+                              children: [
+                                amountField,
+                                const SizedBox(height: 12),
+                                currencyField,
+                                const SizedBox(height: 12),
+                                targetCurrencyField,
+                              ],
+                            );
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: amountField),
+                              const SizedBox(width: 12),
+                              SizedBox(width: 140, child: currencyField),
+                              const SizedBox(width: 12),
+                              SizedBox(width: 140, child: targetCurrencyField),
+                            ],
+                          );
+                        },
+                      ),
+                      if (showMonthlyCategory) ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: category,
                           decoration: const InputDecoration(
-                            labelText: 'Currency',
+                            labelText: 'Monthly category',
                             border: OutlineInputBorder(),
                           ),
-                          items: _groupCurrencyOptions
+                          items: householdMonthlyCategories
                               .map(
                                 (item) => DropdownMenuItem<String>(
                                   value: item,
@@ -1198,279 +1279,240 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                               .toList(growable: false),
                           onChanged: (value) {
                             if (value != null) {
-                              setDialogState(() => currency = value);
+                              setDialogState(() => category = value);
                             }
                           },
-                        );
-                        final targetCurrencyField =
-                            DropdownButtonFormField<String>(
-                              initialValue: targetCurrency,
-                              decoration: const InputDecoration(
-                                labelText: 'Convert to',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: _groupCurrencyOptions
-                                  .map(
-                                    (item) => DropdownMenuItem<String>(
-                                      value: item,
-                                      child: Text(item),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setDialogState(() => targetCurrency = value);
-                                }
-                              },
-                            );
-                        if (constraints.maxWidth < 640) {
-                          return Column(
-                            children: [
-                              amountField,
-                              const SizedBox(height: 12),
-                              currencyField,
-                              const SizedBox(height: 12),
-                              targetCurrencyField,
-                            ],
-                          );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: amountField),
-                            const SizedBox(width: 12),
-                            SizedBox(width: 140, child: currencyField),
-                            const SizedBox(width: 12),
-                            SizedBox(width: 140, child: targetCurrencyField),
-                          ],
-                        );
-                      },
-                    ),
-                    if (showMonthlyCategory) ...[
+                        ),
+                      ],
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        initialValue: category,
-                        decoration: const InputDecoration(
-                          labelText: 'Monthly category',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: householdMonthlyCategories
-                            .map(
-                              (item) => DropdownMenuItem<String>(
-                                value: item,
-                                child: Text(item),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final selectedDate = await showDatePicker(
+                              context: context,
+                              initialDate: expenseDate,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime.now().add(
+                                const Duration(days: 365),
                               ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setDialogState(() => category = value);
-                          }
-                        },
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final selectedDate = await showDatePicker(
-                            context: context,
-                            initialDate: expenseDate,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime.now().add(
-                              const Duration(days: 365),
-                            ),
-                          );
-                          if (selectedDate == null) return;
-                          setDialogState(() {
-                            expenseDate = DateTime(
-                              selectedDate.year,
-                              selectedDate.month,
-                              selectedDate.day,
-                              expenseDate.hour,
-                              expenseDate.minute,
                             );
-                          });
-                        },
-                        icon: const Icon(Icons.calendar_today_outlined),
-                        label: Text(DateFormatter.formatDate(expenseDate)),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        const Text('Paid by'),
-                        ActionChip(
-                          label: Text(paidBy),
-                          onPressed: () async {
-                            final chosen = await Navigator.of(context)
-                                .push<String>(
-                                  MaterialPageRoute<String>(
-                                    builder: (_) => _ChoosePayerPage(
-                                      participants: participants,
-                                      currentPayer: paidBy,
-                                    ),
-                                  ),
-                                );
-                            if (chosen == null) return;
-                            setDialogState(() => paidBy = chosen);
-                          },
-                        ),
-                        const Text('and split'),
-                        ActionChip(
-                          label: Text(splitMode),
-                          onPressed: () async {
-                            final result = await _openSplitOptionsPage(
-                              participants: participants,
-                              selectedMembers: selected,
-                              currentMode: splitMode,
-                              totalAmount:
-                                  double.tryParse(
-                                    amountController.text.trim(),
-                                  ) ??
-                                  0,
-                            );
-                            if (result == null) return;
+                            if (selectedDate == null) return;
                             setDialogState(() {
-                              splitMode = result.mode;
-                              selected
-                                ..clear()
-                                ..addAll(result.selectedMembers);
-                              splitWithAll =
-                                  selected.length == participants.length;
+                              expenseDate = DateTime(
+                                selectedDate.year,
+                                selectedDate.month,
+                                selectedDate.day,
+                                expenseDate.hour,
+                                expenseDate.minute,
+                              );
                             });
                           },
+                          icon: const Icon(Icons.calendar_today_outlined),
+                          label: Text(DateFormatter.formatDate(expenseDate)),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        const Text('Split with'),
-                        ChoiceChip(
-                          label: const Text('All members'),
-                          selected: splitWithAll,
-                          onSelected: (_) {
-                            setDialogState(() {
-                              splitWithAll = true;
-                              selected
-                                ..clear()
-                                ..addAll(participants);
-                            });
-                          },
-                        ),
-                        ChoiceChip(
-                          label: const Text('Selected'),
-                          selected: !splitWithAll,
-                          onSelected: (_) {
-                            setDialogState(() => splitWithAll = false);
-                          },
-                        ),
-                      ],
-                    ),
-                    if (!splitWithAll) ...[
-                      const SizedBox(height: 8),
+                      ),
+                      const SizedBox(height: 14),
                       Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         spacing: 6,
                         runSpacing: 6,
-                        children: participants
-                            .map(
-                              (p) => FilterChip(
-                                label: Text(p),
-                                selected: selected.contains(p),
-                                onSelected: (enabled) {
-                                  setDialogState(() {
-                                    if (enabled) {
-                                      selected.add(p);
-                                    } else if (selected.length > 1) {
-                                      selected.remove(p);
-                                    }
-                                  });
-                                },
-                              ),
-                            )
-                            .toList(growable: false),
+                        children: [
+                          const Text('Paid by'),
+                          ActionChip(
+                            label: Text(paidBy),
+                            onPressed: () async {
+                              final chosen = await Navigator.of(context)
+                                  .push<String>(
+                                    MaterialPageRoute<String>(
+                                      builder: (_) => _ChoosePayerPage(
+                                        participants: participants,
+                                        currentPayer: paidBy,
+                                      ),
+                                    ),
+                                  );
+                              if (chosen == null) return;
+                              setDialogState(() => paidBy = chosen);
+                            },
+                          ),
+                          const Text('and split'),
+                          ActionChip(
+                            label: Text(splitMode),
+                            onPressed: () async {
+                              final result = await _openSplitOptionsPage(
+                                participants: participants,
+                                selectedMembers: selected,
+                                currentMode: splitMode,
+                                totalAmount:
+                                    double.tryParse(
+                                      amountController.text.trim(),
+                                    ) ??
+                                    0,
+                              );
+                              if (result == null) return;
+                              setDialogState(() {
+                                splitMode = result.mode;
+                                selected
+                                  ..clear()
+                                  ..addAll(result.selectedMembers);
+                                splitWithAll =
+                                    selected.length == participants.length;
+                              });
+                            },
+                          ),
+                        ],
                       ),
-                    ],
-                    if (isEditing &&
-                        initialUpdatedAt != null &&
-                        initialUpdatedBy != null &&
-                        initialUpdatedBy.trim().isNotEmpty) ...[
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          const Text('Split with'),
+                          ChoiceChip(
+                            label: const Text('All members'),
+                            selected: splitWithAll,
+                            onSelected: (_) {
+                              setDialogState(() {
+                                splitWithAll = true;
+                                selected
+                                  ..clear()
+                                  ..addAll(participants);
+                              });
+                            },
+                          ),
+                          ChoiceChip(
+                            label: const Text('Selected'),
+                            selected: !splitWithAll,
+                            onSelected: (_) {
+                              setDialogState(() => splitWithAll = false);
+                            },
+                          ),
+                        ],
+                      ),
+                      if (!splitWithAll) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: participants
+                              .map(
+                                (p) => FilterChip(
+                                  label: Text(p),
+                                  selected: selected.contains(p),
+                                  onSelected: (enabled) {
+                                    setDialogState(() {
+                                      if (enabled) {
+                                        selected.add(p);
+                                      } else if (selected.length > 1) {
+                                        selected.remove(p);
+                                      }
+                                    });
+                                  },
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                      ],
+                      if (isEditing &&
+                          initialUpdatedAt != null &&
+                          initialUpdatedBy != null &&
+                          initialUpdatedBy.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Last updated ${initialUpdatedAt.toLocal().toString().split('.').first} by ${initialUpdatedBy.trim()}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'Last updated ${initialUpdatedAt.toLocal().toString().split('.').first} by ${initialUpdatedBy.trim()}',
-                          style: Theme.of(context).textTheme.bodySmall,
+                          'Attachments',
+                          style: Theme.of(context).textTheme.titleSmall,
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 14),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Attachments',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    if (attachmentItems.isEmpty)
-                      Text(
-                        'No attachments yet.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                      )
-                    else
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 260),
-                        child: Scrollbar(
-                          thumbVisibility: true,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: attachmentItems.length,
-                            separatorBuilder: (_, index) =>
-                                const SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                              final item = attachmentItems[index];
-                              final displayLabel =
-                                  !item.uploading &&
-                                      (item.url?.isNotEmpty ?? false)
-                                  ? 'Bill ${index + 1}'
-                                  : item.label;
-                              final percent = (item.progress * 100).clamp(
-                                0,
-                                100,
-                              );
-                              final previewable =
-                                  item.url != null &&
-                                  item.url!.isNotEmpty &&
-                                  !item.uploading &&
-                                  item.error == null;
-                              final previewUrl = item.url;
+                      const SizedBox(height: 8),
+                      if (attachmentItems.isEmpty)
+                        Text(
+                          'No attachments yet.',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                        )
+                      else
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 260),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: attachmentItems.length,
+                              separatorBuilder: (_, index) =>
+                                  const SizedBox(width: 8),
+                              itemBuilder: (context, index) {
+                                final item = attachmentItems[index];
+                                final displayLabel =
+                                    !item.uploading &&
+                                        (item.url?.isNotEmpty ?? false)
+                                    ? 'Bill ${index + 1}'
+                                    : item.label;
+                                final percent = (item.progress * 100).clamp(
+                                  0,
+                                  100,
+                                );
+                                final previewable =
+                                    item.url != null &&
+                                    item.url!.isNotEmpty &&
+                                    !item.uploading &&
+                                    item.error == null;
+                                final previewUrl = item.url;
 
-                              Widget previewBox() {
-                                if (item.localPreviewBytes != null) {
-                                  if (kIsWeb &&
-                                      item.localPreviewPath != null &&
-                                      item.localPreviewPath!.isNotEmpty) {
+                                Widget previewBox() {
+                                  if (item.localPreviewBytes != null) {
+                                    if (kIsWeb &&
+                                        item.localPreviewPath != null &&
+                                        item.localPreviewPath!.isNotEmpty) {
+                                      return ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          item.localPreviewPath!,
+                                          key: ValueKey(
+                                            '${item.id}|${item.localPreviewPath}|local-web',
+                                          ),
+                                          gaplessPlayback: true,
+                                          webHtmlElementStrategy:
+                                              WebHtmlElementStrategy.prefer,
+                                          width: 100,
+                                          height: 140,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (
+                                                context,
+                                                error,
+                                                stackTrace,
+                                              ) => Container(
+                                                width: 100,
+                                                height: 140,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .surfaceContainerHighest,
+                                                alignment: Alignment.center,
+                                                child: const Text(
+                                                  'Preview unavailable',
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                              ),
+                                        ),
+                                      );
+                                    }
                                     return ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.network(
-                                        item.localPreviewPath!,
-                                        key: ValueKey(
-                                          '${item.id}|${item.localPreviewPath}|local-web',
-                                        ),
-                                        gaplessPlayback: true,
-                                        webHtmlElementStrategy:
-                                            WebHtmlElementStrategy.prefer,
+                                      child: Image.memory(
+                                        item.localPreviewBytes!,
                                         width: 100,
                                         height: 140,
                                         fit: BoxFit.cover,
@@ -1491,252 +1533,362 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       ),
                                     );
                                   }
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      item.localPreviewBytes!,
-                                      width: 100,
-                                      height: 140,
-                                      fit: BoxFit.cover,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              Container(
-                                                width: 100,
-                                                height: 140,
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .surfaceContainerHighest,
-                                                alignment: Alignment.center,
-                                                child: const Text(
-                                                  'Preview unavailable',
-                                                  textAlign: TextAlign.center,
-                                                ),
-                                              ),
-                                    ),
-                                  );
-                                }
 
-                                if (kIsWeb &&
-                                    previewable &&
-                                    previewUrl != null) {
-                                  return ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: SizedBox(
-                                      width: 100,
-                                      height: 140,
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          Container(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .surfaceContainerHighest,
-                                            alignment: Alignment.center,
-                                            child: const SizedBox(
-                                              width: 24,
-                                              height: 24,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2.2,
+                                  if (kIsWeb &&
+                                      previewable &&
+                                      previewUrl != null) {
+                                    return ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: SizedBox(
+                                        width: 100,
+                                        height: 140,
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            Container(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .surfaceContainerHighest,
+                                              alignment: Alignment.center,
+                                              child: const SizedBox(
+                                                width: 24,
+                                                height: 24,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2.2,
+                                                    ),
                                               ),
                                             ),
-                                          ),
-                                          Image.network(
-                                            previewUrl,
-                                            key: ValueKey(
-                                              '$previewUrl|attachment-thumb-web',
-                                            ),
-                                            gaplessPlayback: true,
-                                            webHtmlElementStrategy:
-                                                WebHtmlElementStrategy.prefer,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (
-                                                  context,
-                                                  error,
-                                                  stackTrace,
-                                                ) => Container(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .surfaceContainerHighest,
-                                                  alignment: Alignment.center,
-                                                  child: const Text(
-                                                    'Preview unavailable',
-                                                    textAlign: TextAlign.center,
+                                            Image.network(
+                                              previewUrl,
+                                              key: ValueKey(
+                                                '$previewUrl|attachment-thumb-web',
+                                              ),
+                                              gaplessPlayback: true,
+                                              webHtmlElementStrategy:
+                                                  WebHtmlElementStrategy.prefer,
+                                              fit: BoxFit.cover,
+                                              errorBuilder:
+                                                  (
+                                                    context,
+                                                    error,
+                                                    stackTrace,
+                                                  ) => Container(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .surfaceContainerHighest,
+                                                    alignment: Alignment.center,
+                                                    child: const Text(
+                                                      'Preview unavailable',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                    ),
                                                   ),
-                                                ),
-                                          ),
-                                        ],
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                }
+                                    );
+                                  }
 
-                                if (!kIsWeb &&
-                                    previewable &&
-                                    previewUrl != null) {
-                                  return InkWell(
-                                    onTap: () => _openAttachmentPreview(
-                                      title: item.label,
-                                      url: previewUrl,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      width: 100,
-                                      height: 140,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.surfaceContainerHighest,
+                                  if (!kIsWeb &&
+                                      previewable &&
+                                      previewUrl != null) {
+                                    return InkWell(
+                                      onTap: () => _openAttachmentPreview(
+                                        title: item.label,
+                                        url: previewUrl,
                                       ),
-                                      alignment: Alignment.center,
-                                      child: const Icon(Icons.zoom_in),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        width: 100,
+                                        height: 140,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.surfaceContainerHighest,
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: const Icon(Icons.zoom_in),
+                                      ),
+                                    );
+                                  }
+
+                                  return Container(
+                                    width: 100,
+                                    height: 140,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
                                     ),
+                                    alignment: Alignment.center,
+                                    child: item.uploading
+                                        ? Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SizedBox(
+                                                width: 26,
+                                                height: 26,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2.2,
+                                                      value: item.progress > 0
+                                                          ? item.progress.clamp(
+                                                              0,
+                                                              1,
+                                                            )
+                                                          : null,
+                                                    ),
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                '${percent.toStringAsFixed(0)}%',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
+                                              ),
+                                            ],
+                                          )
+                                        : Icon(
+                                            item.error == null
+                                                ? Icons.image_outlined
+                                                : Icons.error_outline,
+                                          ),
                                   );
                                 }
 
                                 return Container(
-                                  width: 100,
-                                  height: 140,
+                                  width: 132,
+                                  padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.outlineVariant,
+                                    ),
                                   ),
-                                  alignment: Alignment.center,
-                                  child: item.uploading
-                                      ? Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SizedBox(
-                                              width: 26,
-                                              height: 26,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2.2,
-                                                value: item.progress > 0
-                                                    ? item.progress.clamp(0, 1)
-                                                    : null,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              displayLabel,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          InkWell(
+                                            onTap: () async {
+                                              setDialogState(() {
+                                                attachmentItems.removeAt(index);
+                                                if (isEditing) {
+                                                  requiresExplicitAttachmentSave =
+                                                      true;
+                                                }
+                                              });
+                                            },
+                                            child: const Padding(
+                                              padding: EdgeInsets.all(4),
+                                              child: Icon(
+                                                Icons.close,
+                                                size: 18,
                                               ),
                                             ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              '${percent.toStringAsFixed(0)}%',
-                                              style: Theme.of(
-                                                context,
-                                              ).textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        )
-                                      : Icon(
-                                          item.error == null
-                                              ? Icons.image_outlined
-                                              : Icons.error_outline,
-                                        ),
-                                );
-                              }
-
-                              return Container(
-                                width: 132,
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.outlineVariant,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            displayLabel,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                        ),
-                                        InkWell(
-                                          onTap: () async {
-                                            setDialogState(() {
-                                              attachmentItems.removeAt(index);
-                                              if (isEditing) {
-                                                requiresExplicitAttachmentSave =
-                                                    true;
-                                              }
-                                            });
-                                          },
-                                          child: const Padding(
-                                            padding: EdgeInsets.all(4),
-                                            child: Icon(Icons.close, size: 18),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      previewBox(),
+                                      if (item.error != null) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          item.error!,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.error,
+                                            fontSize: 12,
                                           ),
                                         ),
                                       ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    previewBox(),
-                                    if (item.error != null) ...[
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        item.error!,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.error,
-                                          fontSize: 12,
-                                        ),
-                                      ),
                                     ],
-                                  ],
-                                ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ActionChip(
+                            avatar: extractingBill
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.document_scanner_outlined,
+                                    size: 16,
+                                  ),
+                            label: Text(
+                              extractingBill ? 'Reading bill...' : 'Scan bill',
+                            ),
+                            onPressed: extractingBill
+                                ? null
+                                : () => scanBill(setDialogState),
+                          ),
+                          ActionChip(
+                            avatar: const Icon(
+                              Icons.photo_library_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('Gallery'),
+                            onPressed: () async {
+                              final picker = ImagePicker();
+                              final picked = await picker.pickMultiImage(
+                                imageQuality: 85,
                               );
+                              if (picked.isEmpty) return;
+                              for (final image in picked) {
+                                final itemId =
+                                    '${DateTime.now().microsecondsSinceEpoch}-${image.name.hashCode}';
+                                setDialogState(() {
+                                  attachmentItems.add(
+                                    _AttachmentUploadItem(
+                                      id: itemId,
+                                      label: image.name,
+                                      progress: 0,
+                                      uploading: true,
+                                    ),
+                                  );
+                                });
+                                try {
+                                  final bytes = await image.readAsBytes();
+                                  setDialogState(() {
+                                    final idx = attachmentItems.indexWhere(
+                                      (it) => it.id == itemId,
+                                    );
+                                    if (idx >= 0) {
+                                      attachmentItems[idx] =
+                                          attachmentItems[idx].copyWith(
+                                            localPreviewBytes: bytes,
+                                            localPreviewPath: image.path,
+                                            pendingUploadBytes: bytes,
+                                          );
+                                    }
+                                  });
+                                  final mimeType =
+                                      lookupMimeType(
+                                        image.name,
+                                        headerBytes: bytes,
+                                      ) ??
+                                      'image/jpeg';
+                                  if (!isEditing) {
+                                    setDialogState(() {
+                                      final idx = attachmentItems.indexWhere(
+                                        (it) => it.id == itemId,
+                                      );
+                                      if (idx >= 0) {
+                                        attachmentItems[idx] =
+                                            attachmentItems[idx].copyWith(
+                                              uploading: false,
+                                              progress: 1,
+                                              uploadFileName: image.name,
+                                              uploadContentType: mimeType,
+                                            );
+                                      }
+                                    });
+                                    continue;
+                                  }
+                                  final url = await widget.repository
+                                      .uploadAttachment(
+                                        groupId: widget.group.id,
+                                        expenseId: expenseId,
+                                        bytes: bytes,
+                                        fileName: image.name,
+                                        contentType: mimeType,
+                                        onProgress: (sent, total) {
+                                          if (total <= 0) return;
+                                          final progress = sent / total;
+                                          setDialogState(() {
+                                            final idx = attachmentItems
+                                                .indexWhere(
+                                                  (it) => it.id == itemId,
+                                                );
+                                            if (idx >= 0) {
+                                              attachmentItems[idx] =
+                                                  attachmentItems[idx].copyWith(
+                                                    progress: progress,
+                                                  );
+                                            }
+                                          });
+                                        },
+                                      );
+                                  setDialogState(() {
+                                    final idx = attachmentItems.indexWhere(
+                                      (it) => it.id == itemId,
+                                    );
+                                    if (idx >= 0) {
+                                      attachmentItems[idx] =
+                                          attachmentItems[idx].copyWith(
+                                            uploading: false,
+                                            progress: 1,
+                                            url: url,
+                                            error: null,
+                                            localPreviewBytes: bytes,
+                                            localPreviewPath: image.path,
+                                            pendingUploadBytes: null,
+                                          );
+                                      didInlineAttachmentUpload = true;
+                                    }
+                                  });
+                                } catch (error) {
+                                  setDialogState(() {
+                                    final idx = attachmentItems.indexWhere(
+                                      (it) => it.id == itemId,
+                                    );
+                                    if (idx >= 0) {
+                                      attachmentItems[idx] =
+                                          attachmentItems[idx].copyWith(
+                                            uploading: false,
+                                            error: error.toString(),
+                                          );
+                                    }
+                                  });
+                                }
+                              }
                             },
                           ),
-                        ),
-                      ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        ActionChip(
-                          avatar: extractingBill
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.document_scanner_outlined,
-                                  size: 16,
-                                ),
-                          label: Text(
-                            extractingBill ? 'Reading bill...' : 'Scan bill',
-                          ),
-                          onPressed: extractingBill
-                              ? null
-                              : () => scanBill(setDialogState),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(
-                            Icons.photo_library_outlined,
-                            size: 16,
-                          ),
-                          label: const Text('Gallery'),
-                          onPressed: () async {
-                            final picker = ImagePicker();
-                            final picked = await picker.pickMultiImage(
-                              imageQuality: 85,
-                            );
-                            if (picked.isEmpty) return;
-                            for (final image in picked) {
+                          ActionChip(
+                            avatar: const Icon(
+                              Icons.photo_camera_outlined,
+                              size: 16,
+                            ),
+                            label: const Text('Camera'),
+                            onPressed: () async {
+                              final picker = ImagePicker();
+                              final image = await picker.pickImage(
+                                source: ImageSource.camera,
+                                imageQuality: 85,
+                              );
+                              if (image == null) return;
                               final itemId =
                                   '${DateTime.now().microsecondsSinceEpoch}-${image.name.hashCode}';
                               setDialogState(() {
@@ -1785,7 +1937,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           );
                                     }
                                   });
-                                  continue;
+                                  return;
                                 }
                                 final url = await widget.repository
                                     .uploadAttachment(
@@ -1843,232 +1995,112 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                   }
                                 });
                               }
-                            }
-                          },
-                        ),
-                        ActionChip(
-                          avatar: const Icon(
-                            Icons.photo_camera_outlined,
-                            size: 16,
+                            },
                           ),
-                          label: const Text('Camera'),
-                          onPressed: () async {
-                            final picker = ImagePicker();
-                            final image = await picker.pickImage(
-                              source: ImageSource.camera,
-                              imageQuality: 85,
-                            );
-                            if (image == null) return;
-                            final itemId =
-                                '${DateTime.now().microsecondsSinceEpoch}-${image.name.hashCode}';
-                            setDialogState(() {
-                              attachmentItems.add(
-                                _AttachmentUploadItem(
-                                  id: itemId,
-                                  label: image.name,
-                                  progress: 0,
-                                  uploading: true,
-                                ),
-                              );
-                            });
-                            try {
-                              final bytes = await image.readAsBytes();
+                          ActionChip(
+                            avatar: const Icon(Icons.attach_file, size: 16),
+                            label: const Text('Add URL'),
+                            onPressed: () async {
+                              final url = await _promptAttachmentUrl();
+                              if (url == null || url.isEmpty) return;
                               setDialogState(() {
-                                final idx = attachmentItems.indexWhere(
-                                  (it) => it.id == itemId,
-                                );
-                                if (idx >= 0) {
-                                  attachmentItems[idx] = attachmentItems[idx]
-                                      .copyWith(
-                                        localPreviewBytes: bytes,
-                                        localPreviewPath: image.path,
-                                        pendingUploadBytes: bytes,
-                                      );
+                                if (isEditing) {
+                                  requiresExplicitAttachmentSave = true;
                                 }
-                              });
-                              final mimeType =
-                                  lookupMimeType(
-                                    image.name,
-                                    headerBytes: bytes,
-                                  ) ??
-                                  'image/jpeg';
-                              if (!isEditing) {
-                                setDialogState(() {
-                                  final idx = attachmentItems.indexWhere(
-                                    (it) => it.id == itemId,
-                                  );
-                                  if (idx >= 0) {
-                                    attachmentItems[idx] = attachmentItems[idx]
-                                        .copyWith(
-                                          uploading: false,
-                                          progress: 1,
-                                          uploadFileName: image.name,
-                                          uploadContentType: mimeType,
-                                        );
-                                  }
-                                });
-                                return;
-                              }
-                              final url = await widget.repository
-                                  .uploadAttachment(
-                                    groupId: widget.group.id,
-                                    expenseId: expenseId,
-                                    bytes: bytes,
-                                    fileName: image.name,
-                                    contentType: mimeType,
-                                    onProgress: (sent, total) {
-                                      if (total <= 0) return;
-                                      final progress = sent / total;
-                                      setDialogState(() {
-                                        final idx = attachmentItems.indexWhere(
-                                          (it) => it.id == itemId,
-                                        );
-                                        if (idx >= 0) {
-                                          attachmentItems[idx] =
-                                              attachmentItems[idx].copyWith(
-                                                progress: progress,
-                                              );
-                                        }
-                                      });
-                                    },
-                                  );
-                              setDialogState(() {
-                                final idx = attachmentItems.indexWhere(
-                                  (it) => it.id == itemId,
+                                attachmentItems.add(
+                                  _AttachmentUploadItem(
+                                    id: '${DateTime.now().microsecondsSinceEpoch}-url',
+                                    label: 'Bill URL',
+                                    url: url,
+                                    progress: 1,
+                                    uploading: false,
+                                  ),
                                 );
-                                if (idx >= 0) {
-                                  attachmentItems[idx] = attachmentItems[idx]
-                                      .copyWith(
-                                        uploading: false,
-                                        progress: 1,
-                                        url: url,
-                                        error: null,
-                                        localPreviewBytes: bytes,
-                                        localPreviewPath: image.path,
-                                        pendingUploadBytes: null,
-                                      );
-                                  didInlineAttachmentUpload = true;
-                                }
                               });
-                            } catch (error) {
-                              setDialogState(() {
-                                final idx = attachmentItems.indexWhere(
-                                  (it) => it.id == itemId,
-                                );
-                                if (idx >= 0) {
-                                  attachmentItems[idx] = attachmentItems[idx]
-                                      .copyWith(
-                                        uploading: false,
-                                        error: error.toString(),
-                                      );
-                                }
-                              });
-                            }
-                          },
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.attach_file, size: 16),
-                          label: const Text('Add URL'),
-                          onPressed: () async {
-                            final url = await _promptAttachmentUrl();
-                            if (url == null || url.isEmpty) return;
-                            setDialogState(() {
-                              if (isEditing) {
-                                requiresExplicitAttachmentSave = true;
-                              }
-                              attachmentItems.add(
-                                _AttachmentUploadItem(
-                                  id: '${DateTime.now().microsecondsSinceEpoch}-url',
-                                  label: 'Bill URL',
-                                  url: url,
-                                  progress: 1,
-                                  uploading: false,
-                                ),
-                              );
-                            });
-                          },
+                            },
+                          ),
+                        ],
+                      ),
+                      if (billMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            billMessage!,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
                       ],
-                    ),
-                    if (billMessage != null) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          billMessage!,
-                          style: Theme.of(context).textTheme.bodySmall,
+                      if (billResult != null) ...[
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            [
+                              if (billResult!.merchant.trim().isNotEmpty)
+                                billResult!.merchant.trim(),
+                              if (billResult!.amount > 0)
+                                '${billResult!.currency} ${billResult!.amount.toStringAsFixed(2)}',
+                              billResult!.category,
+                            ].where((item) => item.trim().isNotEmpty).join(' · '),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                    if (billResult != null) ...[
-                      const SizedBox(height: 4),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          [
-                            if (billResult!.merchant.trim().isNotEmpty)
-                              billResult!.merchant.trim(),
-                            if (billResult!.amount > 0)
-                              '${billResult!.currency} ${billResult!.amount.toStringAsFixed(2)}',
-                            billResult!.category,
-                          ].where((item) => item.trim().isNotEmpty).join(' · '),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            actions: [
-              if (isEditing)
-                TextButton.icon(
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).pop({'action': 'delete', 'expenseId': expenseId}),
-                  icon: Icon(
-                    Icons.delete_outline,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                  label: Text(
-                    'Delete',
-                    style: TextStyle(
+              actions: [
+                if (isEditing)
+                  TextButton.icon(
+                    onPressed: () => Navigator.of(
+                      context,
+                    ).pop({'action': 'delete', 'expenseId': expenseId}),
+                    icon: Icon(
+                      Icons.delete_outline,
                       color: Theme.of(context).colorScheme.error,
                     ),
+                    label: Text(
+                      'Delete',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
                   ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
                 ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop({
-                  'action': 'save',
-                  'description': descriptionController.text.trim(),
-                  'expenseId': expenseId,
-                  'amount': double.tryParse(amountController.text.trim()),
-                  'currency': currency,
-                  'targetCurrencies': [targetCurrency],
-                  'category': showMonthlyCategory ? category : '',
-                  'date': expenseDate,
-                  'paidBy': paidBy,
-                  'splitMode': splitMode,
-                  'splitWith': selected.toList(growable: false),
-                  'attachments': attachmentItems
-                      .where((item) => !item.uploading && item.url != null)
-                      .map((item) => item.url!)
-                      .toList(growable: false),
-                  'attachmentItems': List<_AttachmentUploadItem>.from(
-                    attachmentItems,
-                  ),
-                  'requiresExplicitAttachmentSave':
-                      requiresExplicitAttachmentSave,
-                  'didInlineAttachmentUpload': didInlineAttachmentUpload,
-                }),
-                child: Text(isEditing ? 'Done' : 'Save'),
-              ),
-            ],
-          ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop({
+                    'action': 'save',
+                    'description': descriptionController.text.trim(),
+                    'expenseId': expenseId,
+                    'amount': double.tryParse(amountController.text.trim()),
+                    'currency': currency,
+                    'targetCurrencies': [targetCurrency],
+                    'category': showMonthlyCategory ? category : '',
+                    'date': expenseDate,
+                    'paidBy': paidBy,
+                    'splitMode': splitMode,
+                    'splitWith': selected.toList(growable: false),
+                    'attachments': attachmentItems
+                        .where((item) => !item.uploading && item.url != null)
+                        .map((item) => item.url!)
+                        .toList(growable: false),
+                    'attachmentItems': List<_AttachmentUploadItem>.from(
+                      attachmentItems,
+                    ),
+                    'requiresExplicitAttachmentSave':
+                        requiresExplicitAttachmentSave,
+                    'didInlineAttachmentUpload': didInlineAttachmentUpload,
+                  }),
+                  child: Text(isEditing ? 'Done' : 'Save'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -2077,6 +2109,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   Future<void> _addExpense({
     String initialCategory = 'Groceries',
     String? initialDescription,
+    bool initialBillUpload = false,
   }) async {
     if (_members.isEmpty && _memberCount > 0) {
       await _loadMembers();
@@ -2093,6 +2126,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       initialCategory: initialCategory,
       initialSplitWith: participants.toSet(),
       showMonthlyCategory: widget.group.groupType == GroupType.family,
+      initialBillUpload: initialBillUpload,
     );
     if (!mounted || payload == null) return;
     final description = (payload['description'] as String?) ?? '';

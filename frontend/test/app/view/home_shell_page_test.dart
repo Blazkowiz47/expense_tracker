@@ -66,6 +66,22 @@ void main() {
     expect(find.text('Group'), findsNothing);
   });
 
+  testWidgets('home scan bill asks for household or personal target', (
+    tester,
+  ) async {
+    await pumpShell(tester, size: const Size(430, 900));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Quick actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan bill'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Where should this bill go?'), findsOneWidget);
+    expect(find.text('Household bill'), findsOneWidget);
+    expect(find.text('Personal bill'), findsOneWidget);
+  });
+
   testWidgets('desktop shell shows navigation rail', (tester) async {
     await pumpShell(tester, size: const Size(1400, 900));
     await tester.pumpAndSettle();

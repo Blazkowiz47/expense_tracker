@@ -20,6 +20,7 @@ class FamilyPage extends StatefulWidget {
     this.openAddExpenseOnLaunch = false,
     this.initialExpenseCategory = 'Groceries',
     this.initialExpenseDescription,
+    this.initialBillUpload = false,
     this.autoRefresh = false,
     super.key,
   });
@@ -30,6 +31,7 @@ class FamilyPage extends StatefulWidget {
   final bool openAddExpenseOnLaunch;
   final String initialExpenseCategory;
   final String? initialExpenseDescription;
+  final bool initialBillUpload;
   final bool autoRefresh;
 
   @override
@@ -164,6 +166,7 @@ class _FamilyPageState extends State<FamilyPage> {
     bool addExpense = false,
     String initialCategory = 'Groceries',
     String? initialDescription,
+    bool initialBillUpload = false,
   }) async {
     final family = _selectedFamily;
     if (family == null) return;
@@ -175,6 +178,7 @@ class _FamilyPageState extends State<FamilyPage> {
           initialAddExpense: addExpense,
           initialExpenseCategory: initialCategory,
           initialExpenseDescription: initialDescription,
+          initialBillUpload: initialBillUpload,
           autoRefresh: true,
         ),
       ),
@@ -200,6 +204,7 @@ class _FamilyPageState extends State<FamilyPage> {
         addExpense: true,
         initialCategory: widget.initialExpenseCategory,
         initialDescription: widget.initialExpenseDescription,
+        initialBillUpload: widget.initialBillUpload,
       );
     });
   }
