@@ -373,6 +373,7 @@ class _ActivityPageState extends State<ActivityPage> {
     List<_ActivityExpenseEntry> entries,
     DateTime start,
     DateTime end,
+    String currency,
   ) {
     switch (_range) {
       case _ActivityRange.week:
@@ -381,7 +382,11 @@ class _ActivityPageState extends State<ActivityPage> {
           final next = day.add(const Duration(days: 1));
           return AppChartPoint(
             label: _weekdayLabel(day),
-            value: _entriesInPeriod(entries, day, next).totalAmount,
+            value: _entriesInPeriod(
+              entries,
+              day,
+              next,
+            ).totalAmountForCurrency(currency),
           );
         });
       case _ActivityRange.month:
@@ -393,7 +398,11 @@ class _ActivityPageState extends State<ActivityPage> {
           points.add(
             AppChartPoint(
               label: 'W$bucket',
-              value: _entriesInPeriod(entries, cursor, next).totalAmount,
+              value: _entriesInPeriod(
+                entries,
+                cursor,
+                next,
+              ).totalAmountForCurrency(currency),
             ),
           );
           cursor = next;
@@ -406,7 +415,11 @@ class _ActivityPageState extends State<ActivityPage> {
           final next = DateTime(start.year, index + 2);
           return AppChartPoint(
             label: _monthLabel(month),
-            value: _entriesInPeriod(entries, month, next).totalAmount,
+            value: _entriesInPeriod(
+              entries,
+              month,
+              next,
+            ).totalAmountForCurrency(currency),
           );
         });
     }
@@ -419,10 +432,10 @@ class _ActivityPageState extends State<ActivityPage> {
           ? 'Other'
           : expense.category.trim();
       final current = totals[label] ?? _CategoryTotal.empty(label);
-      totals[label] = current.add(expense.amount);
+      totals[label] = current.add(expense);
     }
     final values = totals.values.toList(growable: false)
-      ..sort((a, b) => b.amount.compareTo(a.amount));
+      ..sort((a, b) => b.sortAmount.compareTo(a.sortAmount));
     return values;
   }
 
@@ -455,17 +468,61 @@ class _ActivityPageState extends State<ActivityPage> {
     };
   }
 
-  String _comparisonLabel(double current, double previous) {
+  String _comparisonLabel(
+    Map<String, double> current,
+    Map<String, double> previous,
+  ) {
     final range = _rangeLabel(_range).toLowerCase();
-    if (previous <= 0 && current <= 0) {
+    final currencies = {...current.keys, ...previous.keys}
+      ..removeWhere((currency) {
+        final currentAmount = current[currency] ?? 0;
+        final previousAmount = previous[currency] ?? 0;
+        return currentAmount.abs() <= 0.005 && previousAmount.abs() <= 0.005;
+      });
+    if (currencies.isEmpty) {
       return 'No change vs last $range';
     }
-    if (previous <= 0) {
-      return '+100% vs last $range';
+    if (currencies.length > 1) {
+      if (previous.isEmpty) {
+        return 'No spend last $range';
+      }
+      return 'Last $range: ${AppMoney.formatCurrencyAmounts(previous)}';
     }
-    final delta = ((current - previous) / previous) * 100;
+    final currency = currencies.first;
+    final currentAmount = current[currency] ?? 0;
+    final previousAmount = previous[currency] ?? 0;
+    if (previousAmount <= 0 && currentAmount <= 0) {
+      return 'No change vs last $range';
+    }
+    if (previousAmount <= 0) return '+100% vs last $range';
+    final delta = ((currentAmount - previousAmount) / previousAmount) * 100;
     final sign = delta >= 0 ? '+' : '';
     return '$sign${delta.toStringAsFixed(0)}% vs last $range';
+  }
+
+  bool _hasIncreasedSpend(
+    Map<String, double> current,
+    Map<String, double> previous,
+  ) {
+    for (final currency in {...current.keys, ...previous.keys}) {
+      if ((current[currency] ?? 0) > (previous[currency] ?? 0) + 0.005) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? _singleCurrencyForTrend(
+    Map<String, double> current,
+    Map<String, double> previous,
+  ) {
+    final currencies = {...current.keys, ...previous.keys}
+      ..removeWhere((currency) {
+        final currentAmount = current[currency] ?? 0;
+        final previousAmount = previous[currency] ?? 0;
+        return currentAmount.abs() <= 0.005 && previousAmount.abs() <= 0.005;
+      });
+    return currencies.length == 1 ? currencies.first : null;
   }
 
   Future<void> _editExpense(Expense expense) async {
@@ -522,12 +579,21 @@ class _ActivityPageState extends State<ActivityPage> {
           previousStart,
           start,
         );
-        final currentTotal = periodExpenses.totalAmount;
-        final previousTotal = previousExpenses.totalAmount;
-        final trend = _trendPoints(activityEntries, start, end);
+        final currentTotals = periodExpenses.totalAmountsByCurrency;
+        final previousTotals = previousExpenses.totalAmountsByCurrency;
+        final trendCurrency = _singleCurrencyForTrend(
+          currentTotals,
+          previousTotals,
+        );
+        final trend = trendCurrency == null
+            ? const <AppChartPoint>[]
+            : _trendPoints(activityEntries, start, end, trendCurrency);
         final categories = _categoryTotals(periodExpenses).take(4).toList();
-        final comparison = _comparisonLabel(currentTotal, previousTotal);
-        final increasedSpend = currentTotal > previousTotal;
+        final comparison = _comparisonLabel(currentTotals, previousTotals);
+        final increasedSpend = _hasIncreasedSpend(
+          currentTotals,
+          previousTotals,
+        );
 
         return AppPageContainer(
           onRefresh: () => _refreshActivityData(showLoading: false),
@@ -535,7 +601,7 @@ class _ActivityPageState extends State<ActivityPage> {
           autoRefresh: widget.autoRefresh,
           children: [
             _SpendSummaryCard(
-              total: currentTotal,
+              totalText: AppMoney.formatCurrencyAmounts(currentTotals),
               comparison: comparison,
               increasedSpend: increasedSpend,
               loading: _loadingExpenses,
@@ -618,7 +684,7 @@ class _ExpenseActivityTile extends StatelessWidget {
         title: Text(entry.title),
         subtitle: Text(category.isEmpty ? date : '$category · $date'),
         trailing: AppMoneyLabel(
-          text: AppMoney.format(entry.amount),
+          text: AppMoney.formatCurrency(entry.amount, entry.currency),
           positive: false,
           neutral: true,
         ),
@@ -639,6 +705,8 @@ class _ActivityExpenseEntry {
     required this.title,
     required this.category,
     required this.amount,
+    required this.currency,
+    required this.amountsByCurrency,
     required this.date,
     required this.icon,
     this.personalExpense,
@@ -650,6 +718,8 @@ class _ActivityExpenseEntry {
       title: expense.title,
       category: (expense.category ?? '').trim(),
       amount: expense.amount,
+      currency: expense.currency,
+      amountsByCurrency: {expense.currency: expense.amount},
       date: expense.createdAt,
       icon: Icons.receipt_long_outlined,
       personalExpense: expense,
@@ -666,6 +736,8 @@ class _ActivityExpenseEntry {
       title: description.isEmpty ? entry.group.name : description,
       category: '$groupLabel · ${entry.group.name}',
       amount: entry.expense.amount,
+      currency: entry.expense.currency,
+      amountsByCurrency: entry.expense.amountsByCurrency,
       date: entry.expense.date,
       icon: entry.group.groupType == GroupType.family
           ? Icons.home_outlined
@@ -677,6 +749,8 @@ class _ActivityExpenseEntry {
   final String title;
   final String category;
   final double amount;
+  final String currency;
+  final Map<String, double> amountsByCurrency;
   final DateTime date;
   final IconData icon;
   final Expense? personalExpense;
@@ -685,7 +759,7 @@ class _ActivityExpenseEntry {
 
 class _SpendSummaryCard extends StatelessWidget {
   const _SpendSummaryCard({
-    required this.total,
+    required this.totalText,
     required this.comparison,
     required this.increasedSpend,
     required this.loading,
@@ -694,7 +768,7 @@ class _SpendSummaryCard extends StatelessWidget {
     required this.trend,
   });
 
-  final double total;
+  final String totalText;
   final String comparison;
   final bool increasedSpend;
   final bool loading;
@@ -726,7 +800,7 @@ class _SpendSummaryCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      AppMoney.format(total),
+                      totalText,
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(fontWeight: FontWeight.w700),
                     ),
@@ -774,7 +848,7 @@ class _SpendSummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          AppLineChart(points: trend),
+          if (trend.isNotEmpty) AppLineChart(points: trend),
         ],
       ),
     );
@@ -796,9 +870,14 @@ class _CategoryBreakdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currencyCount = categories
+        .expand((category) => category.amountsByCurrency.keys)
+        .toSet()
+        .length;
+    final showShares = currencyCount <= 1;
     final total = categories.fold<double>(
       0,
-      (sum, category) => sum + category.amount,
+      (sum, category) => sum + category.sortAmount,
     );
     final colors = [
       Theme.of(context).colorScheme.primary,
@@ -812,7 +891,7 @@ class _CategoryBreakdownCard extends StatelessWidget {
         .map((entry) {
           return AppChartSegment(
             label: entry.value.label,
-            value: entry.value.amount,
+            value: entry.value.sortAmount,
             color: colors[entry.key % colors.length],
           );
         })
@@ -831,13 +910,15 @@ class _CategoryBreakdownCard extends StatelessWidget {
               style: TextStyle(color: Theme.of(context).colorScheme.outline),
             )
           else ...[
-            AppSegmentedBar(segments: segments),
-            const SizedBox(height: 14),
+            if (showShares) ...[
+              AppSegmentedBar(segments: segments),
+              const SizedBox(height: 14),
+            ],
             ...categories.asMap().entries.map((entry) {
               final category = entry.value;
-              final percent = total <= 0
+              final percent = !showShares || total <= 0
                   ? 0
-                  : (category.amount / total * 100).round();
+                  : (category.sortAmount / total * 100).round();
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(
@@ -852,15 +933,19 @@ class _CategoryBreakdownCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     Expanded(child: Text(category.label)),
-                    Text(
-                      '$percent%',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(width: 12),
+                    if (showShares) ...[
+                      Text(
+                        '$percent%',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(width: 12),
+                    ],
                     SizedBox(
-                      width: 86,
+                      width: showShares ? 86 : 150,
                       child: Text(
-                        AppMoney.format(category.amount),
+                        AppMoney.formatCurrencyAmounts(
+                          category.amountsByCurrency,
+                        ),
                         textAlign: TextAlign.right,
                         style: Theme.of(context).textTheme.labelLarge,
                       ),
@@ -897,28 +982,50 @@ class _ActivityTile extends StatelessWidget {
 class _CategoryTotal {
   const _CategoryTotal({
     required this.label,
-    required this.amount,
+    required this.amountsByCurrency,
     required this.count,
   });
 
   factory _CategoryTotal.empty(String label) {
-    return _CategoryTotal(label: label, amount: 0, count: 0);
+    return _CategoryTotal(label: label, amountsByCurrency: const {}, count: 0);
   }
 
   final String label;
-  final double amount;
+  final Map<String, double> amountsByCurrency;
   final int count;
 
-  _CategoryTotal add(double value) {
+  double get sortAmount =>
+      amountsByCurrency.values.fold<double>(0, (sum, amount) => sum + amount);
+
+  _CategoryTotal add(_ActivityExpenseEntry entry) {
+    final nextAmounts = Map<String, double>.of(amountsByCurrency);
+    for (final item in entry.amountsByCurrency.entries) {
+      nextAmounts[item.key] = (nextAmounts[item.key] ?? 0) + item.value;
+    }
     return _CategoryTotal(
       label: label,
-      amount: amount + value,
+      amountsByCurrency: nextAmounts,
       count: count + 1,
     );
   }
 }
 
 extension on List<_ActivityExpenseEntry> {
-  double get totalAmount =>
-      fold<double>(0, (sum, expense) => sum + expense.amount);
+  Map<String, double> get totalAmountsByCurrency {
+    final totals = <String, double>{};
+    for (final expense in this) {
+      for (final amount in expense.amountsByCurrency.entries) {
+        totals[amount.key] = (totals[amount.key] ?? 0) + amount.value;
+      }
+    }
+    totals.removeWhere((_, amount) => amount.abs() <= 0.005);
+    return totals;
+  }
+
+  double totalAmountForCurrency(String currency) {
+    return fold<double>(
+      0,
+      (sum, expense) => sum + (expense.amountsByCurrency[currency] ?? 0),
+    );
+  }
 }

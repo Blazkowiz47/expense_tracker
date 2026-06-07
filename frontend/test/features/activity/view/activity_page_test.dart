@@ -134,6 +134,67 @@ void main() {
     expect(find.text('Edit expense'), findsOneWidget);
   });
 
+  testWidgets('keeps personal activity totals separated by currency', (
+    tester,
+  ) async {
+    final today = DateTime.now();
+    final expenses = [
+      Expense(
+        core: ExpenseCore(
+          id: 'expense-usd',
+          title: 'Airport snacks',
+          amount: 20,
+          currency: 'USD',
+          category: 'Travel',
+          createdAt: today,
+        ),
+        description: 'Airport snacks',
+        paymentMethod: 'card',
+      ),
+      Expense(
+        core: ExpenseCore(
+          id: 'expense-nok',
+          title: 'Train ticket',
+          amount: 30,
+          currency: 'NOK',
+          category: 'Travel',
+          createdAt: today,
+        ),
+        description: 'Train ticket',
+        paymentMethod: 'card',
+      ),
+    ];
+    final expenseRepository = _FakeExpenseRepository(expenses);
+    final expensesBloc = ExpensesBloc(repository: expenseRepository);
+    final dashboardCubit = DashboardSnapshotCubit(
+      repository: const MockDashboardSnapshotRepository(),
+    )..load();
+    addTearDown(expensesBloc.close);
+    addTearDown(dashboardCubit.close);
+
+    await tester.pumpWidget(
+      RepositoryProvider<ExpenseRepository>.value(
+        value: expenseRepository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: expensesBloc),
+            BlocProvider.value(value: dashboardCubit),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: InkRipple.splashFactory),
+            home: ActivityPage(groupsRepository: _FakeGroupsRepository()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('NOK 30.00 / USD 20.00'), findsWidgets);
+    expect(find.text('USD 20.00'), findsOneWidget);
+    expect(find.text('NOK 30.00'), findsOneWidget);
+    expect(find.text('₹50.00'), findsNothing);
+  });
+
   testWidgets('shows family and split group expenses in history', (
     tester,
   ) async {
