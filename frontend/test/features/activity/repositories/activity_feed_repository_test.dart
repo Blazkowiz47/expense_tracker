@@ -17,9 +17,11 @@ class _FakeAuthTokenProvider implements AuthTokenProvider {
 void main() {
   test('fetchActivity sends cursor and parses mixed entries', () async {
     final since = DateTime.parse('2026-06-07T10:00:00Z');
+    final before = DateTime.parse('2026-06-07T10:30:00Z');
     final client = MockClient((request) async {
       expect(request.url.path, '/api/v1/activity');
       expect(request.url.queryParameters['since'], since.toIso8601String());
+      expect(request.url.queryParameters['before'], before.toIso8601String());
       expect(request.url.queryParameters['limit'], '40');
       expect(
         request.url.queryParameters['include'],
@@ -29,6 +31,8 @@ void main() {
       return http.Response('''
         {
           "serverTime": "2026-06-07T10:00:45Z",
+          "hasMore": true,
+          "nextCursor": "2026-06-07T10:00:20Z",
           "entries": [
             {
               "kind": "personalExpense",
@@ -171,9 +175,15 @@ void main() {
       authTokenProvider: const _FakeAuthTokenProvider('session-token'),
     );
 
-    final feed = await repository.fetchActivity(since: since, limit: 40);
+    final feed = await repository.fetchActivity(
+      since: since,
+      before: before,
+      limit: 40,
+    );
 
     expect(feed.serverTime, DateTime.parse('2026-06-07T10:00:45Z'));
+    expect(feed.hasMore, isTrue);
+    expect(feed.nextCursor, DateTime.parse('2026-06-07T10:00:20Z'));
     expect(feed.entries, hasLength(5));
     expect(feed.entries.first.personalExpense?.title, 'Morning coffee');
     final groupExpense = feed.entries.firstWhere(

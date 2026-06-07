@@ -18,11 +18,15 @@ class ActivityFeed {
     required this.serverTime,
     required this.entries,
     required this.tombstones,
+    this.hasMore = false,
+    this.nextCursor,
   });
 
   final DateTime serverTime;
   final List<ActivityFeedEntry> entries;
   final ActivityFeedTombstones tombstones;
+  final bool hasMore;
+  final DateTime? nextCursor;
 
   factory ActivityFeed.fromJson(Map<String, dynamic> json) {
     return ActivityFeed(
@@ -39,6 +43,8 @@ class ActivityFeed {
             ? json['tombstones'] as Map<String, dynamic>
             : const {},
       ),
+      hasMore: json['hasMore'] as bool? ?? false,
+      nextCursor: _parseUtc(json['nextCursor'] as String?),
     );
   }
 }

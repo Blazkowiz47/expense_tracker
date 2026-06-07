@@ -71,14 +71,19 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
 }
 
 class _FakeActivityFeedRepository extends ActivityFeedRepository {
-  _FakeActivityFeedRepository(this.feed)
+  _FakeActivityFeedRepository(ActivityFeed feed) : this.pages([feed]);
+
+  _FakeActivityFeedRepository.pages(this._pages)
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
-  final ActivityFeed feed;
+  final List<ActivityFeed> _pages;
+  final List<DateTime?> beforeRequests = [];
+  int _requestCount = 0;
 
   @override
   Future<ActivityFeed> fetchActivity({
     DateTime? since,
+    DateTime? before,
     int limit = 80,
     Iterable<String> include = const [
       'personal',
@@ -88,7 +93,12 @@ class _FakeActivityFeedRepository extends ActivityFeedRepository {
       'recurring',
     ],
   }) async {
-    return feed;
+    beforeRequests.add(before);
+    final index = _requestCount < _pages.length
+        ? _requestCount
+        : _pages.length - 1;
+    _requestCount += 1;
+    return _pages[index];
   }
 }
 
@@ -424,6 +434,99 @@ void main() {
       expect(find.text('₹30,500.00'), findsOneWidget);
     },
   );
+
+  testWidgets('loads older activity event pages', (tester) async {
+    final today = DateTime.now();
+    final older = today.subtract(const Duration(days: 1));
+    final expenseRepository = _FakeExpenseRepository();
+    final expensesBloc = ExpensesBloc(repository: expenseRepository);
+    final dashboardCubit = DashboardSnapshotCubit(
+      repository: const MockDashboardSnapshotRepository(),
+    )..load();
+    final activityFeedRepository = _FakeActivityFeedRepository.pages([
+      ActivityFeed(
+        serverTime: today.toUtc(),
+        tombstones: const ActivityFeedTombstones(),
+        hasMore: true,
+        nextCursor: today.toUtc(),
+        entries: [
+          ActivityFeedEntry(
+            kind: ActivityFeedEntryKind.friendSettlement,
+            id: 'friend-settlement-new',
+            date: today,
+            updatedAt: today,
+            viewerUid: 'alice',
+            payer: const ActivityUser(uid: 'alice', displayName: 'Alice'),
+            receiver: const ActivityUser(uid: 'bob', displayName: 'Bob'),
+            settlement: ActivitySettlement(
+              id: 'friend-settlement-new',
+              payerUid: 'alice',
+              receiverUid: 'bob',
+              amount: 25,
+              currency: 'USD',
+              createdAt: today,
+            ),
+          ),
+        ],
+      ),
+      ActivityFeed(
+        serverTime: today.toUtc(),
+        tombstones: const ActivityFeedTombstones(),
+        entries: [
+          ActivityFeedEntry(
+            kind: ActivityFeedEntryKind.friendSettlement,
+            id: 'friend-settlement-old',
+            date: older,
+            updatedAt: older,
+            viewerUid: 'alice',
+            payer: const ActivityUser(uid: 'bob', displayName: 'Bob'),
+            receiver: const ActivityUser(uid: 'alice', displayName: 'Alice'),
+            settlement: ActivitySettlement(
+              id: 'friend-settlement-old',
+              payerUid: 'bob',
+              receiverUid: 'alice',
+              amount: 10,
+              currency: 'USD',
+              createdAt: older,
+            ),
+          ),
+        ],
+      ),
+    ]);
+    addTearDown(expensesBloc.close);
+    addTearDown(dashboardCubit.close);
+
+    await tester.pumpWidget(
+      RepositoryProvider<ExpenseRepository>.value(
+        value: expenseRepository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: expensesBloc),
+            BlocProvider.value(value: dashboardCubit),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: InkRipple.splashFactory),
+            home: ActivityPage(
+              groupsRepository: _FakeGroupsRepository(),
+              activityFeedRepository: activityFeedRepository,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You paid Bob'), findsOneWidget);
+    expect(find.text('Load older'), findsOneWidget);
+
+    await tester.tap(find.text('Load older'));
+    await tester.pumpAndSettle();
+
+    expect(activityFeedRepository.beforeRequests, [null, today.toUtc()]);
+    expect(find.text('Bob paid you'), findsOneWidget);
+    expect(find.text('USD 10.00'), findsOneWidget);
+    expect(find.text('Load older'), findsNothing);
+  });
 
   testWidgets('opens split group expense edit mode from activity', (
     tester,

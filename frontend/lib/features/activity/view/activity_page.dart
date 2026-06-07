@@ -52,8 +52,11 @@ class _ActivityPageState extends State<ActivityPage> {
   List<Expense> _expenses = const [];
   List<_GroupExpenseEntry> _groupExpenses = const [];
   List<ActivityFeedEntry> _activityEvents = const [];
+  DateTime? _activityEventsNextCursor;
   DateTime? _activityFreshnessCursor;
   _ActivityRange _range = _ActivityRange.week;
+  bool _hasMoreActivityEvents = false;
+  bool _loadingMoreActivityEvents = false;
   bool _loadedRepository = false;
   bool _loadingExpenses = false;
 
@@ -104,15 +107,17 @@ class _ActivityPageState extends State<ActivityPage> {
     );
     final personalFuture = _loadPersonalExpenses();
     final groupFuture = _loadGroupExpenses();
-    final eventFuture = _loadActivityEvents();
+    final eventFuture = _loadActivityEventsPage();
     final personalExpenses = await personalFuture;
     final groupExpenses = await groupFuture;
-    final activityEvents = await eventFuture;
+    final activityEventPage = await eventFuture;
     if (!mounted) return;
     setState(() {
       _expenses = personalExpenses;
       _groupExpenses = groupExpenses;
-      _activityEvents = activityEvents;
+      _activityEvents = activityEventPage.entries;
+      _hasMoreActivityEvents = activityEventPage.hasMore;
+      _activityEventsNextCursor = activityEventPage.nextCursor;
       _loadingExpenses = false;
     });
     await _refreshActivityCursor();
@@ -327,16 +332,50 @@ class _ActivityPageState extends State<ActivityPage> {
     return entries;
   }
 
-  Future<List<ActivityFeedEntry>> _loadActivityEvents() async {
+  Future<_ActivityEventsPage> _loadActivityEventsPage({
+    DateTime? before,
+  }) async {
     try {
       final feed = await _activityFeedRepository.fetchActivity(
         limit: 120,
+        before: before,
         include: const ['friend_settlements', 'group_settlements', 'recurring'],
       );
-      return _activityEventsFromFeed(feed.entries);
+      return _ActivityEventsPage(
+        entries: _activityEventsFromFeed(feed.entries),
+        hasMore: feed.hasMore,
+        nextCursor: feed.nextCursor,
+      );
     } catch (_) {
-      return _activityEvents;
+      return _ActivityEventsPage(
+        entries: before == null ? _activityEvents : const [],
+        hasMore: _hasMoreActivityEvents,
+        nextCursor: _activityEventsNextCursor,
+      );
     }
+  }
+
+  Future<void> _loadMoreActivityEvents() async {
+    if (!_hasMoreActivityEvents || _loadingMoreActivityEvents) return;
+    final cursor = _activityEventsNextCursor;
+    if (cursor == null) return;
+    setState(() => _loadingMoreActivityEvents = true);
+    final page = await _loadActivityEventsPage(before: cursor);
+    if (!mounted) return;
+    setState(() {
+      if (page.entries.isNotEmpty) {
+        final byKey = <String, ActivityFeedEntry>{
+          for (final entry in _activityEvents) _activityEventKey(entry): entry,
+        };
+        for (final entry in page.entries) {
+          byKey[_activityEventKey(entry)] = entry;
+        }
+        _activityEvents = byKey.values.toList(growable: false);
+      }
+      _hasMoreActivityEvents = page.hasMore;
+      _activityEventsNextCursor = page.nextCursor;
+      _loadingMoreActivityEvents = false;
+    });
   }
 
   List<ActivityFeedEntry> _activityEventsFromFeed(
@@ -741,6 +780,26 @@ class _ActivityPageState extends State<ActivityPage> {
               ...state.snapshot.activityItems.map(
                 (item) => _ActivityTile(item: item),
               ),
+            if (_hasMoreActivityEvents) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: OutlinedButton.icon(
+                  onPressed: _loadingMoreActivityEvents
+                      ? null
+                      : _loadMoreActivityEvents,
+                  icon: _loadingMoreActivityEvents
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.expand_more),
+                  label: Text(
+                    _loadingMoreActivityEvents ? 'Loading' : 'Load older',
+                  ),
+                ),
+              ),
+            ],
           ],
         );
       },
@@ -777,6 +836,18 @@ class _GroupExpenseEntry {
 
   final GroupSummary group;
   final GroupExpense expense;
+}
+
+class _ActivityEventsPage {
+  const _ActivityEventsPage({
+    required this.entries,
+    required this.hasMore,
+    required this.nextCursor,
+  });
+
+  final List<ActivityFeedEntry> entries;
+  final bool hasMore;
+  final DateTime? nextCursor;
 }
 
 class _ActivityExpenseEntry {

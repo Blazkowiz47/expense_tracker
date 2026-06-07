@@ -344,22 +344,26 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     @app.get("/api/v1/activity")
     def activity_feed(
         since: str | None = None,
+        before: str | None = None,
         limit: int = Query(default=80, ge=1, le=200),
         include: str = "personal,group,settlements,recurring",
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
         since_dt = parse_dt(since) if since else None
+        before_dt = parse_dt(before) if before else None
         server_time = now()
         include_sections = parse_activity_include(include)
+        feed = activity_feed_entries(
+            app.state.db,
+            user["uid"],
+            since_dt,
+            before_dt,
+            limit,
+            include_sections,
+        )
         return {
             "serverTime": iso(server_time),
-            "entries": activity_feed_entries(
-                app.state.db,
-                user["uid"],
-                since_dt,
-                limit,
-                include_sections,
-            ),
+            **feed,
             "tombstones": activity_tombstones_since(app.state.db, user["uid"], since_dt),
         }
 
@@ -1413,9 +1417,10 @@ def activity_feed_entries(
     db: Any,
     uid: str,
     since: datetime | None,
+    before: datetime | None,
     limit: int,
     include_sections: set[str],
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
     if "personal" in include_sections:
         personal_filter = {"uid": uid, **activity_since_filter(since)}
@@ -1552,8 +1557,26 @@ def activity_feed_entries(
                 }
             )
 
+    if before is not None:
+        before_dt = aware(before)
+        entries = [
+            entry
+            for entry in entries
+            if activity_entry_sort_time(entry) < before_dt
+        ]
+
     entries.sort(key=activity_entry_sort_time, reverse=True)
-    return json_ready(entries[:limit])
+    limited = entries[: limit + 1]
+    has_more = len(limited) > limit
+    visible_entries = limited[:limit]
+    next_cursor = None
+    if has_more and visible_entries:
+        next_cursor = iso(activity_entry_sort_time(visible_entries[-1]))
+    return {
+        "entries": json_ready(visible_entries),
+        "hasMore": has_more,
+        "nextCursor": next_cursor,
+    }
 
 
 def group_tombstones_since(db: Any, uid: str, since: datetime | None) -> dict[str, Any]:

@@ -431,6 +431,69 @@ def test_activity_feed_includes_settlements_and_recurring_confirmations(tmp_path
     assert recurring_entry["occurrence"]["actualAmount"] == 30500
 
 
+def test_activity_feed_paginates_older_events(tmp_path):
+    client, app = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+    bob_uid = client.get("/api/v1/auth/me", headers=headers_b).json()["user"]["uid"]
+
+    friend = client.post(
+        "/api/v1/friends/add",
+        headers=headers_a,
+        json={"emailOrPhone": "bob@example.com"},
+    )
+    assert friend.status_code == 200, friend.text
+
+    created_ids = []
+    for amount in [10, 20, 30]:
+        settlement = client.post(
+            "/api/v1/friends/settlements",
+            headers=headers_a,
+            json={
+                "friendUid": bob_uid,
+                "direction": "paid",
+                "amount": amount,
+                "currency": "USD",
+            },
+        )
+        assert settlement.status_code == 201, settlement.text
+        created_ids.append(settlement.json()["id"])
+
+    for settlement_id, created_at in zip(
+        created_ids,
+        [
+            datetime(2026, 6, 7, 10, 0),
+            datetime(2026, 6, 7, 11, 0),
+            datetime(2026, 6, 7, 12, 0),
+        ],
+        strict=True,
+    ):
+        app.state.db.friend_settlements.update_one(
+            {"id": settlement_id},
+            {"$set": {"createdAt": created_at}},
+        )
+
+    first_page = client.get(
+        "/api/v1/activity?include=friend_settlements&limit=2",
+        headers=headers_a,
+    )
+    assert first_page.status_code == 200, first_page.text
+    first_payload = first_page.json()
+    assert first_payload["hasMore"] is True
+    assert first_payload["nextCursor"] is not None
+    assert [entry["settlement"]["amount"] for entry in first_payload["entries"]] == [30, 20]
+
+    second_page = client.get(
+        f"/api/v1/activity?include=friend_settlements&limit=2&before={first_payload['nextCursor']}",
+        headers=headers_a,
+    )
+    assert second_page.status_code == 200, second_page.text
+    second_payload = second_page.json()
+    assert second_payload["hasMore"] is False
+    assert second_payload["nextCursor"] is None
+    assert [entry["settlement"]["amount"] for entry in second_payload["entries"]] == [10]
+
+
 def test_bill_upload_extraction_and_create_expense(tmp_path):
     client, app = make_client(tmp_path)
     headers = register(client)

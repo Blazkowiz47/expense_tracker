@@ -20,6 +20,7 @@ class ActivityFeedRepository {
 
   Future<ActivityFeed> fetchActivity({
     DateTime? since,
+    DateTime? before,
     int limit = 80,
     Iterable<String> include = const [
       'personal',
@@ -32,6 +33,9 @@ class ActivityFeedRepository {
     final params = <String, String>{'limit': limit.clamp(1, 200).toString()};
     if (since != null) {
       params['since'] = since.toUtc().toIso8601String();
+    }
+    if (before != null) {
+      params['before'] = before.toUtc().toIso8601String();
     }
     final includeList = include
         .map((section) => section.trim())
