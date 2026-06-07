@@ -99,13 +99,25 @@ void main() {
     await repository.createExpense(expense);
 
     expect(repository.getExpenseById('api-id'), isNotNull);
-    verify(
-      () => client.post(
-        any(),
-        headers: any(named: 'headers'),
-        body: any(named: 'body'),
-      ),
-    ).called(1);
+    final body =
+        verify(
+              () => client.post(
+                any(),
+                headers: any(named: 'headers'),
+                body: captureAny(named: 'body'),
+              ),
+            ).captured.single
+            as String;
+    final payload = jsonDecode(body) as Map<String, dynamic>;
+    expect(payload['amount'], 120);
+    expect(payload['currency'], 'INR');
+    expect(payload['category'], 'Personal');
+    expect(payload['description'], 'Lunch');
+    expect(payload['paymentMethod'], 'cash');
+    expect(
+      payload['date'],
+      DateTime(2026, 2, 25, 12, 30).toUtc().toIso8601String(),
+    );
   });
 
   test('updateExpense sends PUT and replaces cached expense', () async {
@@ -134,15 +146,35 @@ void main() {
         id: 'e1',
         title: 'Updated',
         amount: 999,
-        currency: 'INR',
-        category: 'Personal',
+        currency: 'NOK',
+        category: 'Food',
         createdAt: DateTime(2026, 2, 25, 12, 30),
       ),
-      description: 'Updated',
+      description: 'Updated\nDinner notes',
+      paymentMethod: 'card',
     );
     await repository.updateExpense(expense);
 
     expect(repository.getExpenseById('e1')?.amount, 999);
+    final body =
+        verify(
+              () => client.put(
+                any(),
+                headers: any(named: 'headers'),
+                body: captureAny(named: 'body'),
+              ),
+            ).captured.single
+            as String;
+    final payload = jsonDecode(body) as Map<String, dynamic>;
+    expect(payload['amount'], 999);
+    expect(payload['currency'], 'NOK');
+    expect(payload['category'], 'Food');
+    expect(payload['description'], 'Updated\nDinner notes');
+    expect(payload['paymentMethod'], 'card');
+    expect(
+      payload['date'],
+      DateTime(2026, 2, 25, 12, 30).toUtc().toIso8601String(),
+    );
   });
 
   test('deleteExpense sends DELETE and removes local cache entry', () async {

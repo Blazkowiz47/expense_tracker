@@ -27,18 +27,20 @@ class _FakeExpenseRepository extends ExpenseRepository {
 }
 
 void main() {
-  testWidgets('edit mode updates an existing expense', (tester) async {
+  testWidgets('edit mode updates an existing expense with details', (
+    tester,
+  ) async {
     final existing = Expense(
       core: ExpenseCore(
         id: 'expense-1',
         title: 'Coffee',
         amount: 120,
         currency: 'INR',
-        category: 'Personal',
+        category: 'Food',
         createdAt: DateTime(2026, 4, 24),
       ),
-      description: 'Coffee',
-      paymentMethod: 'cash',
+      description: 'Coffee\nLatte with oat milk',
+      paymentMethod: 'card',
     );
     final repository = _FakeExpenseRepository(existing);
     final bloc = ExpensesBloc(repository: repository);
@@ -56,16 +58,63 @@ void main() {
 
     expect(find.text('Edit expense'), findsOneWidget);
     expect(find.widgetWithText(TextField, 'Coffee'), findsOneWidget);
+    expect(
+      find.widgetWithText(TextField, 'Latte with oat milk'),
+      findsOneWidget,
+    );
+    expect(find.text('Food'), findsWidgets);
+    expect(find.text('Card'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'Lunch');
-    await tester.enterText(find.byType(TextField).at(1), '250');
+    await tester.enterText(find.byType(TextField).at(1), '250,50');
     await tester.tap(find.text('Save expense'));
     await tester.pumpAndSettle();
 
     expect(repository.updatedExpense, isNotNull);
     expect(repository.updatedExpense!.id, 'expense-1');
     expect(repository.updatedExpense!.title, 'Lunch');
-    expect(repository.updatedExpense!.amount, 250);
+    expect(
+      repository.updatedExpense!.description,
+      'Lunch\nLatte with oat milk',
+    );
+    expect(repository.updatedExpense!.amount, 250.50);
+    expect(repository.updatedExpense!.category, 'Food');
+    expect(repository.updatedExpense!.paymentMethod, 'card');
     expect(repository.updatedExpense!.createdAt, existing.createdAt);
+  });
+
+  testWidgets('rejects non-finite amounts', (tester) async {
+    final existing = Expense(
+      core: ExpenseCore(
+        id: 'expense-1',
+        title: 'Coffee',
+        amount: 120,
+        currency: 'INR',
+        category: 'Food',
+        createdAt: DateTime(2026, 4, 24),
+      ),
+      description: 'Coffee',
+      paymentMethod: 'card',
+    );
+    final repository = _FakeExpenseRepository(existing);
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(expense: existing),
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField).at(1), 'NaN');
+    await tester.tap(find.text('Save expense'));
+    await tester.pump();
+
+    expect(find.text('Enter a valid amount greater than 0.'), findsOneWidget);
+    expect(repository.updatedExpense, isNull);
   });
 }

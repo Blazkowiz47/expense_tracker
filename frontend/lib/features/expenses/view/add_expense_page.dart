@@ -70,7 +70,12 @@ class _AddExpensePageState extends State<AddExpensePage> {
     super.initState();
     final expense = widget.expense;
     if (expense != null) {
-      _descriptionController.text = expense.description ?? expense.title;
+      final descriptionParts = _splitDescription(
+        expense.description,
+        expense.title,
+      );
+      _descriptionController.text = descriptionParts.title;
+      _notesController.text = descriptionParts.notes;
       _amountController.text = expense.amount.toStringAsFixed(2);
       _expenseDate = expense.createdAt;
       _category = _normalizedChoice(
@@ -105,13 +110,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
   Future<void> _save({bool addAnother = false}) async {
     final description = _descriptionController.text.trim();
     final amountText = _amountController.text.trim();
-    final amount = double.tryParse(amountText);
+    final amount = _parseAmount(amountText);
 
     if (description.isEmpty) {
       setState(() => _error = 'Description is required.');
       return;
     }
-    if (amount == null || amount <= 0) {
+    if (amount == null || !amount.isFinite || amount <= 0) {
       setState(() => _error = 'Enter a valid amount greater than 0.');
       return;
     }
@@ -127,7 +132,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
         category: _category,
         createdAt: _expenseDate,
       ),
-      description: notes.isEmpty ? description : '$description\n$notes',
+      description: _composeDescription(description, notes),
       paymentMethod: _paymentMethod,
       updatedAt: DateTime.now(),
       isSynced: false,
@@ -217,10 +222,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
         contentType: _contentTypeFor(picked.name),
       );
       if (!mounted) return;
-      _descriptionController.text = result.merchant.isNotEmpty
+      final primaryDescription = result.merchant.isNotEmpty
           ? result.merchant
           : result.notes;
-      _notesController.text = result.notes;
+      _descriptionController.text = primaryDescription;
+      _notesController.text = result.notes.trim() == primaryDescription.trim()
+          ? ''
+          : result.notes;
       if (result.amount > 0) {
         _amountController.text = result.amount.toStringAsFixed(2);
       }
@@ -267,6 +275,52 @@ class _AddExpensePageState extends State<AddExpensePage> {
     if (lower.endsWith('.png')) return 'image/png';
     if (lower.endsWith('.webp')) return 'image/webp';
     return 'image/jpeg';
+  }
+
+  double? _parseAmount(String value) {
+    var normalized = value.trim().replaceAll(' ', '');
+    if (normalized.contains(',') && normalized.contains('.')) {
+      normalized = normalized.replaceAll(',', '');
+    } else if (normalized.contains(',')) {
+      final parts = normalized.split(',');
+      if (parts.length == 2 && parts.last.length == 3) {
+        normalized = '${parts.first}${parts.last}';
+      } else {
+        normalized = normalized.replaceAll(',', '.');
+      }
+    }
+    return double.tryParse(normalized);
+  }
+
+  ({String title, String notes}) _splitDescription(
+    String? description,
+    String fallbackTitle,
+  ) {
+    final raw = (description?.trim().isNotEmpty == true
+        ? description!.trim()
+        : fallbackTitle.trim());
+    if (raw.isEmpty) {
+      return (title: fallbackTitle, notes: '');
+    }
+    final lines = raw
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
+    if (lines.isEmpty) {
+      return (title: fallbackTitle, notes: '');
+    }
+    return (
+      title: lines.first,
+      notes: lines.length <= 1 ? '' : lines.skip(1).join('\n'),
+    );
+  }
+
+  String _composeDescription(String description, String notes) {
+    if (notes.isEmpty || notes == description) {
+      return description;
+    }
+    return '$description\n$notes';
   }
 
   String _normalizedChoice(
