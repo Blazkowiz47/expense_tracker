@@ -519,6 +519,17 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         (expense.paidBy.isNotEmpty ? expense.paidBy : expense.createdBy)
             .trim()
             .toLowerCase();
+    final splitAmounts = _normalizedSplitAmounts(expense.splitAmounts);
+    if (splitAmounts.isNotEmpty) {
+      final userShare = splitAmounts.entries
+          .where((entry) => userIdentifiers.contains(entry.key))
+          .fold<double>(0, (sum, entry) => sum + entry.value);
+      if (userIdentifiers.contains(paidBy)) {
+        return (owed: expense.amount - userShare, owe: 0);
+      }
+      return (owed: 0, owe: userShare);
+    }
+
     final splitParticipants = expense.splitWith
         .map((id) => id.trim().toLowerCase())
         .where((id) => id.isNotEmpty)
@@ -534,6 +545,58 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       return (owed: expense.amount - (userIsInSplit ? share : 0), owe: 0);
     }
     return (owed: 0, owe: userIsInSplit ? share : 0);
+  }
+
+  Map<String, double> _normalizedSplitAmounts(Map<String, double> amounts) {
+    final normalized = <String, double>{};
+    for (final entry in amounts.entries) {
+      final key = entry.key.trim().toLowerCase();
+      if (key.isEmpty || entry.value <= 0) continue;
+      normalized[key] = (normalized[key] ?? 0) + entry.value;
+    }
+    return normalized;
+  }
+
+  Map<String, double> _splitAmountsFromPayload(Object? value) {
+    if (value is! Map) {
+      return const {};
+    }
+    final amounts = <String, double>{};
+    for (final entry in value.entries) {
+      final key = entry.key?.toString().trim() ?? '';
+      final amount = entry.value is num
+          ? (entry.value as num).toDouble()
+          : double.tryParse(entry.value?.toString() ?? '');
+      if (key.isNotEmpty && amount != null && amount > 0) {
+        amounts[key] = amount;
+      }
+    }
+    return amounts;
+  }
+
+  Map<String, double> _splitAmountsForParticipantLabels(
+    Map<String, double> amounts,
+    List<String> participants,
+  ) {
+    if (amounts.isEmpty) {
+      return const {};
+    }
+    final labeled = <String, double>{};
+    for (final entry in amounts.entries) {
+      labeled[_resolvePayerLabel(entry.key, participants)] = entry.value;
+    }
+    return labeled;
+  }
+
+  bool _splitAmountsMatchTotal(Map<String, double> amounts, double total) {
+    if (amounts.isEmpty) {
+      return true;
+    }
+    final splitTotal = amounts.values.fold<double>(
+      0,
+      (sum, item) => sum + item,
+    );
+    return (splitTotal - total).abs() <= 0.005;
   }
 
   Map<String, double> _totalAmountsByCurrency(List<GroupExpense> expenses) {
@@ -645,6 +708,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     required Set<String> selectedMembers,
     required String currentMode,
     required double totalAmount,
+    required String currency,
+    Map<String, double> splitAmounts = const {},
   }) {
     return Navigator.of(context).push<_SplitSelectionResult>(
       MaterialPageRoute<_SplitSelectionResult>(
@@ -653,6 +718,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           selectedMembers: selectedMembers,
           currentMode: currentMode,
           totalAmount: totalAmount,
+          currency: currency,
+          splitAmounts: splitAmounts,
         ),
       ),
     );
@@ -971,6 +1038,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     String? initialPaidBy,
     String initialSplitMode = 'equally',
     Set<String>? initialSplitWith,
+    Map<String, double> initialSplitAmounts = const {},
     String initialCurrency = 'INR',
     String initialTargetCurrency = 'INR',
     String initialCategory = 'Groceries',
@@ -999,6 +1067,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         var category = _normalizedCategory(initialCategory);
         var expenseDate = initialDate ?? DateTime.now();
         final selected = {...(initialSplitWith ?? participants)};
+        var splitAmounts = Map<String, double>.from(initialSplitAmounts);
         var splitWithAll = selected.length == participants.length;
         final attachmentItems = [
           ...?initialAttachments?.asMap().entries.map(
@@ -1348,10 +1417,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       amountController.text.trim(),
                                     ) ??
                                     0,
+                                currency: currency,
+                                splitAmounts: splitAmounts,
                               );
                               if (result == null) return;
                               setDialogState(() {
                                 splitMode = result.mode;
+                                splitAmounts = Map<String, double>.from(
+                                  result.splitAmounts,
+                                );
                                 selected
                                   ..clear()
                                   ..addAll(result.selectedMembers);
@@ -1375,6 +1449,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             onSelected: (_) {
                               setDialogState(() {
                                 splitWithAll = true;
+                                splitMode = 'equally';
+                                splitAmounts.clear();
                                 selected
                                   ..clear()
                                   ..addAll(participants);
@@ -1385,7 +1461,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             label: const Text('Selected'),
                             selected: !splitWithAll,
                             onSelected: (_) {
-                              setDialogState(() => splitWithAll = false);
+                              setDialogState(() {
+                                splitWithAll = false;
+                                splitMode = 'equally';
+                                splitAmounts.clear();
+                              });
                             },
                           ),
                         ],
@@ -1407,6 +1487,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                       } else if (selected.length > 1) {
                                         selected.remove(p);
                                       }
+                                      splitMode = 'equally';
+                                      splitAmounts.clear();
                                     });
                                   },
                                 ),
@@ -2085,6 +2167,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                     'paidBy': paidBy,
                     'splitMode': splitMode,
                     'splitWith': selected.toList(growable: false),
+                    'splitAmounts': splitAmounts,
                     'attachments': attachmentItems
                         .where((item) => !item.uploading && item.url != null)
                         .map((item) => item.url!)
@@ -2135,6 +2218,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final splitWith = (payload['splitWith'] as List<dynamic>? ?? participants)
         .whereType<String>()
         .toList(growable: false);
+    final splitAmounts = _splitAmountsFromPayload(payload['splitAmounts']);
     final amount = payload['amount'] as double?;
     final currency = _normalizedGroupCurrency(
       (payload['currency'] as String?) ?? 'INR',
@@ -2161,6 +2245,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       );
       return;
     }
+    if (!_splitAmountsMatchTotal(splitAmounts, amount)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Review the split before saving.')),
+      );
+      return;
+    }
     setState(() => _busyAction = _GroupBusyAction.addingExpense);
     try {
       final created = await widget.repository.addExpense(
@@ -2169,6 +2259,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         paidBy: paidBy,
         splitMode: splitMode,
         splitWith: splitWith,
+        splitAmounts: splitAmounts,
         amount: amount,
         currency: currency,
         targetCurrencies: targetCurrencies,
@@ -2246,6 +2337,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                 .map((member) => _resolvePayerLabel(member, participants))
                 .toSet()
           : participants.toSet(),
+      initialSplitAmounts: _splitAmountsForParticipantLabels(
+        expense.splitAmounts,
+        participants,
+      ),
       initialCurrency: expense.currency,
       initialCategory: expense.category,
       initialTargetCurrency: _targetCurrencyForExpense(expense),
@@ -2274,6 +2369,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final splitWith = (payload['splitWith'] as List<dynamic>? ?? participants)
         .whereType<String>()
         .toList(growable: false);
+    final splitAmounts = _splitAmountsFromPayload(payload['splitAmounts']);
     final amount = payload['amount'] as double?;
     final currency = _normalizedGroupCurrency(
       (payload['currency'] as String?) ?? expense.currency,
@@ -2300,6 +2396,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       );
       return;
     }
+    if (!_splitAmountsMatchTotal(splitAmounts, amount)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Review the split before saving.')),
+      );
+      return;
+    }
 
     final originalPaidBy = _resolvePayerLabel(expense.paidBy, participants);
     final originalTargetCurrency = _targetCurrencyForExpense(expense);
@@ -2311,6 +2413,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               .map((member) => _resolvePayerLabel(member, participants))
               .toSet()
         : participants.toSet();
+    final originalSplitAmounts = _splitAmountsForParticipantLabels(
+      expense.splitAmounts,
+      participants,
+    );
     final dateChanged =
         date.toUtc().difference(expense.date.toUtc()).inMilliseconds.abs() >
         1000;
@@ -2324,6 +2430,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         paidBy != originalPaidBy ||
         splitMode != originalSplitMode ||
         !setEquals(splitWith.toSet(), originalSplitWith) ||
+        !mapEquals(splitAmounts, originalSplitAmounts) ||
         dateChanged;
     if (!fieldChanged && !requiresExplicitAttachmentSave) {
       if (didInlineAttachmentUpload) {
@@ -2335,6 +2442,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           paidBy: expense.paidBy,
           splitMode: expense.splitMode,
           splitWith: expense.splitWith,
+          splitAmounts: expense.splitAmounts,
+          splitAmountsByCurrency: expense.splitAmountsByCurrency,
           amount: expense.amount,
           currency: expense.currency,
           convertedAmounts: expense.convertedAmounts,
@@ -2360,6 +2469,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         paidBy: paidBy,
         splitMode: splitMode,
         splitWith: splitWith,
+        splitAmounts: splitAmounts,
         amount: amount,
         currency: currency,
         targetCurrencies: targetCurrencies,
@@ -3115,6 +3225,19 @@ class _GroupSettingsPageState extends State<_GroupSettingsPage> {
         final amount = entry.value;
         if (amount <= 0) continue;
         final currencyNet = netForCurrency(currency);
+        final splitAmounts = expense.splitAmountsForCurrency(currency);
+        if (splitAmounts.isNotEmpty) {
+          for (final splitEntry in splitAmounts.entries) {
+            final uid = resolveMemberUid(splitEntry.key);
+            final share = splitEntry.value;
+            if (uid == null || share <= 0) continue;
+            currencyNet[uid] = (currencyNet[uid] ?? 0) - share;
+          }
+          if (payerUid != null) {
+            currencyNet[payerUid] = (currencyNet[payerUid] ?? 0) + amount;
+          }
+          continue;
+        }
         final share = amount / effectiveSplitUids.length;
 
         for (final uid in effectiveSplitUids) {
@@ -3449,10 +3572,12 @@ class _SplitSelectionResult {
   const _SplitSelectionResult({
     required this.mode,
     required this.selectedMembers,
+    required this.splitAmounts,
   });
 
   final String mode;
   final Set<String> selectedMembers;
+  final Map<String, double> splitAmounts;
 }
 
 class _SplitOptionsPage extends StatefulWidget {
@@ -3461,12 +3586,16 @@ class _SplitOptionsPage extends StatefulWidget {
     required this.selectedMembers,
     required this.currentMode,
     required this.totalAmount,
+    required this.currency,
+    required this.splitAmounts,
   });
 
   final List<String> participants;
   final Set<String> selectedMembers;
   final String currentMode;
   final double totalAmount;
+  final String currency;
+  final Map<String, double> splitAmounts;
 
   @override
   State<_SplitOptionsPage> createState() => _SplitOptionsPageState();
@@ -3486,17 +3615,38 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
   @override
   void initState() {
     super.initState();
-    _mode = 'equally';
+    _mode = _supportedMode(widget.currentMode);
     _selected = {...widget.selectedMembers};
     if (_selected.isEmpty && widget.participants.isNotEmpty) {
       _selected = {widget.participants.first};
     }
     for (final member in widget.participants) {
-      _exactControllers[member] = TextEditingController();
-      _percentControllers[member] = TextEditingController();
-      _sharesControllers[member] = TextEditingController();
+      final splitAmount = widget.splitAmounts[member] ?? 0;
+      _exactControllers[member] = TextEditingController(
+        text: splitAmount > 0 && _mode == 'exact'
+            ? splitAmount.toStringAsFixed(2)
+            : '',
+      );
+      _percentControllers[member] = TextEditingController(
+        text: splitAmount > 0 && _mode == 'percent' && widget.totalAmount > 0
+            ? ((splitAmount / widget.totalAmount) * 100).toStringAsFixed(2)
+            : '',
+      );
+      _sharesControllers[member] = TextEditingController(
+        text: splitAmount > 0 && _mode == 'shares' ? '1' : '',
+      );
       _adjustmentControllers[member] = TextEditingController();
     }
+  }
+
+  String _supportedMode(String mode) {
+    return switch (mode.trim().toLowerCase()) {
+      'exact' ||
+      'percent' ||
+      'shares' ||
+      'adjustment' => mode.trim().toLowerCase(),
+      _ => 'equally',
+    };
   }
 
   @override
@@ -3590,6 +3740,154 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
       return false;
     }
     return _adjustmentEnteredTotal() - widget.totalAmount > 0.005;
+  }
+
+  String get _moneyPrefix {
+    final currency = widget.currency.trim().toUpperCase();
+    return currency == 'INR' || currency.isEmpty ? '₹' : '$currency ';
+  }
+
+  Map<String, double> _positiveEntries(
+    Map<String, TextEditingController> controllers,
+  ) {
+    final entries = <String, double>{};
+    for (final member in widget.participants) {
+      final amount = _parseLocalizedDouble(controllers[member]?.text ?? '');
+      if (amount > 0) {
+        entries[member] = amount;
+      }
+    }
+    return entries;
+  }
+
+  Map<String, double> _amountsFromWeights(Map<String, double> weights) {
+    final totalWeight = weights.values.fold<double>(
+      0,
+      (sum, item) => sum + item,
+    );
+    if (totalWeight <= 0 || widget.totalAmount <= 0) {
+      return const {};
+    }
+    final entries = weights.entries.where((entry) => entry.value > 0).toList();
+    final amounts = <String, double>{};
+    var allocated = 0.0;
+    for (var index = 0; index < entries.length; index += 1) {
+      final entry = entries[index];
+      final amount = index == entries.length - 1
+          ? widget.totalAmount - allocated
+          : double.parse(
+              ((widget.totalAmount * entry.value) / totalWeight)
+                  .toStringAsFixed(4),
+            );
+      if (amount > 0) {
+        amounts[entry.key] = amount;
+        allocated += amount;
+      }
+    }
+    return amounts;
+  }
+
+  _SplitSelectionResult? _buildResult() {
+    if (_selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose at least one person.')),
+      );
+      return null;
+    }
+    if (_mode == 'equally') {
+      return _SplitSelectionResult(
+        mode: 'equally',
+        selectedMembers: _selected,
+        splitAmounts: const {},
+      );
+    }
+    if (widget.totalAmount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter the amount before splitting.')),
+      );
+      return null;
+    }
+
+    Map<String, double> splitAmounts;
+    switch (_mode) {
+      case 'exact':
+        splitAmounts = _positiveEntries(_exactControllers);
+        if ((splitAmounts.values.fold<double>(0, (sum, item) => sum + item) -
+                    widget.totalAmount)
+                .abs() >
+            0.005) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Exact amounts must match the bill.')),
+          );
+          return null;
+        }
+        break;
+      case 'percent':
+        final percentages = _positiveEntries(_percentControllers);
+        if ((percentages.values.fold<double>(0, (sum, item) => sum + item) -
+                    100)
+                .abs() >
+            0.05) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Percentages must add up to 100%.')),
+          );
+          return null;
+        }
+        splitAmounts = _amountsFromWeights(percentages);
+        break;
+      case 'shares':
+        final shares = <String, double>{};
+        for (final member in widget.participants) {
+          final raw = _sharesControllers[member]?.text.trim() ?? '';
+          final share = int.tryParse(raw) ?? 0;
+          if (share > 0) {
+            shares[member] = share.toDouble();
+          }
+        }
+        if (shares.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Enter at least one share.')),
+          );
+          return null;
+        }
+        splitAmounts = _amountsFromWeights(shares);
+        break;
+      case 'adjustment':
+        final adjustments = _positiveEntries(_adjustmentControllers);
+        final selectedMembers = _selected.toList(growable: false);
+        final adjustedTotal = adjustments.values.fold<double>(
+          0,
+          (sum, item) => sum + item,
+        );
+        if (adjustedTotal - widget.totalAmount > 0.005) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Adjustments exceed the bill.')),
+          );
+          return null;
+        }
+        final base =
+            (widget.totalAmount - adjustedTotal) / selectedMembers.length;
+        splitAmounts = {
+          for (final member in selectedMembers)
+            member: base + (adjustments[member] ?? 0),
+        };
+        break;
+      default:
+        splitAmounts = {};
+    }
+    splitAmounts = Map<String, double>.from(splitAmounts);
+    splitAmounts.removeWhere((key, value) => value <= 0);
+    if (splitAmounts.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a valid split.')));
+      return null;
+    }
+    return _SplitSelectionResult(
+      mode: _mode,
+      selectedMembers: splitAmounts.keys.toSet(),
+      splitAmounts: Map.unmodifiable(splitAmounts),
+    );
   }
 
   String _titleForMode() {
@@ -3697,7 +3995,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '₹',
+              _moneyPrefix,
               style: TextStyle(
                 color: showErrorForThisMember ? errorColor : Colors.grey,
               ),
@@ -3931,7 +4229,6 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     final enteredAdjustment = _adjustmentEnteredTotal();
     final exactRemaining = widget.totalAmount - enteredExact;
     final percentRemaining = 100 - enteredPercent;
-    final sharesRemaining = widget.participants.length - enteredShares;
     final adjustmentRemaining = widget.totalAmount - enteredAdjustment;
 
     String footerTitle;
@@ -3940,10 +4237,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
     switch (_mode) {
       case 'exact':
         footerTitle =
-            '${AppMoney.format(enteredExact)} of ${AppMoney.format(widget.totalAmount)}';
+            '${AppMoney.formatCurrency(enteredExact, widget.currency)} of ${AppMoney.formatCurrency(widget.totalAmount, widget.currency)}';
         footerSubtitle = exactRemaining < 0
-            ? '${AppMoney.format(0)} left'
-            : '${AppMoney.format(exactRemaining)} left';
+            ? '${AppMoney.formatCurrency(0, widget.currency)} left'
+            : '${AppMoney.formatCurrency(exactRemaining, widget.currency)} left';
         footerError = exactRemaining.abs() > 0.005 && exactRemaining >= 0;
         break;
       case 'percent':
@@ -3955,21 +4252,24 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         break;
       case 'shares':
         footerTitle = '$enteredShares total shares';
-        footerSubtitle = '$sharesRemaining share(s) remaining';
-        footerError = sharesRemaining != 0;
+        footerSubtitle = enteredShares <= 0
+            ? 'Enter shares to split the bill'
+            : 'Bill is divided by share count';
+        footerError = enteredShares <= 0;
         break;
       case 'adjustment':
         footerTitle =
-            '${AppMoney.format(enteredAdjustment)} of ${AppMoney.format(widget.totalAmount)}';
+            '${AppMoney.formatCurrency(enteredAdjustment, widget.currency)} of ${AppMoney.formatCurrency(widget.totalAmount, widget.currency)}';
         footerSubtitle = adjustmentRemaining < 0
-            ? '${AppMoney.format(0)} left'
-            : '${AppMoney.format(adjustmentRemaining)} left';
+            ? '${AppMoney.formatCurrency(0, widget.currency)} left'
+            : '${AppMoney.formatCurrency(adjustmentRemaining, widget.currency)} left';
         footerError =
             adjustmentRemaining.abs() > 0.005 && adjustmentRemaining >= 0;
         break;
       case 'equally':
       default:
-        footerTitle = '${AppMoney.format(perPerson)}/person';
+        footerTitle =
+            '${AppMoney.formatCurrency(perPerson, widget.currency)}/person';
         footerSubtitle = '(${_selected.length} people)';
         footerError = false;
     }
@@ -3985,9 +4285,10 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop(
-                _SplitSelectionResult(mode: _mode, selectedMembers: _selected),
-              );
+              final result = _buildResult();
+              if (result != null) {
+                Navigator.of(context).pop(result);
+              }
             },
             child: const Text('Done'),
           ),

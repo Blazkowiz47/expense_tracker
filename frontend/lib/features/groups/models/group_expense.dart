@@ -7,6 +7,8 @@ class GroupExpense {
     required this.paidBy,
     required this.splitMode,
     required this.splitWith,
+    this.splitAmounts = const {},
+    this.splitAmountsByCurrency = const {},
     required this.amount,
     this.currency = 'INR',
     this.convertedAmounts = const {},
@@ -25,6 +27,8 @@ class GroupExpense {
   final String paidBy;
   final String splitMode;
   final List<String> splitWith;
+  final Map<String, double> splitAmounts;
+  final Map<String, Map<String, double>> splitAmountsByCurrency;
   final double amount;
   final String currency;
   final Map<String, double> convertedAmounts;
@@ -46,9 +50,16 @@ class GroupExpense {
       splitWith: (json['splitWith'] as List<dynamic>? ?? const [])
           .whereType<String>()
           .toList(growable: false),
+      splitAmounts: _parseAmountMap(json['splitAmounts']),
+      splitAmountsByCurrency: _parseAmountsByCurrency(
+        json['splitAmountsByCurrency'],
+      ),
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       currency: _normalizeCurrency(json['currency']),
-      convertedAmounts: _parseConvertedAmounts(json['convertedAmounts']),
+      convertedAmounts: _parseAmountMap(
+        json['convertedAmounts'],
+        normalizeCurrencyKeys: true,
+      ),
       category: (json['category'] as String?) ?? '',
       description: (json['description'] as String?) ?? '',
       attachments: (json['attachments'] as List<dynamic>? ?? const [])
@@ -71,6 +82,25 @@ class GroupExpense {
     }
     return {currency: amount};
   }
+
+  Map<String, double> splitAmountsForCurrency(String targetCurrency) {
+    final normalized = _normalizeCurrency(targetCurrency);
+    final saved = splitAmountsByCurrency[normalized];
+    if (saved != null && saved.isNotEmpty) {
+      return saved;
+    }
+    if (splitAmounts.isEmpty || amount <= 0) {
+      return const {};
+    }
+    final currencyAmount = amountsByCurrency[normalized];
+    if (currencyAmount == null) {
+      return normalized == currency ? splitAmounts : const {};
+    }
+    final ratio = currencyAmount / amount;
+    return Map.unmodifiable(
+      splitAmounts.map((key, value) => MapEntry(key, value * ratio)),
+    );
+  }
 }
 
 String _normalizeCurrency(Object? value) {
@@ -78,13 +108,19 @@ String _normalizeCurrency(Object? value) {
   return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : 'INR';
 }
 
-Map<String, double> _parseConvertedAmounts(Object? value) {
+Map<String, double> _parseAmountMap(
+  Object? value, {
+  bool normalizeCurrencyKeys = false,
+}) {
   if (value is! Map) {
     return const {};
   }
   final amounts = <String, double>{};
   for (final entry in value.entries) {
-    final currency = _normalizeCurrency(entry.key);
+    final key = normalizeCurrencyKeys
+        ? _normalizeCurrency(entry.key)
+        : (entry.key?.toString().trim() ?? '');
+    if (key.isEmpty) continue;
     final rawAmount = entry.value is Map
         ? (entry.value as Map)['amount']
         : entry.value;
@@ -92,7 +128,22 @@ Map<String, double> _parseConvertedAmounts(Object? value) {
         ? rawAmount.toDouble()
         : double.tryParse(rawAmount?.toString() ?? '');
     if (amount != null) {
-      amounts[currency] = amount;
+      amounts[key] = amount;
+    }
+  }
+  return Map.unmodifiable(amounts);
+}
+
+Map<String, Map<String, double>> _parseAmountsByCurrency(Object? value) {
+  if (value is! Map) {
+    return const {};
+  }
+  final amounts = <String, Map<String, double>>{};
+  for (final entry in value.entries) {
+    final currency = _normalizeCurrency(entry.key);
+    final currencyAmounts = _parseAmountMap(entry.value);
+    if (currencyAmounts.isNotEmpty) {
+      amounts[currency] = currencyAmounts;
     }
   }
   return Map.unmodifiable(amounts);

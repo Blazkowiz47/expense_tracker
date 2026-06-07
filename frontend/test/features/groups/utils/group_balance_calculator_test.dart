@@ -8,6 +8,9 @@ void main() {
     required String createdBy,
     required double amount,
     List<String> splitWith = const [],
+    Map<String, double> splitAmounts = const {},
+    Map<String, double> convertedAmounts = const {},
+    Map<String, Map<String, double>> splitAmountsByCurrency = const {},
   }) {
     final now = DateTime(2026, 2, 28);
     return GroupExpense(
@@ -18,7 +21,10 @@ void main() {
       paidBy: createdBy,
       splitMode: 'equally',
       splitWith: splitWith,
+      splitAmounts: splitAmounts,
+      splitAmountsByCurrency: splitAmountsByCurrency,
       amount: amount,
+      convertedAmounts: convertedAmounts,
       description: id,
       attachments: const [],
       date: now,
@@ -100,5 +106,46 @@ void main() {
 
     expect(result.lent, 60);
     expect(result.borrowed, 90);
+  });
+
+  test('honors exact split amounts', () {
+    final result = calculateGroupLentBorrowed(
+      expenses: [
+        expense(
+          id: 'e1',
+          createdBy: 'u2',
+          amount: 90,
+          splitAmounts: const {'u1': 20, 'u2': 10, 'u3': 60},
+        ),
+      ],
+      memberCount: 3,
+      userIdentifiers: const {'u1'},
+    );
+
+    expect(result.lent, 0);
+    expect(result.borrowed, 20);
+  });
+
+  test('honors converted split amounts by currency', () {
+    final result = calculateGroupLentBorrowedByCurrency(
+      expenses: [
+        expense(
+          id: 'e1',
+          createdBy: 'u2',
+          amount: 10,
+          convertedAmounts: const {'USD': 10, 'NOK': 100},
+          splitAmounts: const {'u1': 2, 'u2': 8},
+          splitAmountsByCurrency: const {
+            'USD': {'u1': 2, 'u2': 8},
+            'NOK': {'u1': 20, 'u2': 80},
+          },
+        ),
+      ],
+      memberCount: 2,
+      userIdentifiers: const {'u1'},
+    );
+
+    expect(result['USD']?.borrowed, 2);
+    expect(result['NOK']?.borrowed, 20);
   });
 }

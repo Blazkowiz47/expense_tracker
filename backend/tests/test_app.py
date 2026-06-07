@@ -710,6 +710,64 @@ def test_group_expense_normalizes_member_aliases_and_custom_split(tmp_path):
     assert balances[bob_uid]["net"] == 90
 
 
+def test_group_expense_persists_exact_split_amounts_in_balances(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    register(client, "bob@example.com")
+    register(client, "charlie@example.com")
+    alice_uid = client.get("/api/v1/auth/me", headers=headers_a).json()["user"]["uid"]
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={
+            "name": "Family",
+            "groupType": "family",
+            "members": ["bob@example.com", "charlie@example.com"],
+        },
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+    members = client.get(f"/api/v1/groups/{group_id}/members", headers=headers_a)
+    assert members.status_code == 200, members.text
+    member_by_email = {item["email"]: item["uid"] for item in members.json()["members"]}
+    bob_uid = member_by_email["bob@example.com"]
+    charlie_uid = member_by_email["charlie@example.com"]
+
+    created = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Groceries",
+            "paidBy": "alice@example.com",
+            "splitMode": "exact",
+            "splitAmounts": {
+                "alice@example.com": 10,
+                "bob@example.com": 20,
+                "charlie@example.com": 60,
+            },
+            "amount": 90,
+            "date": "2026-05-20T10:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()
+    assert payload["splitMode"] == "exact"
+    assert payload["splitWith"] == [alice_uid, bob_uid, charlie_uid]
+    assert payload["splitAmounts"] == {alice_uid: 10, bob_uid: 20, charlie_uid: 60}
+    assert payload["splitAmountsByCurrency"]["INR"] == {
+        alice_uid: 10,
+        bob_uid: 20,
+        charlie_uid: 60,
+    }
+
+    groups = client.get("/api/v1/groups", headers=headers_a)
+    balances = groups.json()["groups"][0]["displayData"]["memberBalances"]
+    assert balances[alice_uid]["net"] == 80
+    assert balances[bob_uid]["net"] == -20
+    assert balances[charlie_uid]["net"] == -60
+
+
 def test_pending_family_invite_auto_joins_when_member_registers(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")

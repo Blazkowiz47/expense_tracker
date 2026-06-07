@@ -18,6 +18,7 @@ Map<String, GroupLentBorrowed> calculateGroupLentBorrowedByCurrency({
         paidBy: expense.paidBy,
         splitMode: expense.splitMode,
         splitWith: expense.splitWith,
+        splitAmounts: expense.splitAmountsForCurrency(entry.key),
         amount: entry.value,
         currency: entry.key,
         category: expense.category,
@@ -63,6 +64,23 @@ GroupLentBorrowed calculateGroupLentBorrowed({
   var borrowed = 0.0;
   for (final expense in expenses) {
     if (expense.amount <= 0) continue;
+    final paidBy =
+        (expense.paidBy.isNotEmpty ? expense.paidBy : expense.createdBy)
+            .trim()
+            .toLowerCase();
+    final splitAmounts = _normalizedSplitAmounts(expense.splitAmounts);
+    if (splitAmounts.isNotEmpty) {
+      final userShare = splitAmounts.entries
+          .where((entry) => normalizedIds.contains(entry.key))
+          .fold<double>(0, (sum, entry) => sum + entry.value);
+      if (normalizedIds.contains(paidBy)) {
+        lent += expense.amount - userShare;
+      } else {
+        borrowed += userShare;
+      }
+      continue;
+    }
+
     final splitParticipants = expense.splitWith
         .map((id) => id.trim().toLowerCase())
         .where((id) => id.isNotEmpty)
@@ -74,10 +92,6 @@ GroupLentBorrowed calculateGroupLentBorrowed({
     final userIsInSplit =
         splitParticipants.isEmpty ||
         splitParticipants.any((id) => normalizedIds.contains(id));
-    final paidBy =
-        (expense.paidBy.isNotEmpty ? expense.paidBy : expense.createdBy)
-            .trim()
-            .toLowerCase();
     if (normalizedIds.contains(paidBy)) {
       lent += expense.amount - (userIsInSplit ? splitShare : 0);
     } else if (userIsInSplit) {
@@ -86,4 +100,14 @@ GroupLentBorrowed calculateGroupLentBorrowed({
   }
 
   return (lent: lent, borrowed: borrowed);
+}
+
+Map<String, double> _normalizedSplitAmounts(Map<String, double> amounts) {
+  final normalized = <String, double>{};
+  for (final entry in amounts.entries) {
+    final key = entry.key.trim().toLowerCase();
+    if (key.isEmpty || entry.value <= 0) continue;
+    normalized[key] = (normalized[key] ?? 0) + entry.value;
+  }
+  return normalized;
 }

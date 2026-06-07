@@ -1945,6 +1945,88 @@ def normalize_group_member_ref(raw: Any, member_uids: list[str], aliases: dict[s
     return aliases.get(value.lower())
 
 
+def normalize_split_amounts(raw: Any, member_uids: list[str], aliases: dict[str, str]) -> dict[str, float]:
+    if not isinstance(raw, dict):
+        return {}
+    split_amounts: dict[str, float] = {}
+    for raw_member, raw_amount in raw.items():
+        member_uid = normalize_group_member_ref(raw_member, member_uids, aliases)
+        if not member_uid:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "splitAmounts must contain only group members"))
+        try:
+            amount = round(float(raw_amount or 0), 4)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "splitAmounts must contain numeric amounts"))
+        if amount <= 0:
+            continue
+        split_amounts[member_uid] = round(split_amounts.get(member_uid, 0.0) + amount, 4)
+    return split_amounts
+
+
+def split_amounts_by_currency(
+    amount: float,
+    split_amounts: dict[str, float],
+    converted_amounts: dict[str, float],
+) -> dict[str, dict[str, float]]:
+    if amount <= 0 or not split_amounts:
+        return {}
+    by_currency: dict[str, dict[str, float]] = {}
+    for currency, currency_amount in converted_amounts.items():
+        ratio = float(currency_amount or 0) / amount
+        by_currency[currency] = {
+            uid: round(split_amount * ratio, 4)
+            for uid, split_amount in split_amounts.items()
+            if split_amount > 0
+        }
+    return by_currency
+
+
+def split_shares_for_amount(
+    expense: dict[str, Any],
+    member_uids: list[str],
+    aliases: dict[str, str],
+    currency: str,
+    amount: float,
+) -> dict[str, float]:
+    raw_by_currency = expense.get("splitAmountsByCurrency")
+    if isinstance(raw_by_currency, dict):
+        try:
+            currency_amounts = normalize_split_amounts(raw_by_currency.get(currency), member_uids, aliases)
+        except HTTPException:
+            currency_amounts = {}
+        if currency_amounts:
+            return currency_amounts
+
+    try:
+        base_split_amounts = normalize_split_amounts(expense.get("splitAmounts"), member_uids, aliases)
+    except HTTPException:
+        base_split_amounts = {}
+    if base_split_amounts:
+        try:
+            base_amount = float(expense.get("amount") or 0)
+        except (TypeError, ValueError):
+            base_amount = 0
+        denominator = base_amount if base_amount > 0 else sum(base_split_amounts.values())
+        if denominator > 0:
+            ratio = amount / denominator
+            return {
+                uid: round(split_amount * ratio, 4)
+                for uid, split_amount in base_split_amounts.items()
+                if split_amount > 0
+            }
+
+    member_set = set(member_uids)
+    split_with = [
+        uid
+        for uid in (normalize_group_member_ref(item, member_uids, aliases) for item in (expense.get("splitWith") or []))
+        if uid in member_set
+    ] or member_uids
+    if not split_with:
+        return {}
+    share = amount / len(split_with)
+    return {uid: share for uid in split_with}
+
+
 def compute_display_data(
     member_uids: list[str],
     expenses: list[dict[str, Any]],
@@ -1979,8 +2061,8 @@ def compute_display_data(
                 currency,
                 {uid: {"owes": 0.0, "owed": 0.0, "net": 0.0} for uid in member_uids},
             )
-            share = amount / max(len(split_with), 1)
-            for uid in split_with:
+            split_shares = split_shares_for_amount(expense, member_uids, aliases, currency, amount)
+            for uid, share in split_shares.items():
                 balances.setdefault(uid, {"owes": 0.0, "owed": 0.0, "net": 0.0})
                 if uid != paid_by:
                     balances[uid]["owes"] += share
@@ -2149,11 +2231,12 @@ async def build_group_expense(
     target_currencies = group_currency_codes(group, existing_expenses, [currency, *requested_targets])
     snapshot = await conversion_snapshot(app, amount, currency, target_currencies)
     sync_group_currency_codes(db, group["id"], target_currencies)
-    split_mode = str(body.get("splitMode") or "equally").strip().lower()
-    if split_mode not in {"equally", "custom"}:
-        split_mode = "equally"
     member_uids = [str(item) for item in group.get("memberUids", []) if str(item)]
     aliases = group_member_aliases(member_uids, list(db.users.find({"uid": {"$in": member_uids}})))
+    split_mode = str(body.get("splitMode") or "equally").strip().lower()
+    supported_split_modes = {"equally", "custom", "exact", "percent", "shares", "adjustment"}
+    if split_mode not in supported_split_modes:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "unsupported splitMode"))
     paid_by = normalize_group_member_ref(body.get("paidBy") or uid, member_uids, aliases)
     if not paid_by:
         raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "paidBy must be a group member"))
@@ -2167,6 +2250,14 @@ async def build_group_expense(
             split_with.append(member_uid)
     if not split_with:
         split_with = member_uids
+    split_amounts = normalize_split_amounts(body.get("splitAmounts"), member_uids, aliases)
+    if split_amounts:
+        total_split = sum(split_amounts.values())
+        if abs(total_split - amount) > 0.05:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "splitAmounts must add up to the expense amount"))
+        split_with = list(split_amounts.keys())
+    elif split_mode in {"exact", "percent", "shares", "adjustment"}:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "splitAmounts are required for this splitMode"))
     return {
         "id": expense_id or str(body.get("id") or "").strip() or uuid.uuid4().hex,
         "groupId": group["id"],
@@ -2175,6 +2266,8 @@ async def build_group_expense(
         "paidBy": paid_by,
         "splitMode": split_mode,
         "splitWith": split_with,
+        "splitAmounts": split_amounts,
+        "splitAmountsByCurrency": split_amounts_by_currency(amount, split_amounts, snapshot["convertedAmounts"]),
         "amount": amount,
         "currency": currency,
         **snapshot,
