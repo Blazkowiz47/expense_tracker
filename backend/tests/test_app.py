@@ -225,6 +225,28 @@ def test_family_roles_and_expenses_feed_monthly_plan(tmp_path):
     assert bob_groceries["actual"] == 220
 
 
+def test_group_create_rejects_unknown_initial_members(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client, "alice@example.com")
+
+    created = client.post(
+        "/api/v1/groups",
+        headers=headers,
+        json={
+            "name": "Our household",
+            "groupType": "family",
+            "members": ["missing-spouse@example.com"],
+        },
+    )
+    assert created.status_code == 404, created.text
+    assert created.json()["error"]["code"] == "MEMBER_NOT_FOUND"
+    assert "missing-spouse@example.com" in created.json()["error"]["message"]
+
+    groups = client.get("/api/v1/groups", headers=headers)
+    assert groups.status_code == 200
+    assert groups.json()["groups"] == []
+
+
 def test_recurring_income_can_be_confirmed_with_actual_amount(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)

@@ -61,21 +61,39 @@ class ApiGroupsRepository {
     }
   }
 
+  Future<String> _scopedCacheKey(String key) async {
+    final token = await _authTokenProvider.getBearerToken();
+    return 'u:${_stableScopeHash(token)}:$key';
+  }
+
+  String _stableScopeHash(String value) {
+    var hash = 0x811c9dc5;
+    for (final unit in value.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
   String _expensesKey(String groupId) => 'group:$groupId:expenses';
   String _membersKey(String groupId) => 'group:$groupId:members';
 
   Future<List<GroupSummary>> getCachedGroups() async {
-    final cached = await _readListCache(_groupsKey);
+    final cached = await _readListCache(await _scopedCacheKey(_groupsKey));
     return cached.map(GroupSummary.fromJson).toList(growable: false);
   }
 
   Future<List<GroupExpense>> getCachedExpenses(String groupId) async {
-    final cached = await _readListCache(_expensesKey(groupId));
+    final cached = await _readListCache(
+      await _scopedCacheKey(_expensesKey(groupId)),
+    );
     return cached.map(GroupExpense.fromJson).toList(growable: false);
   }
 
   Future<List<GroupMember>> getCachedMembers(String groupId) async {
-    final cached = await _readListCache(_membersKey(groupId));
+    final cached = await _readListCache(
+      await _scopedCacheKey(_membersKey(groupId)),
+    );
     return cached.map(GroupMember.fromJson).toList(growable: false);
   }
 
@@ -85,7 +103,10 @@ class ApiGroupsRepository {
     final rawGroups = (payload['groups'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>();
     final groups = rawGroups.map(GroupSummary.fromJson).toList(growable: false);
-    await _saveListCache(_groupsKey, rawGroups.toList(growable: false));
+    await _saveListCache(
+      await _scopedCacheKey(_groupsKey),
+      rawGroups.toList(growable: false),
+    );
     return groups;
   }
 
@@ -155,7 +176,7 @@ class ApiGroupsRepository {
         .map(GroupExpense.fromJson)
         .toList(growable: false);
     await _saveListCache(
-      _expensesKey(groupId),
+      await _scopedCacheKey(_expensesKey(groupId)),
       rawExpenses.toList(growable: false),
     );
     return expenses;
@@ -173,7 +194,7 @@ class ApiGroupsRepository {
         .map(GroupMember.fromJson)
         .toList(growable: false);
     await _saveListCache(
-      _membersKey(groupId),
+      await _scopedCacheKey(_membersKey(groupId)),
       rawMembers.toList(growable: false),
     );
     return members;
@@ -382,9 +403,25 @@ class ApiGroupsRepository {
     final response = await request.timeout(const Duration(seconds: 20));
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
-        'group request failed (${response.statusCode}): ${response.body}',
+        'Group request failed (${response.statusCode}): ${_errorMessage(response.body)}',
       );
     }
     return response;
+  }
+
+  String _errorMessage(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final error = decoded['error'];
+        if (error is Map) {
+          final message = error['message']?.toString().trim();
+          if (message != null && message.isNotEmpty) {
+            return message;
+          }
+        }
+      }
+    } catch (_) {}
+    return body;
   }
 }

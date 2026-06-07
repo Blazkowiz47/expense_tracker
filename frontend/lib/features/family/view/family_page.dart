@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
@@ -39,6 +37,7 @@ class _FamilyPageState extends State<FamilyPage> {
   GroupSummary? _selectedFamily;
   bool _loading = true;
   bool _loadingDetails = false;
+  int _monthlyPlanRefreshToken = 0;
   String? _error;
 
   @override
@@ -154,6 +153,7 @@ class _FamilyPageState extends State<FamilyPage> {
     );
     if (!mounted) return;
     if (changed == true) {
+      setState(() => _monthlyPlanRefreshToken += 1);
       await _loadFamilies();
     }
   }
@@ -201,6 +201,7 @@ class _FamilyPageState extends State<FamilyPage> {
         }
       }
       if (!mounted) return;
+      setState(() => _monthlyPlanRefreshToken += 1);
       await _loadFamilies();
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -209,10 +210,18 @@ class _FamilyPageState extends State<FamilyPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.toString();
+        _error = _householdSetupError(error, input.spouseEmail);
         _loading = false;
       });
     }
+  }
+
+  String _householdSetupError(Object error, String spouseEmail) {
+    final message = error.toString();
+    if (message.contains('member not found') && spouseEmail.trim().isNotEmpty) {
+      return 'No account found for ${spouseEmail.trim()}. Ask them to create an account first, then set up the household.';
+    }
+    return message;
   }
 
   List<GroupExpense> get _currentMonthExpenses {
@@ -243,10 +252,12 @@ class _FamilyPageState extends State<FamilyPage> {
     return candidates.contains(normalized);
   }
 
-  double _paidThisMonth(GroupMember member) {
-    return _currentMonthExpenses
-        .where((expense) => _memberPaidExpense(member, expense))
-        .fold<double>(0, (sum, expense) => sum + expense.amount);
+  Map<String, double> _paidThisMonth(GroupMember member) {
+    return _sumAmounts(
+      _currentMonthExpenses.where(
+        (expense) => _memberPaidExpense(member, expense),
+      ),
+    );
   }
 
   List<_FamilyCategoryTotal> _categoryTotals() {
@@ -254,11 +265,28 @@ class _FamilyPageState extends State<FamilyPage> {
     for (final expense in _currentMonthExpenses) {
       final category = _categoryForExpense(expense);
       final current = totals[category] ?? _FamilyCategoryTotal.empty(category);
-      totals[category] = current.add(expense.amount);
+      totals[category] = current.add(expense.amountsByCurrency);
     }
     final items = totals.values.toList(growable: false)
-      ..sort((a, b) => b.amount.compareTo(a.amount));
+      ..sort(
+        (a, b) =>
+            _amountMagnitude(b.amounts).compareTo(_amountMagnitude(a.amounts)),
+      );
     return items;
+  }
+
+  Map<String, double> _sumAmounts(Iterable<GroupExpense> expenses) {
+    final totals = <String, double>{};
+    for (final expense in expenses) {
+      for (final entry in expense.amountsByCurrency.entries) {
+        totals[entry.key] = (totals[entry.key] ?? 0) + entry.value;
+      }
+    }
+    return totals;
+  }
+
+  double _amountMagnitude(Map<String, double> amounts) {
+    return amounts.values.fold<double>(0, (sum, amount) => sum + amount.abs());
   }
 
   String _categoryForExpense(GroupExpense expense) {
@@ -341,15 +369,14 @@ class _FamilyPageState extends State<FamilyPage> {
     }
 
     final monthExpenses = _currentMonthExpenses;
-    final monthSpent = monthExpenses.fold<double>(
-      0,
-      (sum, expense) => sum + expense.amount,
-    );
-    final trackedTotal = math.max(
-      monthSpent,
-      _expenses.fold<double>(0, (sum, expense) => sum + expense.amount),
-    );
-    final progress = trackedTotal <= 0 ? 0.0 : monthSpent / trackedTotal;
+    final monthSpent = _sumAmounts(monthExpenses);
+    final trackedTotal = _sumAmounts(_expenses);
+    final progress = _amountMagnitude(trackedTotal) <= 0
+        ? 0.0
+        : _amountMagnitude(monthSpent) / _amountMagnitude(trackedTotal);
+    final trackedTotalForCopy = _amountMagnitude(trackedTotal) <= 0
+        ? monthSpent
+        : trackedTotal;
     final categories = _categoryTotals();
 
     return AppPageContainer(
@@ -358,13 +385,16 @@ class _FamilyPageState extends State<FamilyPage> {
           family: family,
           memberCount: _members.isEmpty ? family.memberCount : _members.length,
           monthSpent: monthSpent,
-          trackedTotal: trackedTotal,
+          trackedTotal: trackedTotalForCopy,
           progress: progress,
           loading: _loadingDetails,
           onOpen: _openSelectedFamily,
         ),
         const SizedBox(height: 16),
-        MonthlyPlanningCard(repository: widget.monthlyPlanRepository),
+        MonthlyPlanningCard(
+          repository: widget.monthlyPlanRepository,
+          refreshToken: _monthlyPlanRefreshToken,
+        ),
         if (_families.length > 1) ...[
           const SizedBox(height: 8),
           Wrap(
@@ -403,11 +433,11 @@ class _FamilyPageState extends State<FamilyPage> {
             return AppBalanceTile(
               title: member.label,
               subtitle: Text(
-                '${member.roleLabel} · paid ${AppMoney.format(paid)} this month',
+                '${member.roleLabel} · paid ${AppMoney.formatCurrencyAmounts(paid)} this month',
               ),
               leadingIcon: Icons.person_outline,
               trailing: Text(
-                AppMoney.format(paid),
+                AppMoney.formatCurrencyAmounts(paid),
                 style: Theme.of(context).textTheme.labelLarge,
               ),
             );
@@ -434,7 +464,7 @@ class _FamilyPageState extends State<FamilyPage> {
               ),
               leadingIcon: Icons.receipt_long_outlined,
               trailing: Text(
-                AppMoney.format(category.amount),
+                AppMoney.formatCurrencyAmounts(category.amounts),
                 style: Theme.of(context).textTheme.labelLarge,
               ),
             ),
@@ -518,46 +548,57 @@ class _HouseholdSetupDialogState extends State<_HouseholdSetupDialog> {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _yourRole,
-                    decoration: const InputDecoration(
-                      labelText: 'Your role',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: familyRoleOptions
-                        .map(
-                          (role) =>
-                              DropdownMenuItem(value: role, child: Text(role)),
-                        )
-                        .toList(growable: false),
-                    onChanged: (value) {
-                      if (value != null) setState(() => _yourRole = value);
-                    },
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final yourRoleField = DropdownButtonFormField<String>(
+                  initialValue: _yourRole,
+                  decoration: const InputDecoration(
+                    labelText: 'Your role',
+                    border: OutlineInputBorder(),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _spouseRole,
-                    decoration: const InputDecoration(
-                      labelText: 'Spouse role',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: familyRoleOptions
-                        .map(
-                          (role) =>
-                              DropdownMenuItem(value: role, child: Text(role)),
-                        )
-                        .toList(growable: false),
-                    onChanged: (value) {
-                      if (value != null) setState(() => _spouseRole = value);
-                    },
+                  items: familyRoleOptions
+                      .map(
+                        (role) =>
+                            DropdownMenuItem(value: role, child: Text(role)),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _yourRole = value);
+                  },
+                );
+                final spouseRoleField = DropdownButtonFormField<String>(
+                  initialValue: _spouseRole,
+                  decoration: const InputDecoration(
+                    labelText: 'Spouse role',
+                    border: OutlineInputBorder(),
                   ),
-                ),
-              ],
+                  items: familyRoleOptions
+                      .map(
+                        (role) =>
+                            DropdownMenuItem(value: role, child: Text(role)),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) setState(() => _spouseRole = value);
+                  },
+                );
+                if (constraints.maxWidth < 360) {
+                  return Column(
+                    children: [
+                      yourRoleField,
+                      const SizedBox(height: 12),
+                      spouseRoleField,
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: yourRoleField),
+                    const SizedBox(width: 12),
+                    Expanded(child: spouseRoleField),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -586,8 +627,8 @@ class _HouseholdCard extends StatelessWidget {
 
   final GroupSummary family;
   final int memberCount;
-  final double monthSpent;
-  final double trackedTotal;
+  final Map<String, double> monthSpent;
+  final Map<String, double> trackedTotal;
   final double progress;
   final bool loading;
   final VoidCallback onOpen;
@@ -595,7 +636,15 @@ class _HouseholdCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final percent = (progress * 100).clamp(0, 100).round();
-    final outsideThisMonth = math.max(0.0, trackedTotal - monthSpent);
+    final hasTrackedSpend = trackedTotal.values.any(
+      (amount) => amount.abs() > 0.005,
+    );
+    final outsideThisMonth = Map<String, double>.from(trackedTotal);
+    for (final entry in monthSpent.entries) {
+      outsideThisMonth[entry.key] =
+          (outsideThisMonth[entry.key] ?? 0) - entry.value;
+    }
+    outsideThisMonth.removeWhere((_, amount) => amount.abs() <= 0.005);
 
     return AppCard(
       padding: const EdgeInsets.all(16),
@@ -649,7 +698,7 @@ class _HouseholdCard extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                AppMoney.format(monthSpent),
+                AppMoney.formatCurrencyAmounts(monthSpent),
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -658,9 +707,9 @@ class _HouseholdCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  trackedTotal <= 0
+                  !hasTrackedSpend
                       ? 'tracked'
-                      : 'of ${AppMoney.format(trackedTotal)} tracked',
+                      : 'of ${AppMoney.formatCurrencyAmounts(trackedTotal)} tracked',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
@@ -677,9 +726,9 @@ class _HouseholdCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                trackedTotal <= 0
+                !hasTrackedSpend
                     ? 'No spending tracked yet'
-                    : '${AppMoney.format(outsideThisMonth)} outside this month',
+                    : '${AppMoney.formatCurrencyAmounts(outsideThisMonth)} outside this month',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
@@ -693,22 +742,26 @@ class _HouseholdCard extends StatelessWidget {
 class _FamilyCategoryTotal {
   const _FamilyCategoryTotal({
     required this.label,
-    required this.amount,
+    required this.amounts,
     required this.count,
   });
 
   factory _FamilyCategoryTotal.empty(String label) {
-    return _FamilyCategoryTotal(label: label, amount: 0, count: 0);
+    return _FamilyCategoryTotal(label: label, amounts: const {}, count: 0);
   }
 
   final String label;
-  final double amount;
+  final Map<String, double> amounts;
   final int count;
 
-  _FamilyCategoryTotal add(double value) {
+  _FamilyCategoryTotal add(Map<String, double> values) {
+    final updated = Map<String, double>.from(amounts);
+    for (final entry in values.entries) {
+      updated[entry.key] = (updated[entry.key] ?? 0) + entry.value;
+    }
     return _FamilyCategoryTotal(
       label: label,
-      amount: amount + value,
+      amounts: Map.unmodifiable(updated),
       count: count + 1,
     );
   }

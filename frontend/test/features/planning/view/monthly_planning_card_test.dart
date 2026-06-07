@@ -11,25 +11,28 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   Map<String, double>? savedBudgets;
+  int fetchCount = 0;
 
   @override
   Future<MonthlyPlan> fetchPlan({required String month}) async {
-    return const MonthlyPlan(
+    fetchCount += 1;
+    final actual = fetchCount == 1 ? 1500.0 : 1750.0;
+    return MonthlyPlan(
       month: '2026-06',
       currency: 'INR',
       totalBudget: 5000,
-      totalActual: 1500,
-      totalRemaining: 3500,
+      totalActual: actual,
+      totalRemaining: 5000 - actual,
       categories: [
         MonthlyPlanCategory(
           category: 'Groceries',
           budget: 5000,
-          actual: 1250,
-          remaining: 3750,
-          progress: 0.25,
+          actual: actual,
+          remaining: 5000 - actual,
+          progress: actual / 5000,
           overBudget: false,
         ),
-        MonthlyPlanCategory(
+        const MonthlyPlanCategory(
           category: 'Pet care',
           budget: 0,
           actual: 250,
@@ -115,5 +118,31 @@ void main() {
 
     expect(repository.savedBudgets?['Groceries'], 5000);
     expect(repository.savedBudgets?['Car'], 2500);
+  });
+
+  testWidgets('refreshes when refresh token changes', (tester) async {
+    final repository = _FakeMonthlyPlanRepository();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthlyPlanningCard(repository: repository, refreshToken: 0),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(repository.fetchCount, 1);
+    expect(find.textContaining('INR 1500.00 spent'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthlyPlanningCard(repository: repository, refreshToken: 1),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(repository.fetchCount, 2);
+    expect(find.textContaining('INR 1750.00 spent'), findsOneWidget);
   });
 }

@@ -5,9 +5,10 @@ import 'package:expense_tracker/features/planning/repositories/monthly_plan_repo
 import 'package:flutter/material.dart';
 
 class MonthlyPlanningCard extends StatefulWidget {
-  const MonthlyPlanningCard({this.repository, super.key});
+  const MonthlyPlanningCard({this.repository, this.refreshToken, super.key});
 
   final MonthlyPlanRepository? repository;
+  final Object? refreshToken;
 
   @override
   State<MonthlyPlanningCard> createState() => _MonthlyPlanningCardState();
@@ -39,6 +40,14 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
       _repository.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant MonthlyPlanningCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshToken != oldWidget.refreshToken) {
+      _load();
+    }
   }
 
   Future<void> _load() async {

@@ -596,10 +596,21 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     def create_group(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         require_json(body, "name")
         members = [user["uid"]]
+        unresolved_members: list[str] = []
         for contact in body.get("members") or []:
-            resolved = resolve_user(app.state.db, str(contact))
+            raw_contact = str(contact).strip()
+            if not raw_contact:
+                continue
+            resolved = resolve_user(app.state.db, raw_contact)
             if resolved and resolved["uid"] not in members:
                 members.append(resolved["uid"])
+            elif not resolved:
+                unresolved_members.append(raw_contact)
+        if unresolved_members:
+            raise HTTPException(
+                status_code=404,
+                detail=api_error("MEMBER_NOT_FOUND", f"member not found: {', '.join(unresolved_members)}"),
+            )
         doc = {
             "id": uuid.uuid4().hex,
             "name": str(body["name"]).strip(),

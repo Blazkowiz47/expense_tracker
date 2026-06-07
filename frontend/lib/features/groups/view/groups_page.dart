@@ -572,8 +572,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         ),
       ),
     );
-    if (!mounted || result == null) return;
-    setState(() => _simplifyBalances = result);
+    if (!mounted) return;
+    if (result != null) {
+      setState(() => _simplifyBalances = result);
+    }
+    final refreshed = await _loadMembers();
+    if (!mounted) return;
+    if (refreshed) {
+      setState(() => _didMutateGroupData = true);
+    }
   }
 
   String _resolvePayerLabel(String rawPaidBy, List<String> participants) {
