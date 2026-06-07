@@ -1,11 +1,12 @@
 import asyncio
-from datetime import timedelta
+import calendar
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import mongomock
 from fastapi.testclient import TestClient
 
-from app.main import create_app, current_month, iso, now, parse_model_json, run_bill_extraction
+from app.main import create_app, current_month, ensure_indexes, iso, now, parse_model_json, run_bill_extraction
 
 
 class FakeExtractor:
@@ -39,6 +40,13 @@ def register(client, email="user@example.com"):
     assert response.status_code == 201, response.text
     token = response.json()["token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def add_months(month: str, delta: int) -> str:
+    year, month_number = [int(part) for part in month.split("-")]
+    zero_based = (year * 12 + (month_number - 1)) + delta
+    new_year, new_month_zero = divmod(zero_based, 12)
+    return f"{new_year:04d}-{new_month_zero + 1:02d}"
 
 
 def test_register_login_me_and_logout(tmp_path):
@@ -753,6 +761,134 @@ def test_recurring_template_lifecycle_updates_generated_occurrences(tmp_path):
         f"/api/v1/recurring/occurrences?month={next_period}",
         headers=headers,
     ).json()["occurrences"] == []
+
+
+def test_weekly_recurring_template_generates_each_due_date_in_month(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+    period = current_month()
+    year, month_number = [int(part) for part in period.split("-")]
+    last_day = calendar.monthrange(year, month_number)[1]
+    expected_days = list(range(1, last_day + 1, 7))
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Weekly salary",
+            "kind": "income",
+            "amount": 1000,
+            "currency": "USD",
+            "category": "Salary",
+            "frequency": "weekly",
+            "dayOfMonth": 1,
+            "startDate": f"{period}-01T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    listed = client.get(
+        f"/api/v1/recurring/occurrences?month={period}",
+        headers=headers,
+    )
+    assert listed.status_code == 200, listed.text
+    occurrences = listed.json()["occurrences"]
+    due_days = [
+        datetime.fromisoformat(item["dueDate"].replace("Z", "+00:00")).day
+        for item in occurrences
+    ]
+    assert due_days == expected_days
+    assert len({item["id"] for item in occurrences}) == len(expected_days)
+    assert {item["expectedAmount"] for item in occurrences} == {1000}
+    assert {item["currency"] for item in occurrences} == {"USD"}
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    occurrence_ids = {item["id"] for item in occurrences}
+    assert any(
+        item["actionType"] == "confirm_recurring"
+        and item["period"] == period
+        and item["occurrenceId"] in occurrence_ids
+        for item in dashboard.json()["actionItems"]
+    )
+
+
+def test_recurring_index_migration_allows_multiple_occurrences_per_period(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client)
+    app.state.db.recurring_occurrences.drop_indexes()
+    app.state.db.recurring_occurrences.create_index(
+        [("uid", 1), ("templateId", 1), ("period", 1)],
+        unique=True,
+        name="legacy_template_period_unique",
+    )
+    ensure_indexes(app.state.db)
+    index_keys = [
+        spec.get("key")
+        for spec in app.state.db.recurring_occurrences.index_information().values()
+        if spec.get("unique")
+    ]
+    assert [("uid", 1), ("templateId", 1), ("period", 1)] not in index_keys
+
+    period = current_month()
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Daily medicine",
+            "kind": "expense",
+            "amount": 25,
+            "currency": "INR",
+            "category": "Health",
+            "frequency": "daily",
+            "dayOfMonth": 1,
+            "startDate": f"{period}-01T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    occurrences = client.get(
+        f"/api/v1/recurring/occurrences?month={period}",
+        headers=headers,
+    ).json()["occurrences"]
+    assert len(occurrences) >= 2
+
+
+def test_dashboard_materializes_prior_month_weekly_overdue_actions(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+    period = current_month()
+    previous_period = add_months(period, -1)
+    previous_start = f"{previous_period}-01T00:00:00Z"
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Weekly allowance",
+            "kind": "income",
+            "amount": 500,
+            "currency": "INR",
+            "category": "Allowance",
+            "frequency": "weekly",
+            "dayOfMonth": 1,
+            "startDate": previous_start,
+        },
+    )
+    assert created.status_code == 201, created.text
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    previous_occurrences = client.get(
+        f"/api/v1/recurring/occurrences?month={previous_period}",
+        headers=headers,
+    ).json()["occurrences"]
+    assert previous_occurrences
+    previous_occurrence_ids = {item["id"] for item in previous_occurrences}
+    assert any(
+        item["actionType"] == "confirm_recurring"
+        and item["period"] == previous_period
+        and item["occurrenceId"] in previous_occurrence_ids
+        for item in dashboard.json()["actionItems"]
+    )
 
 
 def test_dashboard_includes_daily_action_items(tmp_path):

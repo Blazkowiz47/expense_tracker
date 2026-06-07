@@ -1108,7 +1108,17 @@ def ensure_indexes(db: Any) -> None:
     db.recurring_templates.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.recurring_occurrences.create_index([("uid", ASCENDING), ("period", ASCENDING)])
     db.recurring_occurrences.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
-    db.recurring_occurrences.create_index([("uid", ASCENDING), ("templateId", ASCENDING), ("period", ASCENDING)], unique=True)
+    for name, spec in list(db.recurring_occurrences.index_information().items()):
+        if spec.get("unique") and spec.get("key") == [
+            ("uid", ASCENDING),
+            ("templateId", ASCENDING),
+            ("period", ASCENDING),
+        ]:
+            db.recurring_occurrences.drop_index(name)
+    db.recurring_occurrences.create_index(
+        [("uid", ASCENDING), ("templateId", ASCENDING), ("period", ASCENDING), ("dueDate", ASCENDING)],
+        unique=True,
+    )
 
 
 def create_user_doc(uid: str, email: str, display_name: str, password_hash: str) -> dict[str, Any]:
@@ -1559,6 +1569,13 @@ def current_month() -> str:
     return f"{current.year:04d}-{current.month:02d}"
 
 
+def add_months(month: str, delta: int) -> str:
+    year, month_number = [int(part) for part in normalize_month(month).split("-")]
+    zero_based = (year * 12 + (month_number - 1)) + delta
+    new_year, new_month_zero = divmod(zero_based, 12)
+    return f"{new_year:04d}-{new_month_zero + 1:02d}"
+
+
 def month_range(month: str) -> tuple[datetime, datetime]:
     year, month_number = [int(part) for part in month.split("-")]
     start = datetime(year, month_number, 1, tzinfo=UTC)
@@ -1651,7 +1668,7 @@ def reconcile_recurring_template_occurrences(db: Any, uid: str, template: dict[s
             "status": {"$ne": "confirmed"},
         })
         return
-    ensure_recurring_occurrences(db, uid, current_month())
+    used_due_dates: set[tuple[str, datetime]] = set()
     cursor = db.recurring_occurrences.find({
         "uid": uid,
         "templateId": template_id,
@@ -1659,13 +1676,17 @@ def reconcile_recurring_template_occurrences(db: Any, uid: str, template: dict[s
     })
     for occurrence in cursor:
         period = normalize_month(str(occurrence.get("period") or current_month()))
-        start, end = month_range(period)
-        template_start = aware(template.get("startDate") or start)
-        active_from = aware(template.get("resumedAt") or template_start)
-        due_date = recurring_due_date_for_month(template, period)
-        if template_start >= end or active_from >= end or due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
+        due_dates = recurring_due_dates_for_month(template, period)
+        due_date = aware(occurrence.get("dueDate") or now())
+        replacement_due_date: datetime | None = None
+        if due_date in due_dates and (period, due_date) not in used_due_dates:
+            replacement_due_date = due_date
+        elif len(due_dates) == 1 and (period, due_dates[0]) not in used_due_dates:
+            replacement_due_date = due_dates[0]
+        if replacement_due_date is None:
             db.recurring_occurrences.delete_one({"id": occurrence["id"], "uid": uid})
             continue
+        used_due_dates.add((period, replacement_due_date))
         db.recurring_occurrences.update_one(
             {"id": occurrence["id"], "uid": uid},
             {
@@ -1675,19 +1696,58 @@ def reconcile_recurring_template_occurrences(db: Any, uid: str, template: dict[s
                     "category": template.get("category") or "Personal",
                     "currency": template.get("currency") or "INR",
                     "expectedAmount": float(template.get("expectedAmount") or template.get("amount") or 0),
-                    "dueDate": due_date,
+                    "dueDate": replacement_due_date,
                     "updatedAt": now(),
                 }
             },
         )
+    ensure_recurring_occurrences(db, uid, current_month())
+
+
+def recurring_occurrence_id(uid: str, template_id: str, due_date: datetime) -> str:
+    seed = f"{uid}:{template_id}:{iso(due_date)}"
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()
+
+
+def recurring_due_dates_for_month(template: dict[str, Any], month: str) -> list[datetime]:
+    start, end = month_range(month)
+    frequency = str(template.get("frequency") or "monthly").lower()
+    template_start = aware(template.get("startDate") or start)
+    active_from = aware(template.get("resumedAt") or template_start)
+    earliest = max(start, template_start, active_from)
+    if template_start >= end or active_from >= end:
+        return []
+    if frequency == "monthly":
+        due_date = recurring_due_date_for_month(template, month)
+        if due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
+            return []
+        return [due_date]
+
+    if frequency not in {"daily", "weekly"}:
+        return []
+    interval = timedelta(days=1 if frequency == "daily" else 7)
+    due_date = template_start
+    if due_date < earliest:
+        interval_seconds = interval.total_seconds()
+        skipped = int((earliest - due_date).total_seconds() // interval_seconds)
+        due_date += interval * max(0, skipped)
+        while due_date < earliest:
+            due_date += interval
+    due_dates: list[datetime] = []
+    while due_date < end:
+        if due_date >= start and due_date >= template_start and due_date >= active_from:
+            due_dates.append(due_date)
+        due_date += interval
+    return due_dates
 
 
 def recurring_due_date_for_month(template: dict[str, Any], month: str) -> datetime:
     year, month_number = [int(part) for part in month.split("-")]
     frequency = str(template.get("frequency") or "monthly").lower()
     start = aware(template.get("startDate") or now())
-    if frequency != "monthly":
-        return next_due(start, frequency)
+    if frequency == "daily" or frequency == "weekly":
+        dates = recurring_due_dates_for_month(template, month)
+        return dates[0] if dates else next_due(start, frequency)
     last_day = calendar.monthrange(year, month_number)[1]
     day = int(template.get("dayOfMonth") or start.day)
     return datetime(year, month_number, min(day, last_day), tzinfo=UTC)
@@ -1702,38 +1762,37 @@ def ensure_recurring_occurrences(db: Any, uid: str, month: str) -> int:
         "active": True,
         "deletedAt": {"$exists": False},
     }):
-        template_start = aware(template.get("startDate") or start)
-        active_from = aware(template.get("resumedAt") or template_start)
-        if template_start >= end or active_from >= end:
-            continue
-        due_date = recurring_due_date_for_month(template, period)
-        if due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
-            continue
-        doc = {
-            "id": uuid.uuid4().hex,
-            "uid": uid,
-            "templateId": template["id"],
-            "period": period,
-            "kind": template.get("kind") or "expense",
-            "title": template.get("title") or "Recurring item",
-            "category": template.get("category") or "Personal",
-            "currency": template.get("currency") or "INR",
-            "expectedAmount": float(template.get("expectedAmount") or template.get("amount") or 0),
-            "actualAmount": None,
-            "actualDate": None,
-            "dueDate": due_date,
-            "status": "expected",
-            "notes": "",
-            "createdAt": now(),
-            "updatedAt": now(),
-        }
-        result = db.recurring_occurrences.update_one(
-            {"uid": uid, "templateId": template["id"], "period": period},
-            {"$setOnInsert": doc},
-            upsert=True,
-        )
-        if getattr(result, "upserted_id", None) is not None:
-            created += 1
+        for due_date in recurring_due_dates_for_month(template, period):
+            doc = {
+                "id": recurring_occurrence_id(uid, template["id"], due_date),
+                "uid": uid,
+                "templateId": template["id"],
+                "period": period,
+                "kind": template.get("kind") or "expense",
+                "title": template.get("title") or "Recurring item",
+                "category": template.get("category") or "Personal",
+                "currency": template.get("currency") or "INR",
+                "expectedAmount": float(template.get("expectedAmount") or template.get("amount") or 0),
+                "actualAmount": None,
+                "actualDate": None,
+                "dueDate": due_date,
+                "status": "expected",
+                "notes": "",
+                "createdAt": now(),
+                "updatedAt": now(),
+            }
+            result = db.recurring_occurrences.update_one(
+                {
+                    "uid": uid,
+                    "templateId": template["id"],
+                    "period": period,
+                    "dueDate": due_date,
+                },
+                {"$setOnInsert": doc},
+                upsert=True,
+            )
+            if getattr(result, "upserted_id", None) is not None:
+                created += 1
     return created
 
 
@@ -1927,6 +1986,7 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
     today_start = datetime(current.year, current.month, current.day, tzinfo=UTC)
     tomorrow_start = today_start + timedelta(days=1)
     period = current_month()
+    ensure_recurring_occurrences(db, uid, add_months(period, -1))
     ensure_recurring_occurrences(db, uid, period)
 
     recurring_docs = db.recurring_occurrences.find({
