@@ -13,6 +13,7 @@ class MonthlyPlanningCard extends StatefulWidget {
     this.groupId,
     this.title = 'Monthly plan',
     this.onAddExpenseForCategory,
+    this.onReviewCategory,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class MonthlyPlanningCard extends StatefulWidget {
   final String? groupId;
   final String title;
   final ValueChanged<String>? onAddExpenseForCategory;
+  final ValueChanged<String>? onReviewCategory;
 
   @override
   State<MonthlyPlanningCard> createState() => _MonthlyPlanningCardState();
@@ -219,6 +221,9 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
                       ? null
                       : () =>
                             widget.onAddExpenseForCategory!(category.category),
+                  onReview: widget.onReviewCategory == null
+                      ? null
+                      : () => widget.onReviewCategory!(category.category),
                 ),
               ),
         ],
@@ -232,11 +237,13 @@ class _BudgetRow extends StatelessWidget {
     required this.category,
     required this.currency,
     this.onAddExpense,
+    this.onReview,
   });
 
   final MonthlyPlanCategory category;
   final String currency;
   final VoidCallback? onAddExpense;
+  final VoidCallback? onReview;
 
   @override
   Widget build(BuildContext context) {
@@ -248,7 +255,7 @@ class _BudgetRow extends StatelessWidget {
     final progress = category.budget <= 0
         ? 0.0
         : category.progress.clamp(0.0, 1.0);
-    return Padding(
+    final content = Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -274,12 +281,28 @@ class _BudgetRow extends StatelessWidget {
                   ),
                 ),
               ],
+              if (onReview != null) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 4),
           LinearProgressIndicator(value: progress, color: color),
         ],
       ),
+    );
+    if (onReview == null) {
+      return content;
+    }
+    return InkWell(
+      onTap: onReview,
+      borderRadius: BorderRadius.circular(8),
+      child: content,
     );
   }
 }

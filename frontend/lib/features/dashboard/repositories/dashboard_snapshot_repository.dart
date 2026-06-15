@@ -47,6 +47,8 @@ class MockDashboardSnapshotRepository implements DashboardSnapshotRepository {
           subtitle: 'INR 420.00 over this month',
           severity: 'critical',
           destination: 'family',
+          actionType: 'review_budget_category',
+          category: 'Groceries',
         ),
       ],
       activityItems: [

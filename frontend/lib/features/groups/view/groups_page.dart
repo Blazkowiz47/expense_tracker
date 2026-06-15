@@ -24,6 +24,24 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart';
 
 const _groupCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
+const _allExpenseCategoriesFilter = 'All categories';
+const _allExpenseCurrenciesFilter = 'All currencies';
+
+class GroupExpenseReviewFilter {
+  const GroupExpenseReviewFilter({
+    this.searchQuery = '',
+    this.category = '',
+    this.currency = '',
+    this.missingReceiptOnly = false,
+    this.currentMonthOnly = false,
+  });
+
+  final String searchQuery;
+  final String category;
+  final String currency;
+  final bool missingReceiptOnly;
+  final bool currentMonthOnly;
+}
 
 String _normalizedGroupCurrency(String value) {
   final normalized = value.trim().toUpperCase();
@@ -462,6 +480,7 @@ class GroupDetailsPage extends StatefulWidget {
     this.initialExpenseCategory = 'Groceries',
     this.initialExpenseDescription,
     this.initialBillUpload = false,
+    this.initialReviewFilter = const GroupExpenseReviewFilter(),
     this.freshnessRepository,
     this.autoRefresh = false,
     super.key,
@@ -474,6 +493,7 @@ class GroupDetailsPage extends StatefulWidget {
   final String initialExpenseCategory;
   final String? initialExpenseDescription;
   final bool initialBillUpload;
+  final GroupExpenseReviewFilter initialReviewFilter;
   final FreshnessRepository? freshnessRepository;
   final bool autoRefresh;
 
@@ -495,6 +515,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   late int _memberCount;
   String? _error;
   DateTime? _groupFreshnessCursor;
+  late final TextEditingController _expenseSearchController;
+  String _expenseSearchQuery = '';
+  String _expenseCategoryFilter = _allExpenseCategoriesFilter;
+  String _expenseCurrencyFilter = _allExpenseCurrenciesFilter;
+  bool _missingReceiptOnly = false;
+  bool _currentMonthOnly = false;
   final _billRepository = BillAiRepository();
   final _billPicker = ImagePicker();
 
@@ -662,6 +688,90 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return totals;
   }
 
+  List<GroupExpense> _filteredExpenses(List<GroupExpense> expenses) {
+    final query = _expenseSearchQuery.trim().toLowerCase();
+    final terms = query
+        .split(RegExp(r'\s+'))
+        .where((term) => term.isNotEmpty)
+        .toList(growable: false);
+    final now = DateTime.now();
+    return expenses
+        .where((expense) {
+          if (terms.isNotEmpty) {
+            final haystack = [
+              expense.description,
+              expense.category,
+              expense.currency,
+              ...expense.amountsByCurrency.keys,
+              if (expense.attachments.isEmpty) 'missing receipt',
+            ].join(' ').toLowerCase();
+            if (!terms.every(haystack.contains)) {
+              return false;
+            }
+          }
+          if (_expenseCategoryFilter != _allExpenseCategoriesFilter &&
+              _reviewCategory(expense) != _expenseCategoryFilter) {
+            return false;
+          }
+          if (_expenseCurrencyFilter != _allExpenseCurrenciesFilter &&
+              !_reviewCurrencies(expense).contains(_expenseCurrencyFilter)) {
+            return false;
+          }
+          if (_missingReceiptOnly && expense.attachments.isNotEmpty) {
+            return false;
+          }
+          if (_currentMonthOnly) {
+            final date = expense.date.toLocal();
+            if (date.year != now.year || date.month != now.month) {
+              return false;
+            }
+          }
+          return true;
+        })
+        .toList(growable: false);
+  }
+
+  bool get _expenseFiltersActive {
+    return _expenseSearchQuery.trim().isNotEmpty ||
+        _expenseCategoryFilter != _allExpenseCategoriesFilter ||
+        _expenseCurrencyFilter != _allExpenseCurrenciesFilter ||
+        _missingReceiptOnly ||
+        _currentMonthOnly;
+  }
+
+  void _clearExpenseFilters() {
+    _expenseSearchController.clear();
+    setState(() {
+      _expenseSearchQuery = '';
+      _expenseCategoryFilter = _allExpenseCategoriesFilter;
+      _expenseCurrencyFilter = _allExpenseCurrenciesFilter;
+      _missingReceiptOnly = false;
+      _currentMonthOnly = false;
+    });
+  }
+
+  List<String> _expenseCategoryOptions(List<GroupExpense> expenses) {
+    final values =
+        expenses
+            .map(_reviewCategory)
+            .where((value) => value.trim().isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    return [_allExpenseCategoriesFilter, ...values];
+  }
+
+  List<String> _expenseCurrencyOptions(List<GroupExpense> expenses) {
+    final values =
+        expenses
+            .expand(_reviewCurrencies)
+            .where((value) => value.trim().isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    return [_allExpenseCurrenciesFilter, ...values];
+  }
+
   Map<String, double> _netAmountsByCurrency(
     Map<String, GroupLentBorrowed> balances,
   ) {
@@ -785,11 +895,26 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     _freshnessRepository = widget.freshnessRepository ?? FreshnessRepository();
     _ownsFreshnessRepository = widget.freshnessRepository == null;
     _memberCount = widget.group.memberCount;
+    final initialReview = widget.initialReviewFilter;
+    final initialSearchQuery = initialReview.searchQuery.trim();
+    _expenseSearchController = TextEditingController(text: initialSearchQuery);
+    _expenseSearchQuery = initialSearchQuery;
+    final initialCategory = initialReview.category.trim();
+    if (initialCategory.isNotEmpty) {
+      _expenseCategoryFilter = initialCategory;
+    }
+    final initialCurrency = _normalizeReviewCurrency(initialReview.currency);
+    if (initialCurrency.isNotEmpty) {
+      _expenseCurrencyFilter = initialCurrency;
+    }
+    _missingReceiptOnly = initialReview.missingReceiptOnly;
+    _currentMonthOnly = initialReview.currentMonthOnly;
     _loadData();
   }
 
   @override
   void dispose() {
+    _expenseSearchController.dispose();
     if (_ownsFreshnessRepository) {
       _freshnessRepository.dispose();
     }
@@ -2642,6 +2767,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   Widget build(BuildContext context) {
     final authUser = context.select((AuthCubit cubit) => cubit.state.user);
     final totalByCurrency = _totalAmountsByCurrency(_expenses);
+    final filteredExpenses = _filteredExpenses(_expenses);
     final memberCount = _members.isNotEmpty ? _members.length : _memberCount;
     final userIdentifiers = authUser == null
         ? <String>{}
@@ -2820,6 +2946,37 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (!_loading &&
+                    (_expenses.isNotEmpty || _expenseFiltersActive)) ...[
+                  _GroupExpenseReviewFiltersCard(
+                    controller: _expenseSearchController,
+                    searchQuery: _expenseSearchQuery,
+                    categoryFilter: _expenseCategoryFilter,
+                    currencyFilter: _expenseCurrencyFilter,
+                    missingReceiptOnly: _missingReceiptOnly,
+                    currentMonthOnly: _currentMonthOnly,
+                    categoryOptions: _expenseCategoryOptions(_expenses),
+                    currencyOptions: _expenseCurrencyOptions(_expenses),
+                    filtersActive: _expenseFiltersActive,
+                    resultCount: filteredExpenses.length,
+                    onSearchChanged: (value) =>
+                        setState(() => _expenseSearchQuery = value),
+                    onCategoryChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _expenseCategoryFilter = value);
+                    },
+                    onCurrencyChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _expenseCurrencyFilter = value);
+                    },
+                    onMissingReceiptChanged: (value) =>
+                        setState(() => _missingReceiptOnly = value),
+                    onCurrentMonthChanged: (value) =>
+                        setState(() => _currentMonthOnly = value),
+                    onClear: _clearExpenseFilters,
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (_loading)
                   const AppBalanceTile(
                     title: 'Loading group expenses...',
@@ -2832,8 +2989,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                     title: 'No group expenses yet',
                     subtitle: 'Tap Add expense to create one.',
                   )
+                else if (filteredExpenses.isEmpty)
+                  AppEmptyState(
+                    title: 'No matching expenses',
+                    subtitle: 'Clear filters or adjust your search.',
+                    actionLabel: 'Clear filters',
+                    onAction: _clearExpenseFilters,
+                  )
                 else
-                  ..._expenses.map((expense) {
+                  ...filteredExpenses.map((expense) {
                     final expenseBalance = _balanceForExpense(
                       expense: expense,
                       userIdentifiers: userIdentifiers,
@@ -4604,6 +4768,187 @@ class _ChoosePayerPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GroupExpenseReviewFiltersCard extends StatelessWidget {
+  const _GroupExpenseReviewFiltersCard({
+    required this.controller,
+    required this.searchQuery,
+    required this.categoryFilter,
+    required this.currencyFilter,
+    required this.missingReceiptOnly,
+    required this.currentMonthOnly,
+    required this.categoryOptions,
+    required this.currencyOptions,
+    required this.filtersActive,
+    required this.resultCount,
+    required this.onSearchChanged,
+    required this.onCategoryChanged,
+    required this.onCurrencyChanged,
+    required this.onMissingReceiptChanged,
+    required this.onCurrentMonthChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final String searchQuery;
+  final String categoryFilter;
+  final String currencyFilter;
+  final bool missingReceiptOnly;
+  final bool currentMonthOnly;
+  final List<String> categoryOptions;
+  final List<String> currencyOptions;
+  final bool filtersActive;
+  final int resultCount;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String?> onCategoryChanged;
+  final ValueChanged<String?> onCurrencyChanged;
+  final ValueChanged<bool> onMissingReceiptChanged;
+  final ValueChanged<bool> onCurrentMonthChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              labelText: 'Search expenses',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: searchQuery.trim().isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        controller.clear();
+                        onSearchChanged('');
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            textInputAction: TextInputAction.search,
+            onChanged: onSearchChanged,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 190,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: categoryOptions.contains(categoryFilter)
+                      ? categoryFilter
+                      : categoryOptions.first,
+                  decoration: const InputDecoration(
+                    labelText: 'Category',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: categoryOptions
+                      .map(
+                        (category) => DropdownMenuItem<String>(
+                          value: category,
+                          child: Text(
+                            category,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: onCategoryChanged,
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: currencyOptions.contains(currencyFilter)
+                      ? currencyFilter
+                      : currencyOptions.first,
+                  decoration: const InputDecoration(
+                    labelText: 'Currency',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: currencyOptions
+                      .map(
+                        (currency) => DropdownMenuItem<String>(
+                          value: currency,
+                          child: Text(currency),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: onCurrencyChanged,
+                ),
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.receipt_long_outlined, size: 18),
+                label: const Text('Missing receipt'),
+                selected: missingReceiptOnly,
+                onSelected: onMissingReceiptChanged,
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.calendar_month_outlined, size: 18),
+                label: const Text('This month'),
+                selected: currentMonthOnly,
+                onSelected: onCurrentMonthChanged,
+              ),
+              if (filtersActive)
+                TextButton.icon(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.filter_alt_off_outlined),
+                  label: const Text('Clear'),
+                ),
+            ],
+          ),
+          if (filtersActive) ...[
+            const SizedBox(height: 8),
+            Text(
+              '$resultCount match${resultCount == 1 ? '' : 'es'}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+String _reviewCategory(GroupExpense expense) {
+  final category = expense.category.trim();
+  return category.isEmpty ? 'Other' : category;
+}
+
+List<String> _reviewCurrencies(GroupExpense expense) {
+  final currencies = <String>{};
+  final original = _normalizeReviewCurrency(expense.currency);
+  if (original.isNotEmpty) {
+    currencies.add(original);
+  }
+  for (final currency in expense.amountsByCurrency.keys) {
+    final normalized = _normalizeReviewCurrency(currency);
+    if (normalized.isNotEmpty) {
+      currencies.add(normalized);
+    }
+  }
+  final values = currencies.toList(growable: false)..sort();
+  return values.isEmpty ? const ['INR'] : values;
+}
+
+String _normalizeReviewCurrency(String value) {
+  final currency = value.trim().toUpperCase();
+  return RegExp(r'^[A-Z]{3}$').hasMatch(currency) ? currency : '';
 }
 
 class _GroupTile extends StatelessWidget {

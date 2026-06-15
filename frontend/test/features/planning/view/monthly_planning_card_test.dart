@@ -190,6 +190,30 @@ void main() {
     expect(selectedCategory, 'Groceries');
   });
 
+  testWidgets('category row reports selected review category', (tester) async {
+    final repository = _FakeMonthlyPlanRepository();
+    String? reviewedCategory;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthlyPlanningCard(
+            repository: repository,
+            onReviewCategory: (category) {
+              reviewedCategory = category;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Groceries').first);
+    await tester.pumpAndSettle();
+
+    expect(reviewedCategory, 'Groceries');
+  });
+
   testWidgets('passes household group id and reloads when it changes', (
     tester,
   ) async {

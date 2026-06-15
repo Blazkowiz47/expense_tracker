@@ -303,6 +303,22 @@ class _HomeShellPageState extends State<HomeShellPage>
         });
   }
 
+  void _openFamilyReviewAction(DailyActionItem item) {
+    final category = item.category.trim();
+    Navigator.of(context).push<void>(
+      platformPageRoute(
+        builder: (_) => FamilyPage(
+          autoRefresh: true,
+          openReviewOnLaunch: true,
+          initialReviewFilter: GroupExpenseReviewFilter(
+            category: category,
+            currentMonthOnly: true,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _openDashboardAction(DailyActionItem item) {
     switch (item.actionType) {
       case 'confirm_recurring':
@@ -318,6 +334,9 @@ class _HomeShellPageState extends State<HomeShellPage>
         break;
       case 'attach_group_receipt':
         _openGroupExpenseAction(item);
+        return;
+      case 'review_budget_category':
+        _openFamilyReviewAction(item);
         return;
     }
     _openDashboardActionDestination(item.destination);

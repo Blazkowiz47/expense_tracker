@@ -27,6 +27,8 @@ class FamilyPage extends StatefulWidget {
     this.initialExpenseCategory = 'Groceries',
     this.initialExpenseDescription,
     this.initialBillUpload = false,
+    this.openReviewOnLaunch = false,
+    this.initialReviewFilter = const GroupExpenseReviewFilter(),
     this.autoRefresh = false,
     super.key,
   });
@@ -39,6 +41,8 @@ class FamilyPage extends StatefulWidget {
   final String initialExpenseCategory;
   final String? initialExpenseDescription;
   final bool initialBillUpload;
+  final bool openReviewOnLaunch;
+  final GroupExpenseReviewFilter initialReviewFilter;
   final bool autoRefresh;
 
   @override
@@ -59,6 +63,7 @@ class _FamilyPageState extends State<FamilyPage> {
   bool _loadingDetails = false;
   bool _loadedFamilyData = false;
   bool _didOpenInitialExpense = false;
+  bool _didOpenInitialReview = false;
   int _monthlyPlanRefreshToken = 0;
   String? _error;
   DateTime? _familyFreshnessCursor;
@@ -125,6 +130,7 @@ class _FamilyPageState extends State<FamilyPage> {
         unawaited(_markFamilyFreshnessSeen());
       }
       _openInitialExpenseIfRequested();
+      _openInitialReviewIfRequested();
     } catch (error) {
       if (!mounted) return;
       if (!hadCached && (showLoading || _families.isEmpty)) {
@@ -238,6 +244,8 @@ class _FamilyPageState extends State<FamilyPage> {
     String initialCategory = 'Groceries',
     String? initialDescription,
     bool initialBillUpload = false,
+    GroupExpenseReviewFilter initialReviewFilter =
+        const GroupExpenseReviewFilter(),
   }) async {
     final family = _selectedFamily;
     if (family == null) return;
@@ -250,6 +258,7 @@ class _FamilyPageState extends State<FamilyPage> {
           initialExpenseCategory: initialCategory,
           initialExpenseDescription: initialDescription,
           initialBillUpload: initialBillUpload,
+          initialReviewFilter: initialReviewFilter,
           autoRefresh: true,
         ),
       ),
@@ -268,6 +277,14 @@ class _FamilyPageState extends State<FamilyPage> {
         _families.length > 1;
   }
 
+  bool get _hasPendingInitialReviewIntent {
+    return widget.openReviewOnLaunch &&
+        !widget.openAddExpenseOnLaunch &&
+        !_didOpenInitialReview &&
+        _selectedFamily != null &&
+        _families.length > 1;
+  }
+
   Future<void> _openPendingInitialExpenseForSelectedFamily() {
     _didOpenInitialExpense = true;
     return _openSelectedFamily(
@@ -276,6 +293,11 @@ class _FamilyPageState extends State<FamilyPage> {
       initialDescription: widget.initialExpenseDescription,
       initialBillUpload: widget.initialBillUpload,
     );
+  }
+
+  Future<void> _openPendingReviewForSelectedFamily() {
+    _didOpenInitialReview = true;
+    return _openSelectedFamily(initialReviewFilter: widget.initialReviewFilter);
   }
 
   void _openInitialExpenseIfRequested() {
@@ -297,6 +319,21 @@ class _FamilyPageState extends State<FamilyPage> {
     });
   }
 
+  void _openInitialReviewIfRequested() {
+    if (_didOpenInitialReview ||
+        widget.openAddExpenseOnLaunch ||
+        !widget.openReviewOnLaunch ||
+        _selectedFamily == null ||
+        _families.length != 1) {
+      return;
+    }
+    _didOpenInitialReview = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _openSelectedFamily(initialReviewFilter: widget.initialReviewFilter);
+    });
+  }
+
   Future<void> _openGroceryExpense() {
     return _openSelectedFamily(
       addExpense: true,
@@ -311,6 +348,16 @@ class _FamilyPageState extends State<FamilyPage> {
       addExpense: true,
       initialCategory: label,
       initialDescription: label,
+    );
+  }
+
+  Future<void> _openPlannedExpenseReview(String category) {
+    final label = category.trim().isEmpty ? 'Other' : category.trim();
+    return _openSelectedFamily(
+      initialReviewFilter: GroupExpenseReviewFilter(
+        category: label,
+        currentMonthOnly: true,
+      ),
     );
   }
 
@@ -743,6 +790,21 @@ class _FamilyPageState extends State<FamilyPage> {
             ),
           ),
         ],
+        if (_hasPendingInitialReviewIntent) ...[
+          const SizedBox(height: 12),
+          AppBalanceTile(
+            title: 'Choose household for review',
+            subtitle: const Text(
+              'Select the household, then review the matching expenses there.',
+            ),
+            leadingIcon: Icons.manage_search_outlined,
+            trailing: FilledButton.icon(
+              onPressed: _openPendingReviewForSelectedFamily,
+              icon: const Icon(Icons.manage_search_outlined),
+              label: const Text('Review here'),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         MonthlyPlanningCard(
           repository: widget.monthlyPlanRepository,
@@ -750,6 +812,7 @@ class _FamilyPageState extends State<FamilyPage> {
           groupId: family.id,
           title: 'Household plan',
           onAddExpenseForCategory: _openPlannedExpense,
+          onReviewCategory: _openPlannedExpenseReview,
         ),
         if (_families.length > 1) ...[
           const SizedBox(height: 8),
@@ -825,6 +888,7 @@ class _FamilyPageState extends State<FamilyPage> {
                 '${category.count} expense${category.count == 1 ? '' : 's'} · this month',
               ),
               leadingIcon: Icons.receipt_long_outlined,
+              onTap: () => _openPlannedExpenseReview(category.label),
               trailing: Text(
                 AppMoney.formatCurrencyAmounts(category.amounts),
                 style: Theme.of(context).textTheme.labelLarge,

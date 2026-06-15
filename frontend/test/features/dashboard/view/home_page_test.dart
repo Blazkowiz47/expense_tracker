@@ -157,6 +157,8 @@ class _ActionSnapshotRepository implements DashboardSnapshotRepository {
           subtitle: 'INR 150.00 over this month',
           severity: 'critical',
           destination: 'family',
+          actionType: 'review_budget_category',
+          category: 'Groceries',
         ),
       ],
       activityItems: [],

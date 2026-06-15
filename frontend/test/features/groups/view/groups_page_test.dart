@@ -587,7 +587,7 @@ void main() {
     expect(find.text('Add household expense'), findsOneWidget);
     expect(find.text('Monthly category'), findsOneWidget);
     final descriptionField = tester.widget<TextField>(
-      find.byType(TextField).first,
+      _textFieldWithLabel('Description'),
     );
     expect(descriptionField.controller?.text, 'Groceries');
   });
@@ -623,9 +623,126 @@ void main() {
     expect(find.text('Add household expense'), findsOneWidget);
     expect(find.text('Monthly category'), findsOneWidget);
     final descriptionField = tester.widget<TextField>(
-      find.byType(TextField).first,
+      _textFieldWithLabel('Description'),
     );
     expect(descriptionField.controller?.text, 'Groceries');
+  });
+
+  testWidgets('group details filters expense review list', (tester) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final today = DateTime.now();
+    final repository = _FakeGroupsRepository(
+      [familyGroup],
+      expenses: [
+        _groupExpense(
+          id: 'expense-groceries',
+          description: 'Weekly groceries',
+          amount: 82,
+          currency: 'USD',
+          category: 'Groceries',
+          date: today,
+        ),
+        _groupExpense(
+          id: 'expense-internet',
+          description: 'Internet bill',
+          amount: 1200,
+          currency: 'INR',
+          category: 'Utilities',
+          attachments: const ['https://example.com/bill.jpg'],
+          date: today,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: GroupDetailsPage(group: familyGroup, repository: repository),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_textFieldWithLabel('Search expenses'), 'weekly');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Weekly groceries'), findsOneWidget);
+    expect(find.text('Internet bill'), findsNothing);
+    expect(find.text('1 match'), findsOneWidget);
+
+    await tester.tap(find.text('All categories'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Groceries').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('All currencies'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('USD').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Weekly groceries'), findsOneWidget);
+    expect(find.text('Internet bill'), findsNothing);
+  });
+
+  testWidgets('family review intent opens filtered household expenses', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final today = DateTime.now();
+    final repository = _FakeGroupsRepository(
+      [familyGroup],
+      expenses: [
+        _groupExpense(
+          id: 'expense-groceries',
+          description: 'Monthly grocery run',
+          amount: 1200,
+          category: 'Groceries',
+          date: today,
+        ),
+        _groupExpense(
+          id: 'expense-school',
+          description: 'School books',
+          amount: 700,
+          category: 'School and kids',
+          date: today,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              repository: repository,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              openReviewOnLaunch: true,
+              initialReviewFilter: const GroupExpenseReviewFilter(
+                category: 'Groceries',
+                currentMonthOnly: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rao family'), findsWidgets);
+    expect(find.text('Search expenses'), findsOneWidget);
+    expect(find.text('Monthly grocery run'), findsOneWidget);
+    expect(find.text('School books'), findsNothing);
+    expect(find.text('1 match'), findsOneWidget);
   });
 
   testWidgets('family quick-add launch auto-opens only one household', (
@@ -657,7 +774,10 @@ void main() {
 
     expect(find.text('Add household expense'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).controller?.text,
+      tester
+          .widget<TextField>(_textFieldWithLabel('Description'))
+          .controller
+          ?.text,
       'Groceries',
     );
 
@@ -708,8 +828,46 @@ void main() {
 
     expect(find.text('Add household expense'), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField).first).controller?.text,
+      tester
+          .widget<TextField>(_textFieldWithLabel('Description'))
+          .controller
+          ?.text,
       'Groceries',
     );
   });
+}
+
+Finder _textFieldWithLabel(String label) {
+  return find.byWidgetPredicate(
+    (widget) => widget is TextField && widget.decoration?.labelText == label,
+  );
+}
+
+GroupExpense _groupExpense({
+  required String id,
+  required String description,
+  required double amount,
+  required DateTime date,
+  String groupId = 'family-1',
+  String currency = 'INR',
+  String category = '',
+  List<String> attachments = const [],
+}) {
+  return GroupExpense(
+    id: id,
+    groupId: groupId,
+    createdBy: 'member-1',
+    updatedBy: 'member-1',
+    paidBy: 'member-1',
+    splitMode: 'equally',
+    splitWith: const ['member-1'],
+    amount: amount,
+    currency: currency,
+    category: category,
+    description: description,
+    attachments: attachments,
+    date: date,
+    createdAt: date,
+    updatedAt: date,
+  );
 }
