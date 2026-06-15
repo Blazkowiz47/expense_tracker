@@ -273,6 +273,7 @@ class ApiGroupsRepository {
     List<String> targetCurrencies = const [],
     String category = '',
     List<String> attachments = const [],
+    List<Map<String, dynamic>> receiptItems = const [],
     required DateTime date,
   }) async {
     final response = await _request(
@@ -290,6 +291,7 @@ class ApiGroupsRepository {
         'targetCurrencies': targetCurrencies,
         'category': category,
         'attachments': attachments,
+        if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
         'date': date.toUtc().toIso8601String(),
       },
     );
@@ -310,6 +312,7 @@ class ApiGroupsRepository {
     List<String> targetCurrencies = const [],
     String category = '',
     List<String> attachments = const [],
+    List<Map<String, dynamic>> receiptItems = const [],
     required DateTime date,
   }) async {
     final response = await _request(
@@ -326,6 +329,7 @@ class ApiGroupsRepository {
         'targetCurrencies': targetCurrencies,
         'category': category,
         'attachments': attachments,
+        if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
         'date': date.toUtc().toIso8601String(),
       },
     );

@@ -25,7 +25,10 @@ class ExpenseRepository {
       ..addEntries(expenses.map((expense) => MapEntry(expense.id, expense)));
   }
 
-  Future<void> createExpense(Expense expense) async {
+  Future<void> createExpense(
+    Expense expense, {
+    List<Map<String, dynamic>> receiptItems = const [],
+  }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses');
     final token = await _authTokenProvider.getBearerToken();
     final response = await _client
@@ -43,6 +46,7 @@ class ExpenseRepository {
             'description': expense.description ?? expense.title,
             'paymentMethod': expense.paymentMethod ?? 'cash',
             'date': expense.createdAt.toUtc().toIso8601String(),
+            if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )
         .timeout(_requestTimeout);
@@ -58,7 +62,10 @@ class ExpenseRepository {
     _expensesCache[created.id] = created;
   }
 
-  Future<void> updateExpense(Expense expense) async {
+  Future<void> updateExpense(
+    Expense expense, {
+    List<Map<String, dynamic>> receiptItems = const [],
+  }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses/${expense.id}');
     final token = await _authTokenProvider.getBearerToken();
     final response = await _client
@@ -76,6 +83,7 @@ class ExpenseRepository {
             'description': expense.description ?? expense.title,
             'paymentMethod': expense.paymentMethod ?? 'cash',
             'date': expense.createdAt.toUtc().toIso8601String(),
+            if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )
         .timeout(_requestTimeout);

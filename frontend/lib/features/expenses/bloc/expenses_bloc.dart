@@ -58,7 +58,10 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
     Emitter<ExpensesState> emit,
   ) async {
     try {
-      await _repository.createExpense(event.expense);
+      await _repository.createExpense(
+        event.expense,
+        receiptItems: event.receiptItems,
+      );
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));
     } catch (e) {
@@ -72,7 +75,10 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
     Emitter<ExpensesState> emit,
   ) async {
     try {
-      await _repository.updateExpense(event.expense);
+      await _repository.updateExpense(
+        event.expense,
+        receiptItems: event.receiptItems,
+      );
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));
     } catch (e) {

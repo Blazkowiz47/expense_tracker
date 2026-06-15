@@ -8,6 +8,7 @@ import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
+import 'package:expense_tracker/features/receipts/widgets/receipt_line_items_review.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -58,6 +59,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   String? _error;
   String? _billMessage;
   BillExtractionResult? _billResult;
+  List<BillLineItem> _receiptItems = const [];
   DateTime _expenseDate = DateTime.now();
   String _category = 'Personal';
   String _currency = 'INR';
@@ -146,10 +148,14 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
     try {
       final bloc = context.read<ExpensesBloc>();
+      final receiptItems = _receiptItems
+          .where((item) => item.name.trim().isNotEmpty)
+          .map((item) => item.toJson())
+          .toList(growable: false);
       if (_editing) {
-        bloc.add(UpdateExpense(expense: expense));
+        bloc.add(UpdateExpense(expense: expense, receiptItems: receiptItems));
       } else {
-        bloc.add(CreateExpense(expense: expense));
+        bloc.add(CreateExpense(expense: expense, receiptItems: receiptItems));
       }
 
       final resultState = await bloc.stream
@@ -175,6 +181,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           _amountController.clear();
           _notesController.clear();
           _billResult = null;
+          _receiptItems = const [];
           _billMessage = 'Saved. Ready for the next expense.';
           _expenseDate = DateTime.now();
         });
@@ -234,6 +241,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       }
       setState(() {
         _billResult = result;
+        _receiptItems = result.lineItems;
         _expenseDate = result.date;
         _category = _normalizedChoice(result.category, _categories, 'Personal');
         _currency = _normalizedChoice(result.currency, _currencies, 'INR');
@@ -403,7 +411,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 ],
                 if (_billResult != null) ...[
                   const SizedBox(height: 12),
-                  _BillReviewPanel(result: _billResult!),
+                  _BillReviewPanel(
+                    result: _billResult!,
+                    items: _receiptItems,
+                    currency: _currency,
+                    onItemsChanged: (items) =>
+                        setState(() => _receiptItems = items),
+                  ),
                 ],
                 const SizedBox(height: 16),
                 TextField(
@@ -595,7 +609,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   ],
                   if (_billResult != null) ...[
                     const SizedBox(height: 12),
-                    _BillReviewPanel(result: _billResult!),
+                    _BillReviewPanel(
+                      result: _billResult!,
+                      items: _receiptItems,
+                      currency: _currency,
+                      onItemsChanged: (items) =>
+                          setState(() => _receiptItems = items),
+                    ),
                   ],
                   const SizedBox(height: 12),
                   CupertinoFormSection.insetGrouped(
@@ -756,9 +776,17 @@ class _BillUploadButton extends StatelessWidget {
 }
 
 class _BillReviewPanel extends StatelessWidget {
-  const _BillReviewPanel({required this.result});
+  const _BillReviewPanel({
+    required this.result,
+    required this.items,
+    required this.currency,
+    required this.onItemsChanged,
+  });
 
   final BillExtractionResult result;
+  final List<BillLineItem> items;
+  final String currency;
+  final ValueChanged<List<BillLineItem>> onItemsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -795,24 +823,12 @@ class _BillReviewPanel extends StatelessWidget {
                 ),
               ),
             ],
-            if (result.lineItems.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text('Line items', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 4),
-              ...result.lineItems
-                  .take(4)
-                  .map(
-                    (item) => Text(
-                      [
-                        item.name,
-                        if (item.quantity?.isNotEmpty == true)
-                          'x${item.quantity}',
-                        if (item.amount != null)
-                          '${result.currency} ${item.amount!.toStringAsFixed(2)}',
-                      ].join(' · '),
-                    ),
-                  ),
-            ],
+            const SizedBox(height: 8),
+            ReceiptLineItemsReview(
+              items: items,
+              currency: currency,
+              onChanged: onItemsChanged,
+            ),
           ],
         ),
       ),

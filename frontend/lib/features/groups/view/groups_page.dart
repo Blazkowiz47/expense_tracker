@@ -8,6 +8,7 @@ import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
+import 'package:expense_tracker/features/receipts/widgets/receipt_line_items_review.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_settlement.dart';
@@ -1476,6 +1477,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         var extractingBill = false;
         String? billMessage;
         BillExtractionResult? billResult;
+        var receiptItems = <BillLineItem>[];
         var didStartInitialBillUpload = false;
 
         Future<void> scanBill(StateSetter setDialogState) async {
@@ -1538,6 +1540,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               category = _normalizedCategory(result.category);
               expenseDate = result.date;
               billResult = result;
+              receiptItems = result.lineItems;
               billMessage =
                   'Bill ready (${(result.confidence * 100).toStringAsFixed(0)}% confidence).';
             });
@@ -2525,6 +2528,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
+                        const SizedBox(height: 8),
+                        ReceiptLineItemsReview(
+                          items: receiptItems,
+                          currency: currency,
+                          onChanged: (items) =>
+                              setDialogState(() => receiptItems = items),
+                        ),
                       ],
                     ],
                   ),
@@ -2568,6 +2578,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                     'attachments': attachmentItems
                         .where((item) => !item.uploading && item.url != null)
                         .map((item) => item.url!)
+                        .toList(growable: false),
+                    'receiptItems': receiptItems
+                        .where((item) => item.name.trim().isNotEmpty)
+                        .map((item) => item.toJson())
                         .toList(growable: false),
                     'attachmentItems': List<_AttachmentUploadItem>.from(
                       attachmentItems,
@@ -2632,6 +2646,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
+    final receiptItems = (payload['receiptItems'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
     final attachmentItems =
         (payload['attachmentItems'] as List<dynamic>? ?? const [])
             .whereType<_AttachmentUploadItem>()
@@ -2662,6 +2679,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         targetCurrencies: targetCurrencies,
         category: category,
         attachments: attachments,
+        receiptItems: receiptItems,
         date: date,
       );
 
@@ -2787,6 +2805,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final attachments = (payload['attachments'] as List<dynamic>? ?? const [])
         .whereType<String>()
         .toList(growable: false);
+    final receiptItems = (payload['receiptItems'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
     final requiresExplicitAttachmentSave =
         payload['requiresExplicitAttachmentSave'] == true;
     final didInlineAttachmentUpload =
@@ -2882,6 +2903,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         targetCurrencies: targetCurrencies,
         category: category,
         attachments: attachments,
+        receiptItems: receiptItems,
         date: date,
       );
       _replaceExpenseInList(updatedExpense);

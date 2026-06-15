@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import shutil
+import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -174,6 +175,152 @@ def require_json(body: dict[str, Any], *keys: str) -> None:
         )
 
 
+def parse_optional_float(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        value = value.strip().replace(",", ".")
+        if not value:
+            return None
+        match = re.search(r"-?\d+(?:\.\d+)?", value)
+        if not match:
+            return None
+        value = match.group(0)
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def normalized_text(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9\s]+", " ", text)
+    text = re.sub(r"\b\d+(?:[.,]\d+)?\s*(?:g|kg|ml|l|stk|pcs|pk|x)\b", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+ITEM_NAME_ALIASES = {
+    "melk": "milk",
+    "lettmelk": "milk",
+    "helmelk": "milk",
+    "milk": "milk",
+    "doodh": "milk",
+    "brod": "bread",
+    "bread": "bread",
+    "kylling": "chicken",
+    "chicken": "chicken",
+    "ris": "rice",
+    "rice": "rice",
+    "eggs": "egg",
+    "egg": "egg",
+    "banan": "banana",
+    "banana": "banana",
+    "potet": "potato",
+    "potato": "potato",
+    "tomat": "tomato",
+    "tomato": "tomato",
+    "lok": "onion",
+    "onion": "onion",
+}
+
+
+def canonical_item_name(value: Any) -> str:
+    cleaned = normalized_text(value)
+    if not cleaned:
+        return ""
+    for token in cleaned.split():
+        if token in ITEM_NAME_ALIASES:
+            return ITEM_NAME_ALIASES[token]
+    return ITEM_NAME_ALIASES.get(cleaned, cleaned)
+
+
+def infer_receipt_unit(raw_unit: Any, quantity_raw: Any) -> str:
+    unit = normalized_text(raw_unit)
+    if unit in {"kilogram", "kilo", "kg"}:
+        return "kg"
+    if unit in {"gram", "grams", "g"}:
+        return "g"
+    if unit in {"liter", "litre", "liters", "litres", "l"}:
+        return "l"
+    if unit in {"milliliter", "millilitre", "milliliters", "millilitres", "ml"}:
+        return "ml"
+    if unit in {"stk", "pc", "pcs", "piece", "pieces", "each", "ea"}:
+        return "each"
+    quantity_text = str(quantity_raw or "").lower()
+    match = re.search(r"\b(kg|g|ml|l|stk|pcs|pc)\b", quantity_text)
+    if match:
+        return infer_receipt_unit(match.group(1), None)
+    return unit or "each"
+
+
+def normalized_receipt_quantity(quantity: float | None, unit: str) -> tuple[float | None, str]:
+    if quantity is None or quantity <= 0:
+        return None, unit or "each"
+    if unit == "g":
+        return quantity / 1000, "kg"
+    if unit == "ml":
+        return quantity / 1000, "l"
+    if unit in {"kg", "l"}:
+        return quantity, unit
+    return quantity, "each"
+
+
+def normalize_receipt_line_item(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    original_text = str(raw.get("originalText") or raw.get("rawText") or raw.get("name") or raw.get("title") or "").strip()
+    item_name = str(raw.get("itemName") or raw.get("name") or raw.get("title") or original_text).strip()
+    normalized_name = canonical_item_name(raw.get("normalizedName") or item_name or original_text)
+    if not item_name and not normalized_name:
+        return None
+    quantity_raw = raw.get("quantity")
+    quantity = parse_optional_float(quantity_raw)
+    unit = infer_receipt_unit(raw.get("unit"), quantity_raw)
+    line_total = parse_optional_float(raw.get("lineTotal") if "lineTotal" in raw else raw.get("amount") or raw.get("total"))
+    unit_price = parse_optional_float(raw.get("unitPrice") or raw.get("priceEach"))
+    discount = parse_optional_float(raw.get("discount")) or 0.0
+    normalized_quantity, normalized_unit = normalized_receipt_quantity(quantity, unit)
+    normalized_unit_price = None
+    if line_total is not None and normalized_quantity and normalized_quantity > 0:
+        normalized_unit_price = round(line_total / normalized_quantity, 4)
+    elif unit_price is not None:
+        normalized_unit_price = unit_price
+    confidence = parse_optional_float(raw.get("confidence"))
+    if confidence is None:
+        confidence = 0.7
+    return {
+        "originalText": original_text or item_name,
+        "detectedLanguage": str(raw.get("detectedLanguage") or raw.get("language") or "").strip(),
+        "itemName": item_name or normalized_name,
+        "normalizedName": normalized_name,
+        "brand": str(raw.get("brand") or "").strip(),
+        "quantity": quantity,
+        "unit": unit,
+        "normalizedQuantity": normalized_quantity,
+        "normalizedUnit": normalized_unit,
+        "unitPrice": unit_price,
+        "lineTotal": line_total,
+        "discount": discount,
+        "unitPriceNormalized": normalized_unit_price,
+        "category": str(raw.get("category") or "").strip(),
+        "confidence": max(0.0, min(confidence, 1.0)),
+    }
+
+
+def normalize_receipt_line_items(raw_items: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_items, list):
+        return []
+    normalized = []
+    for raw in raw_items[:200]:
+        item = normalize_receipt_line_item(raw)
+        if item:
+            normalized.append(item)
+    return normalized
+
+
 class LocalGemmaBillExtractor:
     def __init__(self, base_url: str | None, model: str):
         self.base_url = (base_url or "").strip()
@@ -220,6 +367,7 @@ class LocalGemmaBillExtractor:
         except (TypeError, ValueError):
             amount = 0
             warnings.append("Amount could not be parsed.")
+        line_items = normalize_receipt_line_items(raw.get("lineItems"))
         return {
             "merchant": str(raw.get("merchant") or Path(original_name).stem or "Uploaded bill").strip(),
             "date": str(raw.get("date") or iso(now())),
@@ -227,7 +375,7 @@ class LocalGemmaBillExtractor:
             "currency": str(raw.get("currency") or "INR"),
             "category": str(raw.get("category") or "Personal"),
             "notes": str(raw.get("notes") or ""),
-            "lineItems": raw.get("lineItems") if isinstance(raw.get("lineItems"), list) else [],
+            "lineItems": line_items,
             "confidence": max(0.0, min(float(raw.get("confidence") or 0), 1.0)),
             "warnings": warnings + [str(item) for item in raw.get("warnings", []) if str(item).strip()],
         }
@@ -253,7 +401,9 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
                                 "role": "system",
                                 "content": (
                                     "You extract receipt and bill fields for an expense tracker. "
-                                    "Return only valid JSON. Do not include reasoning or markdown."
+                                    "Return only valid JSON. Do not include reasoning or markdown. "
+                                    "Receipts may be Norwegian, English, Hindi, or Indian English. "
+                                    "Preserve original row text and normalize grocery names for comparison."
                                 ),
                             },
                             {
@@ -266,8 +416,12 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
                                             "Extract merchant, date, amount, currency, category, notes, "
                                             "lineItems, confidence, and warnings from this bill. "
                                             "Use ISO 8601 for date when visible. category should be a short "
-                                            "expense category. lineItems should be an array of objects with "
-                                            "name, quantity, amount when visible."
+                                            "expense category. lineItems must be an array of objects with "
+                                            "originalText, detectedLanguage, itemName, normalizedName, brand, "
+                                            "quantity, unit, unitPrice, lineTotal, discount, category, and "
+                                            "confidence when visible. normalizedName should be English and "
+                                            "stable across stores and languages, for example melk/milk/doodh "
+                                            "as milk, brod/bread as bread, kylling/chicken as chicken."
                                         ),
                                     },
                                 ],
@@ -519,6 +673,15 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     def create_expense(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         expense = build_expense(body, user["uid"])
         app.state.db.expenses.insert_one(expense)
+        if receipt_items_in_body(body):
+            save_receipt_items_for_source(
+                app.state.db,
+                user=user,
+                source_type="personal",
+                expense=expense,
+                raw_items=body_receipt_items(body),
+                bill_job_id=str(body.get("billJobId") or ""),
+            )
         return expense_out(expense)
 
     @app.put("/api/v1/expenses/{expense_id}")
@@ -530,6 +693,15 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be updated from Loans"))
         updated = build_expense(body, user["uid"], expense_id=expense_id, created_at=existing["createdAt"])
         app.state.db.expenses.replace_one({"id": expense_id, "uid": user["uid"]}, updated)
+        if receipt_items_in_body(body):
+            save_receipt_items_for_source(
+                app.state.db,
+                user=user,
+                source_type="personal",
+                expense=updated,
+                raw_items=body_receipt_items(body),
+                bill_job_id=str(body.get("billJobId") or ""),
+            )
         return expense_out(updated)
 
     @app.delete("/api/v1/expenses/{expense_id}", status_code=204)
@@ -543,7 +715,42 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         result = app.state.db.expenses.delete_one({"id": expense_id, "uid": user["uid"]})
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
+        app.state.db.receipt_items.delete_many({"sourceType": "personal", "expenseId": expense_id, "uid": user["uid"]})
         return Response(status_code=204)
+
+    @app.get("/api/v1/receipt-items")
+    def list_receipt_items(
+        q: str = "",
+        normalizedName: str = "",
+        currency: str = "",
+        limit: int = Query(default=80, ge=1, le=300),
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        filters = visible_receipt_item_filter(app.state.db, user["uid"])
+        item_filter = receipt_item_query_filter(q, normalizedName, currency)
+        if item_filter:
+            filters = {"$and": [filters, item_filter]}
+        docs = list(app.state.db.receipt_items.find(filters).sort("date", DESCENDING).limit(limit))
+        return {"items": [receipt_item_out(doc) for doc in docs]}
+
+    @app.get("/api/v1/receipt-items/compare")
+    def compare_receipt_items(
+        q: str = "",
+        normalizedName: str = "",
+        currency: str = "",
+        limit: int = Query(default=80, ge=1, le=300),
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        filters = visible_receipt_item_filter(app.state.db, user["uid"])
+        item_filter = receipt_item_query_filter(q, normalizedName, currency)
+        if item_filter:
+            filters = {"$and": [filters, item_filter]}
+        docs = [
+            doc
+            for doc in app.state.db.receipt_items.find(filters).sort("date", DESCENDING).limit(limit * 2)
+            if doc.get("unitPriceNormalized") is not None
+        ][:limit]
+        return receipt_item_comparison_out(q or normalizedName, docs)
 
     @app.get("/api/v1/loans")
     def list_loans(
@@ -1107,6 +1314,16 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             body = await request.json()
             doc = await build_group_expense(app, body, group, app.state.db, user["uid"])
             app.state.db.group_expenses.insert_one(doc)
+            if receipt_items_in_body(body):
+                save_receipt_items_for_source(
+                    app.state.db,
+                    user=user,
+                    source_type="group",
+                    expense=doc,
+                    raw_items=body_receipt_items(body),
+                    group=group,
+                    bill_job_id=str(body.get("billJobId") or ""),
+                )
             touch_group(app.state.db, group_id)
             return JSONResponse(status_code=201, content=json_ready(group_expense_out(doc)))
         if parts == ["settlements"] and request.method == "GET":
@@ -1150,6 +1367,16 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "group or expense not found"))
             updated = await build_group_expense(app, body, group, app.state.db, user["uid"], expense_id=parts[1], created_by=existing["createdBy"], created_at=existing["createdAt"])
             app.state.db.group_expenses.replace_one({"groupId": group_id, "id": parts[1]}, updated)
+            if receipt_items_in_body(body):
+                save_receipt_items_for_source(
+                    app.state.db,
+                    user=user,
+                    source_type="group",
+                    expense=updated,
+                    raw_items=body_receipt_items(body),
+                    group=group,
+                    bill_job_id=str(body.get("billJobId") or ""),
+                )
             touch_group(app.state.db, group_id)
             return group_expense_out(updated)
         if len(parts) == 2 and parts[0] == "expenses" and request.method == "DELETE":
@@ -1157,6 +1384,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             if existing:
                 record_group_expense_tombstone(app.state.db, group, existing, user["uid"])
             app.state.db.group_expenses.delete_one({"groupId": group_id, "id": parts[1]})
+            app.state.db.receipt_items.delete_many({"sourceType": "group", "groupId": group_id, "expenseId": parts[1]})
             touch_group(app.state.db, group_id)
             return Response(status_code=204)
         if parts == ["attachments"] and request.method == "POST":
@@ -1349,6 +1577,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         expense = build_expense(
             {
                 "amount": result.get("amount") or 0,
+                "currency": result.get("currency") or "INR",
                 "category": result.get("category") or "Personal",
                 "description": result.get("merchant") or result.get("notes") or "Bill",
                 "date": result.get("date") or iso(now()),
@@ -1356,6 +1585,14 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             user["uid"],
         )
         app.state.db.expenses.insert_one(expense)
+        save_receipt_items_for_source(
+            app.state.db,
+            user=user,
+            source_type="personal",
+            expense=expense,
+            raw_items=result.get("lineItems") or [],
+            bill_job_id=job_id,
+        )
         app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"expenseId": expense["id"], "updatedAt": now()}})
         return expense_out(expense)
 
@@ -1421,6 +1658,10 @@ def ensure_indexes(db: Any) -> None:
     db.group_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.group_expense_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
+    db.receipt_items.create_index([("uid", ASCENDING), ("date", DESCENDING)])
+    db.receipt_items.create_index([("groupId", ASCENDING), ("date", DESCENDING)])
+    db.receipt_items.create_index([("normalizedName", ASCENDING), ("currency", ASCENDING), ("unitPriceNormalized", ASCENDING)])
+    db.receipt_items.create_index([("sourceType", ASCENDING), ("expenseId", ASCENDING)])
     db.loans.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("date", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("period", ASCENDING), ("paymentType", ASCENDING)])
@@ -2166,6 +2407,168 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "updatedAt",
         ]
     })
+
+
+def receipt_items_in_body(body: dict[str, Any]) -> bool:
+    return "receiptItems" in body or "lineItems" in body
+
+
+def body_receipt_items(body: dict[str, Any]) -> Any:
+    return body.get("receiptItems") if "receiptItems" in body else body.get("lineItems")
+
+
+def save_receipt_items_for_source(
+    db: Any,
+    *,
+    user: dict[str, Any],
+    source_type: str,
+    expense: dict[str, Any],
+    raw_items: Any,
+    group: dict[str, Any] | None = None,
+    bill_job_id: str = "",
+) -> None:
+    items = normalize_receipt_line_items(raw_items)
+    expense_id = str(expense.get("id") or "").strip()
+    group_id = str((group or {}).get("id") or expense.get("groupId") or "").strip()
+    if not expense_id:
+        return
+    delete_filter = {
+        "sourceType": source_type,
+        "expenseId": expense_id,
+        **({"groupId": group_id} if source_type == "group" else {"uid": user["uid"]}),
+    }
+    db.receipt_items.delete_many(delete_filter)
+    if not items:
+        return
+    current = now()
+    docs = []
+    for index, item in enumerate(items):
+        docs.append(
+            {
+                "id": uuid.uuid4().hex,
+                "uid": user["uid"],
+                "sourceType": source_type,
+                "expenseId": expense_id,
+                "groupId": group_id,
+                "groupName": str((group or {}).get("name") or "").strip(),
+                "billJobId": bill_job_id.strip(),
+                "merchant": str(expense.get("description") or "").strip(),
+                "date": expense.get("date") or current,
+                "currency": normalize_currency(expense.get("currency"), "INR"),
+                "rowIndex": index,
+                **item,
+                "createdAt": current,
+                "updatedAt": current,
+            }
+        )
+    db.receipt_items.insert_many(docs)
+
+
+def visible_receipt_item_filter(db: Any, uid: str) -> dict[str, Any]:
+    group_ids = [group["id"] for group in db.groups.find({"memberUids": uid})]
+    return {
+        "$or": [
+            {"sourceType": "personal", "uid": uid},
+            {"sourceType": "group", "groupId": {"$in": group_ids}},
+        ]
+    }
+
+
+def receipt_item_query_filter(q: str, normalized_name: str, currency: str) -> dict[str, Any]:
+    filters: list[dict[str, Any]] = []
+    name = canonical_item_name(normalized_name or q)
+    if normalized_name.strip() and name:
+        filters.append({"normalizedName": name})
+    elif q.strip():
+        needle = normalized_text(q)
+        text_filters = [
+            {"itemName": {"$regex": re.escape(q.strip()), "$options": "i"}},
+            {"originalText": {"$regex": re.escape(q.strip()), "$options": "i"}},
+        ]
+        if name:
+            text_filters.insert(0, {"normalizedName": name})
+        if needle:
+            text_filters.append(
+                {"normalizedName": {"$regex": re.escape(needle), "$options": "i"}}
+            )
+        filters.append({"$or": text_filters})
+    if currency.strip():
+        filters.append({"currency": normalize_currency(currency)})
+    if not filters:
+        return {}
+    return filters[0] if len(filters) == 1 else {"$and": filters}
+
+
+def receipt_item_out(doc: dict[str, Any]) -> dict[str, Any]:
+    return json_ready(
+        {
+            key: doc.get(key)
+            for key in [
+                "id",
+                "uid",
+                "sourceType",
+                "expenseId",
+                "groupId",
+                "groupName",
+                "billJobId",
+                "merchant",
+                "date",
+                "currency",
+                "originalText",
+                "detectedLanguage",
+                "itemName",
+                "normalizedName",
+                "brand",
+                "quantity",
+                "unit",
+                "normalizedQuantity",
+                "normalizedUnit",
+                "unitPrice",
+                "lineTotal",
+                "discount",
+                "unitPriceNormalized",
+                "category",
+                "confidence",
+                "createdAt",
+                "updatedAt",
+            ]
+        }
+    )
+
+
+def receipt_item_comparison_out(query: str, docs: list[dict[str, Any]]) -> dict[str, Any]:
+    items = [receipt_item_out(doc) for doc in sorted(docs, key=lambda item: float(item.get("unitPriceNormalized") or 10**12))]
+    buckets: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for doc in docs:
+        key = (str(doc.get("currency") or "INR"), str(doc.get("normalizedUnit") or doc.get("unit") or "each"))
+        buckets.setdefault(key, []).append(doc)
+    summaries = []
+    for (currency, unit), bucket in sorted(buckets.items()):
+        prices = [float(item.get("unitPriceNormalized") or 0) for item in bucket if item.get("unitPriceNormalized") is not None]
+        if not prices:
+            continue
+        best = min(bucket, key=lambda item: float(item.get("unitPriceNormalized") or 10**12))
+        summaries.append(
+            {
+                "currency": currency,
+                "unit": unit,
+                "count": len(prices),
+                "minUnitPrice": round(min(prices), 4),
+                "maxUnitPrice": round(max(prices), 4),
+                "averageUnitPrice": round(sum(prices) / len(prices), 4),
+                "bestMerchant": best.get("merchant") or "",
+                "bestItemName": best.get("itemName") or "",
+                "bestUnitPrice": round(float(best.get("unitPriceNormalized") or 0), 4),
+                "lastSeen": iso(max(aware(item.get("date") or now()) for item in bucket)),
+            }
+        )
+    normalized_query = canonical_item_name(query)
+    return {
+        "query": query,
+        "normalizedName": normalized_query,
+        "summaryByCurrency": summaries,
+        "items": items,
+    }
 
 
 def build_loan(

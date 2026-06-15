@@ -21,6 +21,7 @@ import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/loans/view/loans_page.dart';
+import 'package:expense_tracker/features/receipts/view/price_book_page.dart';
 import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
 import 'package:expense_tracker/features/savings/view/savings_page.dart';
 import 'package:flutter/cupertino.dart';
@@ -279,6 +280,12 @@ class _HomeShellPageState extends State<HomeShellPage>
     Navigator.of(context).push<void>(
       platformPageRoute(builder: (_) => const SavingsPage(autoRefresh: true)),
     );
+  }
+
+  void _openPriceBookPage() {
+    Navigator.of(
+      context,
+    ).push<void>(platformPageRoute(builder: (_) => const PriceBookPage()));
   }
 
   void _openGroupExpenseAction(DailyActionItem item) {
@@ -668,6 +675,11 @@ class _HomeShellPageState extends State<HomeShellPage>
         onTap: () => _runAction(() {
           _openScanBill();
         }),
+      ),
+      _QuickAction(
+        label: 'Price book',
+        icon: Icons.price_check_outlined,
+        onTap: () => _runAction(_openPriceBookPage),
       ),
       _QuickAction(
         label: 'Recurring',

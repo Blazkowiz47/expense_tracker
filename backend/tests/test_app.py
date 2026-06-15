@@ -18,7 +18,29 @@ class FakeExtractor:
             "currency": "INR",
             "category": "Food",
             "notes": "Lunch",
-            "lineItems": [],
+            "lineItems": [
+                {
+                    "originalText": "TINE Lettmelk 1L",
+                    "detectedLanguage": "nb",
+                    "itemName": "TINE Lettmelk 1L",
+                    "normalizedName": "melk",
+                    "brand": "TINE",
+                    "quantity": 1,
+                    "unit": "l",
+                    "lineTotal": 22.5,
+                    "confidence": 0.9,
+                },
+                {
+                    "originalText": "Brod Grovt 750g",
+                    "detectedLanguage": "nb",
+                    "itemName": "Brod Grovt 750g",
+                    "normalizedName": "bread",
+                    "quantity": 750,
+                    "unit": "g",
+                    "lineTotal": 20,
+                    "confidence": 0.8,
+                },
+            ],
             "confidence": 0.95,
             "warnings": [],
         }
@@ -581,6 +603,103 @@ def test_bill_upload_extraction_and_create_expense(tmp_path):
     assert expense.status_code == 201
     assert expense.json()["description"] == "Cafe Oslo"
     assert expense.json()["amount"] == 42.5
+    items = client.get("/api/v1/receipt-items?q=milk", headers=headers)
+    assert items.status_code == 200, items.text
+    assert items.json()["items"][0]["normalizedName"] == "milk"
+    assert items.json()["items"][0]["unitPriceNormalized"] == 22.5
+
+    comparison = client.get("/api/v1/receipt-items/compare?q=milk", headers=headers)
+    assert comparison.status_code == 200, comparison.text
+    summary = comparison.json()["summaryByCurrency"][0]
+    assert summary["currency"] == "INR"
+    assert summary["unit"] == "l"
+    assert summary["bestMerchant"] == "Cafe Oslo"
+
+
+def test_receipt_items_can_be_saved_with_personal_expense(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 39,
+            "currency": "NOK",
+            "category": "Groceries",
+            "description": "Kiwi",
+            "date": "2026-06-15T12:00:00Z",
+            "receiptItems": [
+                {
+                    "originalText": "Banan 1kg",
+                    "itemName": "Banan",
+                    "normalizedName": "banan",
+                    "quantity": 1,
+                    "unit": "kg",
+                    "lineTotal": 19,
+                },
+                {
+                    "originalText": "Melk 1L",
+                    "itemName": "Melk",
+                    "normalizedName": "melk",
+                    "quantity": 1,
+                    "unit": "l",
+                    "lineTotal": 20,
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    comparison = client.get("/api/v1/receipt-items/compare?q=banana&currency=NOK", headers=headers)
+    assert comparison.status_code == 200, comparison.text
+    payload = comparison.json()
+    assert payload["normalizedName"] == "banana"
+    assert payload["items"][0]["merchant"] == "Kiwi"
+    assert payload["items"][0]["sourceType"] == "personal"
+    assert payload["summaryByCurrency"][0]["bestUnitPrice"] == 19
+
+
+def test_group_receipt_items_are_visible_to_group_members(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers_a = register(client, "alice@example.com")
+    headers_b = register(client, "bob@example.com")
+
+    group = client.post(
+        "/api/v1/groups",
+        headers=headers_a,
+        json={"name": "Household", "groupType": "family", "members": ["bob@example.com"]},
+    )
+    assert group.status_code == 201, group.text
+    group_id = group.json()["id"]
+
+    expense = client.post(
+        f"/api/v1/groups/{group_id}/expenses",
+        headers=headers_a,
+        json={
+            "description": "Rema 1000",
+            "amount": 30,
+            "currency": "NOK",
+            "category": "Groceries",
+            "date": "2026-06-15T12:00:00Z",
+            "receiptItems": [
+                {
+                    "originalText": "Kylling 500g",
+                    "itemName": "Kylling",
+                    "normalizedName": "kylling",
+                    "quantity": 500,
+                    "unit": "g",
+                    "lineTotal": 30,
+                }
+            ],
+        },
+    )
+    assert expense.status_code == 201, expense.text
+
+    visible = client.get("/api/v1/receipt-items/compare?q=chicken", headers=headers_b)
+    assert visible.status_code == 200, visible.text
+    assert visible.json()["items"][0]["groupName"] == "Household"
+    assert visible.json()["items"][0]["normalizedName"] == "chicken"
 
 
 def test_parse_model_json_handles_wrapped_json():

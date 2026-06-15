@@ -52,19 +52,146 @@ class BillExtractionResult {
 }
 
 class BillLineItem {
-  const BillLineItem({required this.name, this.quantity, this.amount});
+  const BillLineItem({
+    required this.name,
+    this.originalText = '',
+    this.detectedLanguage = '',
+    this.normalizedName = '',
+    this.brand = '',
+    this.quantity,
+    this.unit = '',
+    this.unitPrice,
+    this.lineTotal,
+    this.discount,
+    this.normalizedQuantity,
+    this.normalizedUnit = '',
+    this.unitPriceNormalized,
+    this.category = '',
+    this.confidence = 0,
+  });
 
   final String name;
-  final String? quantity;
-  final double? amount;
+  final String originalText;
+  final String detectedLanguage;
+  final String normalizedName;
+  final String brand;
+  final double? quantity;
+  final String unit;
+  final double? unitPrice;
+  final double? lineTotal;
+  final double? discount;
+  final double? normalizedQuantity;
+  final String normalizedUnit;
+  final double? unitPriceNormalized;
+  final String category;
+  final double confidence;
+
+  double? get amount => lineTotal;
 
   factory BillLineItem.fromJson(Map<String, dynamic> json) {
+    final name = (json['itemName'] ?? json['name'] ?? json['title'] ?? '')
+        .toString();
+    final originalText = (json['originalText'] ?? json['rawText'] ?? name)
+        .toString();
     return BillLineItem(
-      name: (json['name'] ?? json['title'] ?? '').toString(),
-      quantity: json['quantity']?.toString(),
-      amount: (json['amount'] as num?)?.toDouble(),
+      name: name,
+      originalText: originalText,
+      detectedLanguage: (json['detectedLanguage'] ?? json['language'] ?? '')
+          .toString(),
+      normalizedName: (json['normalizedName'] ?? '').toString(),
+      brand: (json['brand'] ?? '').toString(),
+      quantity: _readDouble(json['quantity']),
+      unit: (json['unit'] ?? '').toString(),
+      unitPrice: _readDouble(json['unitPrice']),
+      lineTotal: _readDouble(json['lineTotal'] ?? json['amount']),
+      discount: _readDouble(json['discount']),
+      normalizedQuantity: _readDouble(json['normalizedQuantity']),
+      normalizedUnit: (json['normalizedUnit'] ?? '').toString(),
+      unitPriceNormalized: _readDouble(json['unitPriceNormalized']),
+      category: (json['category'] ?? '').toString(),
+      confidence: _readDouble(json['confidence']) ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'originalText': originalText.trim().isEmpty ? name : originalText,
+      'detectedLanguage': detectedLanguage,
+      'itemName': name,
+      'normalizedName': normalizedName,
+      'brand': brand,
+      'quantity': quantity,
+      'unit': unit,
+      'unitPrice': unitPrice,
+      'lineTotal': lineTotal,
+      'discount': discount,
+      'normalizedQuantity': normalizedQuantity,
+      'normalizedUnit': normalizedUnit,
+      'unitPriceNormalized': unitPriceNormalized,
+      'category': category,
+      'confidence': confidence,
+    };
+  }
+
+  BillLineItem copyWith({
+    String? name,
+    String? originalText,
+    String? detectedLanguage,
+    String? normalizedName,
+    String? brand,
+    Object? quantity = _unset,
+    String? unit,
+    Object? unitPrice = _unset,
+    Object? lineTotal = _unset,
+    Object? discount = _unset,
+    Object? normalizedQuantity = _unset,
+    String? normalizedUnit,
+    Object? unitPriceNormalized = _unset,
+    String? category,
+    double? confidence,
+  }) {
+    return BillLineItem(
+      name: name ?? this.name,
+      originalText: originalText ?? this.originalText,
+      detectedLanguage: detectedLanguage ?? this.detectedLanguage,
+      normalizedName: normalizedName ?? this.normalizedName,
+      brand: brand ?? this.brand,
+      quantity: identical(quantity, _unset)
+          ? this.quantity
+          : quantity as double?,
+      unit: unit ?? this.unit,
+      unitPrice: identical(unitPrice, _unset)
+          ? this.unitPrice
+          : unitPrice as double?,
+      lineTotal: identical(lineTotal, _unset)
+          ? this.lineTotal
+          : lineTotal as double?,
+      discount: identical(discount, _unset)
+          ? this.discount
+          : discount as double?,
+      normalizedQuantity: identical(normalizedQuantity, _unset)
+          ? this.normalizedQuantity
+          : normalizedQuantity as double?,
+      normalizedUnit: normalizedUnit ?? this.normalizedUnit,
+      unitPriceNormalized: identical(unitPriceNormalized, _unset)
+          ? this.unitPriceNormalized
+          : unitPriceNormalized as double?,
+      category: category ?? this.category,
+      confidence: confidence ?? this.confidence,
+    );
+  }
+}
+
+const _unset = Object();
+
+double? _readDouble(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value.trim().replaceAll(',', '.'));
+  }
+  return null;
 }
 
 class BillAiRepository {

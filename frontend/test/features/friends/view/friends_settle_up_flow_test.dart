@@ -93,7 +93,10 @@ class _FakeExpenseRepository extends ExpenseRepository {
   List<Expense> getExpenses() => List<Expense>.from(_store);
 
   @override
-  Future<void> createExpense(Expense expense) async {
+  Future<void> createExpense(
+    Expense expense, {
+    List<Map<String, dynamic>> receiptItems = const [],
+  }) async {
     created.add(expense);
     _store.add(expense);
   }
