@@ -15,6 +15,14 @@ The server expects MongoDB at `MONGO_URI` and defaults to
 `mongodb://127.0.0.1:27017`. Runtime data is stored in `expense_tracker_local`
 unless `MONGO_DB` is set.
 
+From the repository root, the tmux dev script uses backend port `8080` and
+frontend port `7357` by default. Override `BACKEND_PORT` / `FRONTEND_PORT`
+when those ports are busy:
+
+```sh
+BACKEND_PORT=8081 FRONTEND_PORT=7358 scripts/start_expense_dev_tmux.sh --no-attach
+```
+
 Uploaded files are stored under `DATA_DIR/uploads` and default to
 `backend/data/uploads`.
 

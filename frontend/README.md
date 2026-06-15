@@ -22,6 +22,18 @@ the backend on `127.0.0.1:8080`:
 ../scripts/start_expense_dev_tmux.sh --no-attach
 ```
 
+If a local port is already occupied, override the ports and matching frontend
+API target:
+
+```bash
+BACKEND_PORT=8081 FRONTEND_PORT=7358 ../scripts/start_expense_dev_tmux.sh --no-attach
+```
+
+When MongoDB is managed separately, set `MONGO_URI` to that reachable server.
+Use `SKIP_MONGO_BOOTSTRAP=1` only when that MongoDB server is already running
+and you want to prevent the script from trying to start the local Docker Mongo
+container.
+
 ## Production Web / PWA Build
 
 The Flutter web app can be installed from Safari on iPhone with Add to Home
