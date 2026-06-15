@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/data/models/group.dart';
+import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
@@ -18,6 +21,7 @@ class FamilyPage extends StatefulWidget {
   const FamilyPage({
     this.repository,
     this.client,
+    this.freshnessRepository,
     this.monthlyPlanRepository,
     this.openAddExpenseOnLaunch = false,
     this.initialExpenseCategory = 'Groceries',
@@ -29,6 +33,7 @@ class FamilyPage extends StatefulWidget {
 
   final ApiGroupsRepository? repository;
   final http.Client? client;
+  final FreshnessRepository? freshnessRepository;
   final MonthlyPlanRepository? monthlyPlanRepository;
   final bool openAddExpenseOnLaunch;
   final String initialExpenseCategory;
@@ -43,6 +48,8 @@ class FamilyPage extends StatefulWidget {
 class _FamilyPageState extends State<FamilyPage> {
   http.Client? _ownedClient;
   late final ApiGroupsRepository _repository;
+  late final FreshnessRepository _freshnessRepository;
+  late final bool _ownsFreshnessRepository;
   List<GroupSummary> _families = const [];
   List<GroupMember> _members = const [];
   List<GroupExpense> _expenses = const [];
@@ -50,23 +57,36 @@ class _FamilyPageState extends State<FamilyPage> {
   GroupSummary? _selectedFamily;
   bool _loading = true;
   bool _loadingDetails = false;
+  bool _loadedFamilyData = false;
   bool _didOpenInitialExpense = false;
   int _monthlyPlanRefreshToken = 0;
   String? _error;
+  DateTime? _familyFreshnessCursor;
 
   @override
   void initState() {
     super.initState();
-    final client = widget.client ?? http.Client();
-    if (widget.repository == null && widget.client == null) {
-      _ownedClient = client;
+    if (widget.repository == null) {
+      final client = widget.client ?? http.Client();
+      if (widget.client == null) {
+        _ownedClient = client;
+      }
+      _repository = ApiGroupsRepository(client: client);
+    } else {
+      _repository = widget.repository!;
     }
-    _repository = widget.repository ?? ApiGroupsRepository(client: client);
+    _freshnessRepository =
+        widget.freshnessRepository ??
+        FreshnessRepository(client: widget.client ?? _ownedClient);
+    _ownsFreshnessRepository = widget.freshnessRepository == null;
     _loadFamilies();
   }
 
   @override
   void dispose() {
+    if (_ownsFreshnessRepository) {
+      _freshnessRepository.dispose();
+    }
     _ownedClient?.close();
     super.dispose();
   }
@@ -77,7 +97,10 @@ class _FamilyPageState extends State<FamilyPage> {
         .toList(growable: false);
   }
 
-  Future<void> _loadFamilies({bool showLoading = true}) async {
+  Future<void> _loadFamilies({
+    bool showLoading = true,
+    bool markFreshness = true,
+  }) async {
     setState(() {
       _loading = showLoading || _families.isEmpty;
       _error = null;
@@ -95,6 +118,12 @@ class _FamilyPageState extends State<FamilyPage> {
       if (!mounted) return;
       _applyFamilies(groups);
       await _loadSelectedFamilyDetails(showLoading: showLoading);
+      if (mounted) {
+        _loadedFamilyData = true;
+      }
+      if (markFreshness) {
+        unawaited(_markFamilyFreshnessSeen());
+      }
       _openInitialExpenseIfRequested();
     } catch (error) {
       if (!mounted) return;
@@ -108,10 +137,41 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
-  Future<void> _refreshFamily() async {
+  Future<void> _refreshFamily({bool markFreshness = true}) async {
     if (!mounted) return;
     setState(() => _monthlyPlanRefreshToken += 1);
-    await _loadFamilies(showLoading: false);
+    await _loadFamilies(showLoading: false, markFreshness: markFreshness);
+  }
+
+  Future<void> _autoRefreshFamily() async {
+    final freshness = await _freshnessRepository.fetchFreshness(
+      since: _familyFreshnessCursor,
+      sections: const ['groups', 'plans'],
+    );
+    final groups = freshness.sections['groups'];
+    final plans = freshness.sections['plans'];
+    final groupsChanged = groups?.changed ?? !_loadedFamilyData;
+    final plansChanged = plans?.changed ?? false;
+    if (!groupsChanged && !plansChanged && _loadedFamilyData) {
+      _familyFreshnessCursor = freshness.serverTime;
+      return;
+    }
+    if (plansChanged && mounted) {
+      setState(() => _monthlyPlanRefreshToken += 1);
+    }
+    if (groupsChanged || !_loadedFamilyData) {
+      await _loadFamilies(showLoading: false, markFreshness: false);
+    }
+    _familyFreshnessCursor = freshness.serverTime;
+  }
+
+  Future<void> _markFamilyFreshnessSeen() async {
+    try {
+      final freshness = await _freshnessRepository.fetchFreshness(
+        sections: const ['groups', 'plans'],
+      );
+      _familyFreshnessCursor = freshness.serverTime;
+    } catch (_) {}
   }
 
   void _applyFamilies(List<GroupSummary> families) {
@@ -573,7 +633,8 @@ class _FamilyPageState extends State<FamilyPage> {
 
     if (_loading && family == null) {
       return AppPageContainer(
-        onRefresh: _refreshFamily,
+        onRefresh: () => _refreshFamily(),
+        onAutoRefresh: _autoRefreshFamily,
         autoRefresh: widget.autoRefresh,
         children: const [
           AppBalanceTile(
@@ -586,7 +647,8 @@ class _FamilyPageState extends State<FamilyPage> {
 
     if (_error != null && family == null) {
       return AppPageContainer(
-        onRefresh: _refreshFamily,
+        onRefresh: () => _refreshFamily(),
+        onAutoRefresh: _autoRefreshFamily,
         autoRefresh: widget.autoRefresh,
         children: [
           AppBalanceTile(
@@ -600,7 +662,8 @@ class _FamilyPageState extends State<FamilyPage> {
 
     if (family == null) {
       return AppPageContainer(
-        onRefresh: _refreshFamily,
+        onRefresh: () => _refreshFamily(),
+        onAutoRefresh: _autoRefreshFamily,
         autoRefresh: widget.autoRefresh,
         children: [
           AppEmptyState(
@@ -627,7 +690,8 @@ class _FamilyPageState extends State<FamilyPage> {
     final settlementSuggestions = _settlementSuggestions();
 
     return AppPageContainer(
-      onRefresh: _refreshFamily,
+      onRefresh: () => _refreshFamily(),
+      onAutoRefresh: _autoRefreshFamily,
       autoRefresh: widget.autoRefresh,
       children: [
         _HouseholdCard(

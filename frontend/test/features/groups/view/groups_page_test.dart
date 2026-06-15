@@ -210,6 +210,16 @@ FreshnessSnapshot _freshness(DateTime serverTime) {
   );
 }
 
+FreshnessSnapshot _familyFreshness(DateTime serverTime) {
+  return FreshnessSnapshot(
+    serverTime: serverTime,
+    sections: const {
+      'groups': FreshnessSection(changed: false),
+      'plans': FreshnessSection(changed: false),
+    },
+  );
+}
+
 void main() {
   const splitGroup = GroupSummary(
     id: 'split-1',
@@ -282,6 +292,41 @@ void main() {
     expect(repository.fetchGroupCount, 1);
     expect(freshnessRepository.requests, hasLength(2));
     expect(freshnessRepository.requests.last.sections, ['groups']);
+    expect(
+      freshnessRepository.requests.last.since,
+      DateTime.parse('2026-06-07T10:00:00Z'),
+    );
+  });
+
+  testWidgets('family auto-refresh skips reload when freshness is unchanged', (
+    tester,
+  ) async {
+    final repository = _FakeGroupsRepository([familyGroup]);
+    final freshnessRepository = _FakeFreshnessRepository([
+      _familyFreshness(DateTime.parse('2026-06-07T10:00:00Z')),
+      _familyFreshness(DateTime.parse('2026-06-07T10:00:45Z')),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FamilyPage(
+            repository: repository,
+            freshnessRepository: freshnessRepository,
+            monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+            autoRefresh: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 45));
+    await tester.pump();
+
+    expect(repository.fetchGroupCount, 1);
+    expect(freshnessRepository.requests, hasLength(2));
+    expect(freshnessRepository.requests.last.sections, ['groups', 'plans']);
     expect(
       freshnessRepository.requests.last.since,
       DateTime.parse('2026-06-07T10:00:00Z'),
