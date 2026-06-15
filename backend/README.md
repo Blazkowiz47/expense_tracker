@@ -47,6 +47,60 @@ Bill extraction is backend-only. Set `AI_BASE_URL` to a local Gemma-compatible
 HTTP endpoint if one is available. Without it, extraction falls back to a
 deterministic placeholder so upload/review flows continue to work.
 
+### Gemma 4 E4B via Hugging Face Transformers
+
+The recommended local Hugging Face path is the optional receipt AI sidecar in
+`app.hf_receipt_server`. It runs Google's `google/gemma-4-E4B-it` with
+Transformers and exposes the `/api/v1/extract-bill` endpoint expected by the
+main backend.
+
+Install the optional AI dependencies into the backend virtualenv:
+
+```sh
+cd backend
+. .venv/bin/activate
+pip install -r requirements-ai.txt
+```
+
+If Hugging Face asks for model access, accept the Gemma terms on the model page
+and log in locally with your Hugging Face token before starting the sidecar.
+Do not commit the token.
+
+From the repository root, start the sidecar on port `8001`:
+
+```sh
+HF_RECEIPT_MODEL=google/gemma-4-E4B-it \
+scripts/start_hf_gemma_receipts.sh
+```
+
+Then start the app pointed at that sidecar, also from the repository root:
+
+```sh
+AI_BASE_URL=http://127.0.0.1:8001 \
+AI_MODEL=google/gemma-4-E4B-it \
+scripts/start_expense_dev_tmux.sh --no-attach
+```
+
+Or let the tmux script start the AI sidecar as window `:3`:
+
+```sh
+START_HF_AI=1 \
+HF_RECEIPT_MODEL=google/gemma-4-E4B-it \
+scripts/start_expense_dev_tmux.sh --no-attach
+```
+
+The first request downloads/loads the model and can be slow. The sidecar keeps
+the model warm after that.
+
+Useful optional knobs:
+
+```sh
+HF_DEVICE=mps                 # force Apple Silicon GPU when supported
+HF_DEVICE=cuda                # force CUDA
+HF_TORCH_DTYPE=bfloat16       # or float16/float32/auto
+HF_RECEIPT_MAX_NEW_TOKENS=1536
+```
+
 ### Gemma 4 E4B via llama-server
 
 The backend can call a local OpenAI-compatible `llama-server` directly:

@@ -17,8 +17,18 @@ MONGO_PORT_USED="${MONGO_PORT:-27017}"
 MONGO_URI_USED="${MONGO_URI:-mongodb://$MONGO_HOST_USED:$MONGO_PORT_USED}"
 MONGO_DB_USED="${MONGO_DB:-expense_tracker_local}"
 AI_PROVIDER_USED="${AI_PROVIDER:-custom}"
+START_HF_AI_USED="${START_HF_AI:-0}"
+HF_AI_HOST_USED="${HF_AI_HOST:-127.0.0.1}"
+HF_AI_PORT_USED="${HF_AI_PORT:-8001}"
+HF_RECEIPT_MODEL_USED="${HF_RECEIPT_MODEL:-google/gemma-4-E4B-it}"
 AI_BASE_URL_USED="${AI_BASE_URL:-}"
 AI_MODEL_USED="${AI_MODEL:-unsloth/gemma-4-E4B-it-GGUF}"
+if [[ "$START_HF_AI_USED" == "1" ]]; then
+  AI_BASE_URL_USED="${AI_BASE_URL_USED:-http://$HF_AI_HOST_USED:$HF_AI_PORT_USED}"
+  if [[ -z "${AI_MODEL:-}" ]]; then
+    AI_MODEL_USED="$HF_RECEIPT_MODEL_USED"
+  fi
+fi
 FIREBASE_PROJECT_ID_USED="${FIREBASE_PROJECT_ID:-}"
 BACKEND_PYTHON="${BACKEND_PYTHON:-$BACKEND_DIR/.venv/bin/python}"
 MONGO_CONTAINER_NAME_USED="${MONGO_CONTAINER_NAME:-expense-tracker-mongo}"
@@ -74,6 +84,8 @@ BACKEND_CMD="cd \"$BACKEND_DIR\" && AUTH_MODE=\"$AUTH_MODE_USED\" MONGO_URI=\"$M
 
 FRONTEND_CMD="cd \"$FRONTEND_DIR\" && flutter run -d web-server --web-hostname \"$FRONTEND_HOST_USED\" --web-port \"$FRONTEND_PORT_USED\" --dart-define=API_BASE_URL=\"$API_BASE_URL_USED\" --dart-define=AUTH_MODE=\"$AUTH_MODE_USED\""
 
+HF_AI_CMD="cd \"$BACKEND_DIR\" && HF_RECEIPT_MODEL=\"$HF_RECEIPT_MODEL_USED\" \"$BACKEND_PYTHON\" -m uvicorn app.hf_receipt_server:app --host \"$HF_AI_HOST_USED\" --port \"$HF_AI_PORT_USED\""
+
 ATTACH=1
 if [[ "${1:-}" == "--no-attach" ]]; then
   ATTACH=0
@@ -93,9 +105,18 @@ tmux new-window -t "$SESSION" -n frontend
 tmux send-keys -t "$SESSION:2" \
   "$FRONTEND_CMD" C-m
 
+if [[ "$START_HF_AI_USED" == "1" ]]; then
+  tmux new-window -t "$SESSION" -n hf-ai
+  tmux send-keys -t "$SESSION:3" \
+    "$HF_AI_CMD" C-m
+fi
+
 tmux list-windows -t "$SESSION"
 echo "Backend target: http://$BACKEND_HOST_USED:$BACKEND_PORT_USED"
 echo "Frontend target: http://$FRONTEND_HOST_USED:$FRONTEND_PORT_USED"
+if [[ "$START_HF_AI_USED" == "1" ]]; then
+  echo "Hugging Face receipt AI target: http://$HF_AI_HOST_USED:$HF_AI_PORT_USED"
+fi
 
 if [[ "$ATTACH" -eq 1 ]]; then
   tmux attach-session -t "$SESSION"

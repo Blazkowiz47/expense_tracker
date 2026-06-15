@@ -1,0 +1,9 @@
+-r requirements.txt
+
+# Gemma 4 is a new architecture; keep these on current releases instead of
+# pinning old versions that may not know the model.
+accelerate
+pillow
+torch
+torchvision
+transformers
