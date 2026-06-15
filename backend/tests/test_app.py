@@ -42,6 +42,17 @@ def register(client, email="user@example.com"):
     return {"Authorization": f"Bearer {token}"}
 
 
+def firebase_claims(email="google@example.com", firebase_uid="firebase-user-1"):
+    return {
+        "user_id": firebase_uid,
+        "sub": firebase_uid,
+        "email": email,
+        "email_verified": True,
+        "name": "Google User",
+        "picture": "https://example.com/avatar.png",
+    }
+
+
 def add_months(month: str, delta: int) -> str:
     year, month_number = [int(part) for part in month.split("-")]
     zero_based = (year * 12 + (month_number - 1)) + delta
@@ -67,6 +78,59 @@ def test_register_login_me_and_logout(tmp_path):
     logout = client.post("/api/v1/auth/logout", headers=headers)
     assert logout.status_code == 200
     assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+
+
+def test_firebase_auth_creates_local_session(tmp_path):
+    client, app = make_client(tmp_path)
+    app.state.firebase_token_verifier = lambda token: firebase_claims()
+
+    response = client.post("/api/v1/auth/firebase", json={"idToken": "firebase-token"})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["token"]
+    assert payload["user"]["email"] == "google@example.com"
+    assert payload["user"]["displayName"] == "Google User"
+    assert payload["user"]["photoUrl"] == "https://example.com/avatar.png"
+    stored = app.state.db.users.find_one({"emailNormalized": "google@example.com"})
+    assert stored["firebaseUid"] == "firebase-user-1"
+    assert stored["authProviders"] == ["google"]
+
+    me = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {payload['token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["user"]["email"] == "google@example.com"
+
+
+def test_firebase_auth_links_existing_email_user(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client, "user@example.com")
+    original_user = client.get("/api/v1/auth/me", headers=headers).json()["user"]
+    app.state.firebase_token_verifier = lambda token: firebase_claims(
+        email="user@example.com",
+        firebase_uid="firebase-existing-user",
+    )
+
+    response = client.post("/api/v1/auth/firebase", json={"idToken": "firebase-token"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["user"]["uid"] == original_user["uid"]
+    assert app.state.db.users.count_documents({"emailNormalized": "user@example.com"}) == 1
+    stored = app.state.db.users.find_one({"uid": original_user["uid"]})
+    assert stored["firebaseUid"] == "firebase-existing-user"
+    assert "google" in stored["authProviders"]
+
+
+def test_firebase_auth_requires_project_config_without_test_verifier(tmp_path, monkeypatch):
+    monkeypatch.delenv("FIREBASE_PROJECT_ID", raising=False)
+    client, _ = make_client(tmp_path)
+
+    response = client.post("/api/v1/auth/firebase", json={"idToken": "firebase-token"})
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "AUTH_NOT_CONFIGURED"
 
 
 def test_expenses_persist_in_mongo(tmp_path):

@@ -110,6 +110,9 @@ class _FakeAuthRepository implements AuthRepository {
   Future<void> login({required String email, required String password}) async {}
 
   @override
+  Future<void> loginWithGoogle() async {}
+
+  @override
   Future<void> register({
     required String email,
     required String password,

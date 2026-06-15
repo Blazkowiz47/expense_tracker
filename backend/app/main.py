@@ -453,6 +453,15 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         token = create_session(app.state.db, user["uid"])
         return {"token": token, "user": user_public(user)}
 
+    @app.post("/api/v1/auth/firebase")
+    def firebase_login(body: dict[str, Any]) -> dict[str, Any]:
+        require_json(body, "idToken")
+        claims = verify_firebase_claims(app, str(body["idToken"]))
+        user = find_or_create_firebase_user(app.state.db, claims)
+        accepted_invites = accept_pending_group_invites(app.state.db, user)
+        token = create_session(app.state.db, user["uid"])
+        return {"token": token, "user": user_public(user), "acceptedGroupInvites": accepted_invites}
+
     @app.post("/api/v1/auth/logout")
     def logout(request: Request, user: dict[str, Any] = Depends(current_user)) -> dict[str, bool]:
         auth = request.headers.get("Authorization", "")
@@ -1393,6 +1402,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
 def ensure_indexes(db: Any) -> None:
     db.users.create_index("emailNormalized", unique=True)
     db.users.create_index("uid", unique=True)
+    db.users.create_index("firebaseUid", unique=True, sparse=True)
     db.sessions.create_index("tokenHash", unique=True)
     db.sessions.create_index("expiresAt")
     db.expenses.create_index([("uid", ASCENDING), ("date", ASCENDING)])
@@ -1454,6 +1464,101 @@ def create_session(db: Any, uid: str) -> str:
     token = secrets.token_urlsafe(32)
     db.sessions.insert_one({"uid": uid, "tokenHash": token_hash(token), "createdAt": now(), "expiresAt": now() + timedelta(days=30)})
     return token
+
+
+def verify_firebase_claims(app: FastAPI, id_token: str) -> dict[str, Any]:
+    token = id_token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "idToken is required"))
+
+    verifier = getattr(app.state, "firebase_token_verifier", None)
+    if verifier is not None:
+        try:
+            claims = verifier(token)
+        except HTTPException:
+            raise
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail=api_error("INVALID_FIREBASE_TOKEN", "Firebase token verification failed")) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=api_error("AUTH_UNAVAILABLE", "Firebase token verification is unavailable")) from exc
+    else:
+        project_id = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+        if not project_id:
+            raise HTTPException(status_code=503, detail=api_error("AUTH_NOT_CONFIGURED", "Firebase project id is not configured"))
+        try:
+            from google.auth.transport import requests as google_requests
+            from google.oauth2 import id_token as google_id_token
+        except ImportError as exc:  # pragma: no cover - protected by dependency tests
+            raise HTTPException(status_code=503, detail=api_error("AUTH_NOT_CONFIGURED", "Firebase token verifier is not installed")) from exc
+        try:
+            claims = google_id_token.verify_firebase_token(
+                token,
+                google_requests.Request(),
+                audience=project_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail=api_error("INVALID_FIREBASE_TOKEN", "Firebase token verification failed")) from exc
+        except Exception as exc:  # pragma: no cover - network/cert fetch failures
+            raise HTTPException(status_code=503, detail=api_error("AUTH_UNAVAILABLE", "Firebase token verification is unavailable")) from exc
+
+    if not isinstance(claims, dict):
+        raise HTTPException(status_code=401, detail=api_error("INVALID_FIREBASE_TOKEN", "Firebase token verification failed"))
+    email = normalize_email(str(claims.get("email") or ""))
+    firebase_uid = str(claims.get("user_id") or claims.get("sub") or "").strip()
+    if not firebase_uid:
+        raise HTTPException(status_code=401, detail=api_error("INVALID_FIREBASE_TOKEN", "Firebase token is missing a user id"))
+    if not email:
+        raise HTTPException(status_code=401, detail=api_error("INVALID_FIREBASE_TOKEN", "Firebase token is missing an email"))
+    if claims.get("email_verified") is False:
+        raise HTTPException(status_code=403, detail=api_error("EMAIL_NOT_VERIFIED", "Google account email is not verified"))
+    return claims
+
+
+def find_or_create_firebase_user(db: Any, claims: dict[str, Any]) -> dict[str, Any]:
+    firebase_uid = str(claims.get("user_id") or claims.get("sub") or "").strip()
+    email = normalize_email(str(claims.get("email") or ""))
+    display_name = str(claims.get("name") or claims.get("display_name") or email.split("@")[0] or "User").strip()
+    photo_url = str(claims.get("picture") or "").strip() or None
+
+    user = db.users.find_one({"firebaseUid": firebase_uid})
+    if not user:
+        user = db.users.find_one({"emailNormalized": email})
+
+    current = now()
+    if user:
+        updates: dict[str, Any] = {
+            "firebaseUid": firebase_uid,
+            "updatedAt": current,
+        }
+        if user.get("emailNormalized") != email:
+            existing_email_user = db.users.find_one({"emailNormalized": email})
+            if not existing_email_user or existing_email_user.get("uid") == user["uid"]:
+                updates["email"] = email
+                updates["emailNormalized"] = email
+        if display_name and str(user.get("displayName") or "").strip() in {"", "User", str(user.get("email") or "").split("@")[0]}:
+            updates["displayName"] = display_name
+        if photo_url and not user.get("photoUrl"):
+            updates["photoUrl"] = photo_url
+        db.users.update_one(
+            {"uid": user["uid"]},
+            {
+                "$set": updates,
+                "$addToSet": {"authProviders": "google"},
+            },
+        )
+        return db.users.find_one({"uid": user["uid"]})
+
+    user = create_user_doc(
+        uuid.uuid4().hex,
+        email,
+        display_name,
+        ph.hash(secrets.token_urlsafe(32)),
+    )
+    user["firebaseUid"] = firebase_uid
+    user["authProviders"] = ["google"]
+    user["photoUrl"] = photo_url
+    db.users.insert_one(user)
+    return user
 
 
 FRESHNESS_SECTIONS = {

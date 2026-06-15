@@ -4,11 +4,15 @@ import 'dart:convert';
 import 'package:expense_tracker/core/config/api_config.dart';
 import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_session_store.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
 abstract class AuthRepository {
   Stream<AuthUser?> authStateChanges();
   Future<void> login({required String email, required String password});
+  Future<void> loginWithGoogle();
   Future<void> register({
     required String email,
     required String password,
@@ -29,6 +33,7 @@ class ApiAuthRepository implements AuthRepository {
   final http.Client _client;
   final AuthSessionStore _store;
   final _controller = StreamController<AuthUser?>.broadcast();
+  Future<void>? _googleSignInInitialization;
 
   @override
   Stream<AuthUser?> authStateChanges() => _controller.stream;
@@ -73,6 +78,17 @@ class ApiAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<void> loginWithGoogle() async {
+    final idToken = await _firebaseGoogleIdToken();
+    try {
+      await _authenticate('/api/v1/auth/firebase', {'idToken': idToken});
+    } catch (_) {
+      await _signOutFromFirebase();
+      rethrow;
+    }
+  }
+
+  @override
   Future<void> register({
     required String email,
     required String password,
@@ -109,6 +125,52 @@ class ApiAuthRepository implements AuthRepository {
     _controller.add(user);
   }
 
+  Future<String> _firebaseGoogleIdToken() async {
+    final auth = firebase_auth.FirebaseAuth.instance;
+    final firebase_auth.UserCredential credential;
+    if (kIsWeb) {
+      final provider = firebase_auth.GoogleAuthProvider()
+        ..addScope('email')
+        ..addScope('profile');
+      credential = await auth.signInWithPopup(provider);
+    } else {
+      await _ensureGoogleSignInInitialized();
+      final account = await GoogleSignIn.instance.authenticate(
+        scopeHint: const ['email', 'profile'],
+      );
+      final googleIdToken = account.authentication.idToken;
+      if (googleIdToken == null || googleIdToken.isEmpty) {
+        throw Exception('Google sign in did not return an identity token.');
+      }
+      credential = await auth.signInWithCredential(
+        firebase_auth.GoogleAuthProvider.credential(idToken: googleIdToken),
+      );
+    }
+
+    final idToken = await credential.user?.getIdToken(true);
+    if (idToken == null || idToken.isEmpty) {
+      throw Exception('Firebase did not return an identity token.');
+    }
+    return idToken;
+  }
+
+  Future<void> _ensureGoogleSignInInitialized() {
+    return _googleSignInInitialization ??= GoogleSignIn.instance.initialize();
+  }
+
+  Future<void> _signOutFromFirebase() async {
+    try {
+      await firebase_auth.FirebaseAuth.instance.signOut();
+    } catch (_) {}
+    if (kIsWeb) {
+      return;
+    }
+    try {
+      await _ensureGoogleSignInInitialized();
+      await GoogleSignIn.instance.signOut();
+    } catch (_) {}
+  }
+
   AuthUser _decodeUser(String body) {
     final decoded = jsonDecode(body) as Map<String, dynamic>;
     return AuthUser.fromJson(decoded['user'] as Map<String, dynamic>);
@@ -128,6 +190,7 @@ class ApiAuthRepository implements AuthRepository {
         );
       } catch (_) {}
     }
+    await _signOutFromFirebase();
     await _store.clear();
     _controller.add(null);
   }

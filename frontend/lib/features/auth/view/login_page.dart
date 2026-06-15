@@ -66,6 +66,11 @@ class _LoginPageState extends State<LoginPage> {
     cubit.login(email: email, password: password);
   }
 
+  void _submitGoogle() {
+    setState(() => _validationMessage = null);
+    context.read<AuthCubit>().loginWithGoogle();
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<AuthCubit, AuthState>(
@@ -98,6 +103,7 @@ class _LoginPageState extends State<LoginPage> {
                   onPasswordVisibilityChanged: () =>
                       setState(() => _passwordVisible = !_passwordVisible),
                   onSubmit: _submit,
+                  onGoogleSignIn: _submitGoogle,
                   useCupertino: true,
                 ),
               ),
@@ -119,6 +125,7 @@ class _LoginPageState extends State<LoginPage> {
                 onPasswordVisibilityChanged: () =>
                     setState(() => _passwordVisible = !_passwordVisible),
                 onSubmit: _submit,
+                onGoogleSignIn: _submitGoogle,
                 useCupertino: false,
               ),
             ),
@@ -139,6 +146,7 @@ class _LoginPageState extends State<LoginPage> {
                 onPasswordVisibilityChanged: () =>
                     setState(() => _passwordVisible = !_passwordVisible),
                 onSubmit: _submit,
+                onGoogleSignIn: _submitGoogle,
                 useCupertino: false,
               ),
             ),
@@ -162,6 +170,7 @@ class _LoginBody extends StatelessWidget {
     required this.onModeChanged,
     required this.onPasswordVisibilityChanged,
     required this.onSubmit,
+    required this.onGoogleSignIn,
     required this.useCupertino,
   });
 
@@ -176,6 +185,7 @@ class _LoginBody extends StatelessWidget {
   final ValueChanged<bool> onModeChanged;
   final VoidCallback onPasswordVisibilityChanged;
   final VoidCallback onSubmit;
+  final VoidCallback onGoogleSignIn;
   final bool useCupertino;
 
   @override
@@ -281,6 +291,31 @@ class _LoginBody extends StatelessWidget {
                   selectableOnWeb: false,
                 ),
               ),
+            if (!registerMode) ...[
+              const SizedBox(height: 12),
+              if (useCupertino)
+                CupertinoButton(
+                  onPressed: isLoading ? null : onGoogleSignIn,
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(CupertinoIcons.person_crop_circle),
+                      SizedBox(width: 8),
+                      SmartText('Continue with Google', selectableOnWeb: false),
+                    ],
+                  ),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: isLoading ? null : onGoogleSignIn,
+                  icon: const Icon(Icons.account_circle_outlined),
+                  label: const SmartText(
+                    'Continue with Google',
+                    selectableOnWeb: false,
+                  ),
+                ),
+            ],
             TextButton(
               onPressed: isLoading ? null : () => onModeChanged(!registerMode),
               child: Text(

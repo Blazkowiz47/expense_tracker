@@ -11,6 +11,9 @@ class _FakeAuthRepository implements AuthRepository {
   Future<void> login({required String email, required String password}) async {}
 
   @override
+  Future<void> loginWithGoogle() async {}
+
+  @override
   Future<void> register({
     required String email,
     required String password,
@@ -32,5 +35,6 @@ void main() {
 
     expect(find.text('Expense Tracker'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
+    expect(find.text('Continue with Google'), findsOneWidget);
   });
 }

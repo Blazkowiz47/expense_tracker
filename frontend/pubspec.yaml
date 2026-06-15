@@ -51,6 +51,9 @@ dependencies:
   # Local Storage
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  firebase_core: ^4.10.0
+  firebase_auth: ^6.5.2
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:
