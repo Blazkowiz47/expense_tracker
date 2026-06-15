@@ -22,6 +22,7 @@ import 'package:expense_tracker/features/groups/repositories/api_groups_reposito
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/loans/view/loans_page.dart';
 import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
+import 'package:expense_tracker/features/savings/view/savings_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -274,6 +275,12 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
+  void _openSavingsPage() {
+    Navigator.of(context).push<void>(
+      platformPageRoute(builder: (_) => const SavingsPage(autoRefresh: true)),
+    );
+  }
+
   void _openGroupExpenseAction(DailyActionItem item) {
     final groupId = item.groupId.trim();
     final expenseId = item.expenseId.trim();
@@ -365,6 +372,9 @@ class _HomeShellPageState extends State<HomeShellPage>
         return;
       case 'loans':
         _openLoansPage();
+        return;
+      case 'savings':
+        _openSavingsPage();
         return;
       default:
         _onDestinationSelected(2);
@@ -668,6 +678,11 @@ class _HomeShellPageState extends State<HomeShellPage>
         label: 'Loans',
         icon: Icons.account_balance_outlined,
         onTap: () => _runAction(_openLoansPage),
+      ),
+      _QuickAction(
+        label: 'Savings',
+        icon: Icons.savings_outlined,
+        onTap: () => _runAction(_openSavingsPage),
       ),
       _QuickAction(
         label: 'Settle up',

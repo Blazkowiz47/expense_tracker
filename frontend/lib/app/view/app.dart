@@ -12,6 +12,7 @@ import 'package:expense_tracker/features/loans/view/loans_page.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/account_edit_route_page.dart';
 import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
+import 'package:expense_tracker/features/savings/view/savings_page.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:flutter/foundation.dart';
@@ -50,7 +51,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
             theme: theme,
             darkTheme: theme,
             themeMode: mode,
-            initialRoute: AppRoutes.home,
+            initialRoute: kIsWeb ? null : AppRoutes.home,
             onGenerateRoute: (settings) => _onGenerateRoute(
               settings: settings,
               profileRepository: profileRepository,
@@ -95,6 +96,7 @@ class ExpenseTrackerAppView extends StatelessWidget {
       case AppRoutes.groups:
       case AppRoutes.recurring:
       case AppRoutes.loans:
+      case AppRoutes.savings:
       case AppRoutes.activity:
       case AppRoutes.account:
       case AppRoutes.accountEdit:
@@ -134,6 +136,7 @@ class _AuthGuardedRoute extends StatelessWidget {
           AppRoutes.groups => const GroupsPage(autoRefresh: true),
           AppRoutes.recurring => const RecurringPage(autoRefresh: true),
           AppRoutes.loans => const LoansPage(autoRefresh: true),
+          AppRoutes.savings => const SavingsPage(autoRefresh: true),
           AppRoutes.activity => const HomeShellPage(initialIndex: 2),
           AppRoutes.account => const HomeShellPage(initialIndex: 3),
           AppRoutes.accountEdit => AccountEditRoutePage(

@@ -709,6 +709,79 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "expense": expense_out(expense),
         }
 
+    @app.get("/api/v1/savings/goals")
+    def list_savings_goals(
+        includeArchived: bool = False,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        filters: dict[str, Any] = {"uid": user["uid"]}
+        if not includeArchived:
+            filters["archivedAt"] = {"$exists": False}
+        docs = list(app.state.db.savings_goals.find(filters).sort("updatedAt", DESCENDING))
+        return {"goals": [savings_goal_out(app.state.db, doc) for doc in docs]}
+
+    @app.post("/api/v1/savings/goals", status_code=201)
+    def create_savings_goal(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        goal = build_savings_goal(body, user["uid"])
+        app.state.db.savings_goals.insert_one(goal)
+        return savings_goal_out(app.state.db, goal)
+
+    @app.put("/api/v1/savings/goals/{goal_id}")
+    def update_savings_goal(goal_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        existing = app.state.db.savings_goals.find_one({"id": goal_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "savings goal not found"))
+        updated = build_savings_goal(
+            {**existing, **body},
+            user["uid"],
+            goal_id=goal_id,
+            created_at=existing.get("createdAt"),
+            archived_at=existing.get("archivedAt"),
+        )
+        app.state.db.savings_goals.replace_one({"id": goal_id, "uid": user["uid"]}, updated)
+        return savings_goal_out(app.state.db, updated)
+
+    @app.delete("/api/v1/savings/goals/{goal_id}", status_code=204)
+    def archive_savings_goal(goal_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        existing = app.state.db.savings_goals.find_one({"id": goal_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "savings goal not found"))
+        current = now()
+        app.state.db.savings_goals.update_one(
+            {"id": goal_id, "uid": user["uid"]},
+            {"$set": {"archivedAt": current, "updatedAt": current}},
+        )
+        return Response(status_code=204)
+
+    @app.get("/api/v1/savings/goals/{goal_id}/contributions")
+    def list_savings_contributions(goal_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        goal = app.state.db.savings_goals.find_one({"id": goal_id, "uid": user["uid"]})
+        if not goal:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "savings goal not found"))
+        docs = app.state.db.savings_contributions.find({"goalId": goal_id, "uid": user["uid"]}).sort("date", DESCENDING)
+        return {"contributions": [savings_contribution_out(doc) for doc in docs]}
+
+    @app.post("/api/v1/savings/goals/{goal_id}/contributions", status_code=201)
+    async def create_savings_contribution(goal_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        goal = app.state.db.savings_goals.find_one({
+            "id": goal_id,
+            "uid": user["uid"],
+            "archivedAt": {"$exists": False},
+        })
+        if not goal:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "active savings goal not found"))
+        contribution = await build_savings_contribution(app, body, goal, user["uid"])
+        app.state.db.savings_contributions.insert_one(contribution)
+        app.state.db.savings_goals.update_one(
+            {"id": goal_id, "uid": user["uid"]},
+            {"$set": {"lastContributionAt": contribution["date"], "updatedAt": now()}},
+        )
+        updated_goal = app.state.db.savings_goals.find_one({"id": goal_id, "uid": user["uid"]}) or goal
+        return {
+            "goal": savings_goal_out(app.state.db, updated_goal),
+            "contribution": savings_contribution_out(contribution),
+        }
+
     @app.get("/api/v1/expenses-export.csv")
     def export_expenses(
         category: str = "",
@@ -1342,6 +1415,9 @@ def ensure_indexes(db: Any) -> None:
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("date", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("period", ASCENDING), ("paymentType", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("emiKey", ASCENDING)], unique=True, sparse=True)
+    db.savings_goals.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
+    db.savings_contributions.create_index([("uid", ASCENDING), ("goalId", ASCENDING), ("date", ASCENDING)])
+    db.savings_contributions.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.recurring_templates.create_index([("uid", ASCENDING), ("active", ASCENDING)])
     db.recurring_templates.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.recurring_occurrences.create_index([("uid", ASCENDING), ("period", ASCENDING)])
@@ -1385,6 +1461,7 @@ FRESHNESS_SECTIONS = {
     "groups",
     "friends",
     "loans",
+    "savings",
     "recurring",
     "activity",
     "plans",
@@ -1406,7 +1483,7 @@ def parse_freshness_sections(raw: str) -> list[str]:
         if section.strip()
     ]
     if not requested:
-        return ["dashboard", "groups", "friends", "loans", "recurring", "activity"]
+        return ["dashboard", "groups", "friends", "loans", "savings", "recurring", "activity"]
     sections = [section for section in requested if section in FRESHNESS_SECTIONS]
     if not sections:
         raise HTTPException(
@@ -1521,6 +1598,13 @@ def loan_freshness(db: Any, uid: str) -> datetime | None:
     )
 
 
+def savings_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(
+        latest_collection_time(db, "savings_goals", {"uid": uid}, "updatedAt"),
+        latest_collection_time(db, "savings_contributions", {"uid": uid}, "updatedAt"),
+    )
+
+
 def monthly_plan_freshness(db: Any, uid: str) -> datetime | None:
     owner_keys = [uid]
     owner_keys.extend(
@@ -1559,6 +1643,7 @@ def dashboard_freshness(db: Any, uid: str) -> datetime | None:
         group_freshness(db, uid),
         friends_freshness(db, uid),
         loan_freshness(db, uid),
+        savings_freshness(db, uid),
         recurring_freshness(db, uid),
         monthly_plan_freshness(db, uid),
     )
@@ -1573,6 +1658,8 @@ def section_latest_time(db: Any, uid: str, section: str) -> datetime | None:
         return friends_freshness(db, uid)
     if section == "loans":
         return loan_freshness(db, uid)
+    if section == "savings":
+        return savings_freshness(db, uid)
     if section == "recurring":
         return recurring_freshness(db, uid)
     if section == "activity":
@@ -2129,6 +2216,153 @@ def loan_payment_out(doc: dict[str, Any]) -> dict[str, Any]:
         "notes": doc.get("notes") or "",
         "createdAt": doc.get("createdAt"),
         "updatedAt": doc.get("updatedAt"),
+    })
+
+
+def build_savings_goal(
+    body: dict[str, Any],
+    uid: str,
+    goal_id: str | None = None,
+    created_at: datetime | None = None,
+    archived_at: datetime | None = None,
+) -> dict[str, Any]:
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "name is required"))
+    target_amount = positive_number(body_first(body, ("targetAmount",), 0), "targetAmount")
+    monthly_target = non_negative_number(body_first(body, ("monthlyTargetAmount",), 0), "monthlyTargetAmount")
+    current = now()
+    start_month = normalize_month(str(body.get("startMonth") or current_month()))
+    raw_target_date = body.get("targetDate")
+    doc = {
+        "id": goal_id or uuid.uuid4().hex,
+        "uid": uid,
+        "name": name,
+        "targetAmount": target_amount,
+        "targetCurrency": normalize_currency(body.get("targetCurrency"), "INR"),
+        "sourceCurrency": normalize_currency(body.get("sourceCurrency"), "NOK"),
+        "monthlyTargetAmount": monthly_target,
+        "startMonth": start_month,
+        "targetDate": parse_dt(str(raw_target_date)) if raw_target_date else None,
+        "notes": str(body.get("notes") or "").strip(),
+        "createdAt": created_at or current,
+        "updatedAt": current,
+    }
+    if archived_at:
+        doc["archivedAt"] = archived_at
+    return doc
+
+
+async def build_savings_contribution(
+    app: FastAPI,
+    body: dict[str, Any],
+    goal: dict[str, Any],
+    uid: str,
+) -> dict[str, Any]:
+    source_currency = normalize_currency(body.get("sourceCurrency"), goal.get("sourceCurrency") or "NOK")
+    target_currency = normalize_currency(goal.get("targetCurrency"), "INR")
+    source_amount = positive_number(body.get("sourceAmount"), "sourceAmount")
+    fee_amount = non_negative_number(body_first(body, ("feeAmount",), 0), "feeAmount")
+    fee_currency = normalize_currency(body.get("feeCurrency"), source_currency)
+    contribution_date = parse_dt(str(body.get("date") or iso(now())))
+    snapshot = await conversion_snapshot(app, source_amount, source_currency, [target_currency])
+    market_target_amount = float(snapshot["convertedAmounts"].get(target_currency) or source_amount)
+    if "targetAmount" in body:
+        target_amount = positive_number(body.get("targetAmount"), "targetAmount")
+    else:
+        target_amount = market_target_amount
+    effective_rate = round(target_amount / source_amount, 8)
+    market_rate = float(snapshot["exchangeRates"].get(target_currency) or effective_rate)
+    current = now()
+    return {
+        "id": uuid.uuid4().hex,
+        "uid": uid,
+        "goalId": goal["id"],
+        "sourceAmount": source_amount,
+        "sourceCurrency": source_currency,
+        "targetAmount": round(target_amount, 4),
+        "targetCurrency": target_currency,
+        "feeAmount": fee_amount,
+        "feeCurrency": fee_currency,
+        "exchangeRate": effective_rate,
+        "marketRate": market_rate,
+        "marketTargetAmount": round(market_target_amount, 4),
+        **snapshot,
+        "date": contribution_date,
+        "notes": str(body.get("notes") or "").strip(),
+        "createdAt": current,
+        "updatedAt": current,
+    }
+
+
+def savings_goal_out(db: Any, doc: dict[str, Any]) -> dict[str, Any]:
+    contributions = list(db.savings_contributions.find({"uid": doc.get("uid"), "goalId": doc.get("id")}))
+    target_currency = normalize_currency(doc.get("targetCurrency"), "INR")
+    source_currency = normalize_currency(doc.get("sourceCurrency"), "NOK")
+    target_amount = float(doc.get("targetAmount") or 0)
+    total_saved = round(sum(float(item.get("targetAmount") or 0) for item in contributions), 2)
+    total_source = round(sum(float(item.get("sourceAmount") or 0) for item in contributions), 2)
+    current_start, current_end = month_range(current_month())
+    current_month_saved = round(
+        sum(
+            float(item.get("targetAmount") or 0)
+            for item in contributions
+            if current_start <= aware(item.get("date") or now()) < current_end
+        ),
+        2,
+    )
+    latest = None
+    for item in contributions:
+        value = item.get("date")
+        if isinstance(value, datetime) and (latest is None or aware(value) > latest):
+            latest = aware(value)
+    return json_ready({
+        "id": doc.get("id"),
+        "name": doc.get("name") or "",
+        "targetAmount": target_amount,
+        "targetCurrency": target_currency,
+        "sourceCurrency": source_currency,
+        "monthlyTargetAmount": float(doc.get("monthlyTargetAmount") or 0),
+        "startMonth": doc.get("startMonth") or current_month(),
+        "targetDate": doc.get("targetDate"),
+        "totalSavedAmount": total_saved,
+        "totalSourceAmount": total_source,
+        "remainingAmount": round(max(target_amount - total_saved, 0), 2),
+        "progress": 0 if target_amount <= 0 else min(total_saved / target_amount, 1.5),
+        "currentMonthSavedAmount": current_month_saved,
+        "contributionCount": len(contributions),
+        "lastContributionAt": doc.get("lastContributionAt") or latest,
+        "notes": doc.get("notes") or "",
+        "archived": bool(doc.get("archivedAt")),
+        "archivedAt": doc.get("archivedAt"),
+        "createdAt": doc.get("createdAt"),
+        "updatedAt": doc.get("updatedAt"),
+    })
+
+
+def savings_contribution_out(doc: dict[str, Any]) -> dict[str, Any]:
+    return json_ready({
+        key: doc.get(key)
+        for key in [
+            "id",
+            "goalId",
+            "sourceAmount",
+            "sourceCurrency",
+            "targetAmount",
+            "targetCurrency",
+            "feeAmount",
+            "feeCurrency",
+            "exchangeRate",
+            "marketRate",
+            "marketTargetAmount",
+            "exchangeRateProvider",
+            "exchangeRateFetchedAt",
+            "exchangeRateAsOf",
+            "date",
+            "notes",
+            "createdAt",
+            "updatedAt",
+        ]
     })
 
 

@@ -993,6 +993,127 @@ def test_loan_inputs_return_api_errors(tmp_path):
     assert zero_payment.json()["error"]["code"] == "INVALID_ARGUMENT"
 
 
+def test_savings_goal_contribution_uses_fx_snapshot(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client)
+
+    def fake_rates(base, quotes):
+        assert base == "NOK"
+        assert quotes == ["INR"]
+        return {
+            "provider": "fake-fx",
+            "rateAsOf": "2026-06-15T00:00:00Z",
+            "rates": {"INR": 8.5},
+        }
+
+    app.state.fx_rate_fetcher = fake_rates
+    baseline = client.get("/api/v1/sync/freshness?sections=savings", headers=headers)
+    assert baseline.status_code == 200, baseline.text
+    cursor = baseline.json()["serverTime"]
+
+    created = client.post(
+        "/api/v1/savings/goals",
+        headers=headers,
+        json={
+            "name": "India savings",
+            "targetAmount": 300000,
+            "targetCurrency": "INR",
+            "sourceCurrency": "NOK",
+            "monthlyTargetAmount": 25000,
+            "startMonth": "2026-06",
+        },
+    )
+    assert created.status_code == 201, created.text
+    goal = created.json()
+    assert goal["targetCurrency"] == "INR"
+    assert goal["sourceCurrency"] == "NOK"
+    assert goal["totalSavedAmount"] == 0
+    goal_id = goal["id"]
+
+    changed = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=savings",
+        headers=headers,
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["sections"]["savings"]["changed"] is True
+
+    logged = client.post(
+        f"/api/v1/savings/goals/{goal_id}/contributions",
+        headers=headers,
+        json={
+            "sourceAmount": 1000,
+            "sourceCurrency": "NOK",
+            "targetCurrency": "USD",
+            "date": "2026-06-15T10:00:00Z",
+            "feeAmount": 25,
+        },
+    )
+    assert logged.status_code == 201, logged.text
+    payload = logged.json()
+    contribution = payload["contribution"]
+    assert contribution["sourceAmount"] == 1000
+    assert contribution["sourceCurrency"] == "NOK"
+    assert contribution["targetAmount"] == 8500
+    assert contribution["targetCurrency"] == "INR"
+    assert contribution["exchangeRate"] == 8.5
+    assert contribution["marketRate"] == 8.5
+    assert contribution["exchangeRateProvider"] == "fake-fx"
+    assert payload["goal"]["totalSavedAmount"] == 8500
+    assert payload["goal"]["currentMonthSavedAmount"] == 8500
+    assert payload["goal"]["remainingAmount"] == 291500
+
+    expenses = client.get("/api/v1/expenses", headers=headers)
+    assert expenses.status_code == 200, expenses.text
+    assert expenses.json()["expenses"] == []
+
+    contributions = client.get(
+        f"/api/v1/savings/goals/{goal_id}/contributions",
+        headers=headers,
+    )
+    assert contributions.status_code == 200, contributions.text
+    assert len(contributions.json()["contributions"]) == 1
+
+
+def test_savings_inputs_return_api_errors(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    invalid_goal = client.post(
+        "/api/v1/savings/goals",
+        headers=headers,
+        json={
+            "name": "Bad goal",
+            "targetAmount": "nope",
+            "targetCurrency": "INR",
+            "sourceCurrency": "NOK",
+        },
+    )
+    assert invalid_goal.status_code == 400, invalid_goal.text
+    assert invalid_goal.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+    goal = client.post(
+        "/api/v1/savings/goals",
+        headers=headers,
+        json={
+            "name": "India savings",
+            "targetAmount": 300000,
+            "targetCurrency": "INR",
+            "sourceCurrency": "NOK",
+            "monthlyTargetAmount": 25000,
+            "startMonth": "2026-06",
+        },
+    )
+    assert goal.status_code == 201, goal.text
+
+    invalid_contribution = client.post(
+        f"/api/v1/savings/goals/{goal.json()['id']}/contributions",
+        headers=headers,
+        json={"sourceAmount": 0, "date": "2026-06-15T10:00:00Z"},
+    )
+    assert invalid_contribution.status_code == 400, invalid_contribution.text
+    assert invalid_contribution.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+
 def test_recurring_template_lifecycle_updates_generated_occurrences(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)

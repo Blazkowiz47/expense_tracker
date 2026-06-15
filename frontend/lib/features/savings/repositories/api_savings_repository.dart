@@ -1,0 +1,200 @@
+import 'dart:convert';
+
+import 'package:expense_tracker/core/auth/auth_token_provider.dart';
+import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/features/savings/models/savings_goal.dart';
+import 'package:http/http.dart' as http;
+
+class ApiSavingsRepository {
+  ApiSavingsRepository({
+    required http.Client client,
+    AuthTokenProvider? authTokenProvider,
+  }) : _client = client,
+       _authTokenProvider =
+           authTokenProvider ?? const SessionAuthTokenProvider();
+
+  final http.Client _client;
+  final AuthTokenProvider _authTokenProvider;
+
+  Future<List<SavingsGoal>> fetchGoals({bool includeArchived = false}) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/savings/goals').replace(
+      queryParameters: includeArchived
+          ? const <String, String>{'includeArchived': 'true'}
+          : null,
+    );
+    final response = await _client.get(uri, headers: await _headers());
+    if (response.statusCode != 200) {
+      throw Exception(
+        'savings goals request failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return (payload['goals'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(SavingsGoal.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<SavingsGoal> createGoal({
+    required String name,
+    required double targetAmount,
+    required String targetCurrency,
+    required String sourceCurrency,
+    required double monthlyTargetAmount,
+    required String startMonth,
+    required String notes,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/savings/goals');
+    final response = await _client.post(
+      uri,
+      headers: await _headers(json: true),
+      body: jsonEncode(
+        _goalBody(
+          name: name,
+          targetAmount: targetAmount,
+          targetCurrency: targetCurrency,
+          sourceCurrency: sourceCurrency,
+          monthlyTargetAmount: monthlyTargetAmount,
+          startMonth: startMonth,
+          notes: notes,
+        ),
+      ),
+    );
+    if (response.statusCode != 201) {
+      throw Exception(
+        'create savings goal failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return SavingsGoal.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<SavingsGoal> updateGoal({
+    required String id,
+    required String name,
+    required double targetAmount,
+    required String targetCurrency,
+    required String sourceCurrency,
+    required double monthlyTargetAmount,
+    required String startMonth,
+    required String notes,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/savings/goals/$id');
+    final response = await _client.put(
+      uri,
+      headers: await _headers(json: true),
+      body: jsonEncode(
+        _goalBody(
+          name: name,
+          targetAmount: targetAmount,
+          targetCurrency: targetCurrency,
+          sourceCurrency: sourceCurrency,
+          monthlyTargetAmount: monthlyTargetAmount,
+          startMonth: startMonth,
+          notes: notes,
+        ),
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'update savings goal failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return SavingsGoal.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> archiveGoal(String id) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/savings/goals/$id');
+    final response = await _client.delete(uri, headers: await _headers());
+    if (response.statusCode != 204) {
+      throw Exception(
+        'archive savings goal failed (${response.statusCode}): ${response.body}',
+      );
+    }
+  }
+
+  Future<List<SavingsContribution>> fetchContributions(String goalId) async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/savings/goals/$goalId/contributions',
+    );
+    final response = await _client.get(uri, headers: await _headers());
+    if (response.statusCode != 200) {
+      throw Exception(
+        'savings contributions request failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return (payload['contributions'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(SavingsContribution.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<SavingsContributionResult> addContribution({
+    required String goalId,
+    required double sourceAmount,
+    required String sourceCurrency,
+    required DateTime date,
+    double? targetAmount,
+    double feeAmount = 0,
+    String? feeCurrency,
+    String notes = '',
+  }) async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/savings/goals/$goalId/contributions',
+    );
+    final response = await _client.post(
+      uri,
+      headers: await _headers(json: true),
+      body: jsonEncode(<String, dynamic>{
+        'sourceAmount': sourceAmount,
+        'sourceCurrency': sourceCurrency,
+        if (targetAmount != null) 'targetAmount': targetAmount,
+        'feeAmount': feeAmount,
+        if (feeCurrency != null) 'feeCurrency': feeCurrency,
+        'date': date.toUtc().toIso8601String(),
+        'notes': notes,
+      }),
+    );
+    if (response.statusCode != 201) {
+      throw Exception(
+        'add savings contribution failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return SavingsContributionResult.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<Map<String, String>> _headers({bool json = false}) async {
+    final token = await _authTokenProvider.getBearerToken();
+    return <String, String>{
+      'Accept': 'application/json',
+      if (json) 'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  Map<String, dynamic> _goalBody({
+    required String name,
+    required double targetAmount,
+    required String targetCurrency,
+    required String sourceCurrency,
+    required double monthlyTargetAmount,
+    required String startMonth,
+    required String notes,
+  }) {
+    return <String, dynamic>{
+      'name': name,
+      'targetAmount': targetAmount,
+      'targetCurrency': targetCurrency,
+      'sourceCurrency': sourceCurrency,
+      'monthlyTargetAmount': monthlyTargetAmount,
+      'startMonth': startMonth,
+      'notes': notes,
+    };
+  }
+}

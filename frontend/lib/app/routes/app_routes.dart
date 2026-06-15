@@ -7,6 +7,7 @@ class AppRoutes {
   static const groups = '/groups';
   static const recurring = '/recurring';
   static const loans = '/loans';
+  static const savings = '/savings';
   static const activity = '/activity';
   static const account = '/account';
   static const accountEdit = '/account/edit';
