@@ -5,9 +5,12 @@ class Loan {
     required this.lender,
     required this.loanType,
     required this.principalAmount,
+    required this.openingPrincipalAmount,
+    required this.originalPrincipalAmount,
     required this.emiAmount,
     required this.currency,
     required this.interestRate,
+    required this.rateType,
     required this.totalEmis,
     required this.paidEmiCount,
     required this.remainingEmis,
@@ -16,6 +19,7 @@ class Loan {
     required this.estimatedOutstanding,
     required this.dueDay,
     required this.startDate,
+    required this.trackingStartedAt,
     required this.nextDueDate,
     required this.lastPaymentAt,
     required this.category,
@@ -31,9 +35,12 @@ class Loan {
   final String lender;
   final String loanType;
   final double principalAmount;
+  final double openingPrincipalAmount;
+  final double originalPrincipalAmount;
   final double emiAmount;
   final String currency;
   final double interestRate;
+  final String rateType;
   final int totalEmis;
   final int paidEmiCount;
   final int? remainingEmis;
@@ -42,6 +49,7 @@ class Loan {
   final double estimatedOutstanding;
   final int dueDay;
   final DateTime startDate;
+  final DateTime trackingStartedAt;
   final DateTime? nextDueDate;
   final DateTime? lastPaymentAt;
   final String category;
@@ -58,9 +66,14 @@ class Loan {
       lender: (json['lender'] as String?) ?? '',
       loanType: (json['loanType'] as String?) ?? 'Personal',
       principalAmount: _asDouble(json['principalAmount']),
+      openingPrincipalAmount: _asDouble(
+        json['openingPrincipalAmount'] ?? json['principalAmount'],
+      ),
+      originalPrincipalAmount: _asDouble(json['originalPrincipalAmount']),
       emiAmount: _asDouble(json['emiAmount']),
       currency: ((json['currency'] as String?) ?? 'INR').toUpperCase(),
       interestRate: _asDouble(json['interestRate']),
+      rateType: (json['rateType'] as String?) ?? 'fixed',
       totalEmis: _asInt(json['totalEmis']),
       paidEmiCount: _asInt(json['paidEmiCount']),
       remainingEmis: _nullableInt(json['remainingEmis']),
@@ -69,6 +82,10 @@ class Loan {
       estimatedOutstanding: _asDouble(json['estimatedOutstanding']),
       dueDay: _asInt(json['dueDay'], fallback: 1),
       startDate: _parseDate(json['startDate']) ?? DateTime.now(),
+      trackingStartedAt:
+          _parseDate(json['trackingStartedAt']) ??
+          _parseDate(json['startDate']) ??
+          DateTime.now(),
       nextDueDate: _parseDate(json['nextDueDate']),
       lastPaymentAt: _parseDate(json['lastPaymentAt']),
       category: (json['category'] as String?) ?? 'Loans / EMI',
@@ -86,9 +103,12 @@ class Loan {
     String? lender,
     String? loanType,
     double? principalAmount,
+    double? openingPrincipalAmount,
+    double? originalPrincipalAmount,
     double? emiAmount,
     String? currency,
     double? interestRate,
+    String? rateType,
     int? totalEmis,
     int? paidEmiCount,
     int? remainingEmis,
@@ -97,6 +117,7 @@ class Loan {
     double? estimatedOutstanding,
     int? dueDay,
     DateTime? startDate,
+    DateTime? trackingStartedAt,
     DateTime? nextDueDate,
     DateTime? lastPaymentAt,
     String? category,
@@ -112,9 +133,14 @@ class Loan {
       lender: lender ?? this.lender,
       loanType: loanType ?? this.loanType,
       principalAmount: principalAmount ?? this.principalAmount,
+      openingPrincipalAmount:
+          openingPrincipalAmount ?? this.openingPrincipalAmount,
+      originalPrincipalAmount:
+          originalPrincipalAmount ?? this.originalPrincipalAmount,
       emiAmount: emiAmount ?? this.emiAmount,
       currency: currency ?? this.currency,
       interestRate: interestRate ?? this.interestRate,
+      rateType: rateType ?? this.rateType,
       totalEmis: totalEmis ?? this.totalEmis,
       paidEmiCount: paidEmiCount ?? this.paidEmiCount,
       remainingEmis: remainingEmis ?? this.remainingEmis,
@@ -123,6 +149,7 @@ class Loan {
       estimatedOutstanding: estimatedOutstanding ?? this.estimatedOutstanding,
       dueDay: dueDay ?? this.dueDay,
       startDate: startDate ?? this.startDate,
+      trackingStartedAt: trackingStartedAt ?? this.trackingStartedAt,
       nextDueDate: nextDueDate ?? this.nextDueDate,
       lastPaymentAt: lastPaymentAt ?? this.lastPaymentAt,
       category: category ?? this.category,

@@ -2581,11 +2581,19 @@ def build_loan(
     name = str(body.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "name is required"))
-    principal = positive_number(body_first(body, ("principalAmount", "principal"), 0), "principalAmount")
+    principal = positive_number(
+        body_first(body, ("currentPrincipalAmount", "openingPrincipalAmount", "principalAmount", "principal"), 0),
+        "principalAmount",
+    )
+    original_principal = non_negative_number(body_first(body, ("originalPrincipalAmount",), 0), "originalPrincipalAmount")
     emi_amount = positive_number(body_first(body, ("emiAmount",), 0), "emiAmount")
-    total_emis = non_negative_int(body_first(body, ("totalEmis",), 0), "totalEmis")
+    total_emis = non_negative_int(body_first(body, ("remainingEmis", "totalEmis"), 0), "totalEmis")
     due_day = bounded_int(body_first(body, ("dueDay", "dayOfMonth"), 1), "dueDay", 1, 31)
     current = now()
+    tracking_started_at = parse_dt(str(body.get("trackingStartedAt") or body.get("startDate") or iso(current)))
+    rate_type = str(body.get("rateType") or "fixed").strip().lower()
+    if rate_type not in {"fixed", "floating", "unknown"}:
+        rate_type = "fixed"
     doc = {
         "id": loan_id or uuid.uuid4().hex,
         "uid": uid,
@@ -2593,12 +2601,16 @@ def build_loan(
         "lender": str(body.get("lender") or "").strip(),
         "loanType": str(body.get("loanType") or "Personal").strip() or "Personal",
         "principalAmount": principal,
+        "openingPrincipalAmount": principal,
+        "originalPrincipalAmount": original_principal,
         "emiAmount": emi_amount,
         "currency": normalize_currency(body.get("currency"), "INR"),
         "interestRate": non_negative_number(body_first(body, ("interestRate",), 0), "interestRate"),
+        "rateType": rate_type,
         "totalEmis": total_emis,
         "dueDay": due_day,
-        "startDate": parse_dt(str(body.get("startDate") or iso(current))),
+        "startDate": tracking_started_at,
+        "trackingStartedAt": tracking_started_at,
         "category": str(body.get("category") or "Loans / EMI").strip() or "Loans / EMI",
         "notes": str(body.get("notes") or "").strip(),
         "createdAt": created_at or current,
@@ -2689,9 +2701,12 @@ def loan_out(db: Any, doc: dict[str, Any]) -> dict[str, Any]:
         "lender": doc.get("lender") or "",
         "loanType": doc.get("loanType") or "Personal",
         "principalAmount": principal,
+        "openingPrincipalAmount": float(doc.get("openingPrincipalAmount") or principal),
+        "originalPrincipalAmount": float(doc.get("originalPrincipalAmount") or 0),
         "emiAmount": float(doc.get("emiAmount") or 0),
         "currency": doc.get("currency") or "INR",
         "interestRate": float(doc.get("interestRate") or 0),
+        "rateType": doc.get("rateType") or "fixed",
         "totalEmis": total_emis,
         "paidEmiCount": paid_emi_count,
         "remainingEmis": remaining_emis,
@@ -2700,6 +2715,7 @@ def loan_out(db: Any, doc: dict[str, Any]) -> dict[str, Any]:
         "estimatedOutstanding": round(max(principal - total_paid, 0), 2),
         "dueDay": int(doc.get("dueDay") or 1),
         "startDate": doc.get("startDate"),
+        "trackingStartedAt": doc.get("trackingStartedAt") or doc.get("startDate"),
         "nextDueDate": next_due_date,
         "lastPaymentAt": doc.get("lastPaymentAt"),
         "category": doc.get("category") or "Loans / EMI",

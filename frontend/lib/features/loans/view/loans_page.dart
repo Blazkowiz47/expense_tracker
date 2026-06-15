@@ -17,6 +17,7 @@ const _loanTypeOptions = <String>[
   'Credit card',
   'Other',
 ];
+const _loanRateTypeOptions = <String>['fixed', 'floating', 'unknown'];
 
 class LoansPage extends StatefulWidget {
   const LoansPage({
@@ -144,9 +145,11 @@ class _LoansPageState extends State<LoansPage> {
             lender: draft.lender,
             loanType: draft.loanType,
             principalAmount: draft.principalAmount,
+            originalPrincipalAmount: draft.originalPrincipalAmount,
             emiAmount: draft.emiAmount,
             currency: draft.currency,
             interestRate: draft.interestRate,
+            rateType: draft.rateType,
             totalEmis: draft.totalEmis,
             dueDay: draft.dueDay,
             startDate: draft.startDate,
@@ -160,9 +163,11 @@ class _LoansPageState extends State<LoansPage> {
             lender: draft.lender,
             loanType: draft.loanType,
             principalAmount: draft.principalAmount,
+            originalPrincipalAmount: draft.originalPrincipalAmount,
             emiAmount: draft.emiAmount,
             currency: draft.currency,
             interestRate: draft.interestRate,
+            rateType: draft.rateType,
             totalEmis: draft.totalEmis,
             dueDay: draft.dueDay,
             startDate: draft.startDate,
@@ -624,15 +629,17 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _lenderController;
   late final TextEditingController _principalController;
+  late final TextEditingController _originalPrincipalController;
   late final TextEditingController _emiController;
   late final TextEditingController _interestController;
-  late final TextEditingController _totalEmisController;
-  late final TextEditingController _dueDayController;
+  late final TextEditingController _termYearsController;
+  late final TextEditingController _termMonthsController;
   late final TextEditingController _categoryController;
   late final TextEditingController _notesController;
   late DateTime _startDate;
   var _currency = 'INR';
   var _loanType = 'Personal';
+  var _rateType = 'fixed';
   String? _error;
 
   @override
@@ -641,14 +648,23 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
     final loan = widget.loan;
     _currency = loan?.currency ?? 'INR';
     _loanType = loan?.loanType ?? 'Personal';
+    _rateType = loan?.rateType ?? 'fixed';
     if (!_loanTypeOptions.contains(_loanType)) {
       _loanType = 'Other';
     }
-    _startDate = loan?.startDate ?? DateTime.now();
+    if (!_loanRateTypeOptions.contains(_rateType)) {
+      _rateType = 'fixed';
+    }
+    _startDate = loan?.nextDueDate ?? loan?.startDate ?? DateTime.now();
     _nameController = TextEditingController(text: loan?.name ?? '');
     _lenderController = TextEditingController(text: loan?.lender ?? '');
     _principalController = TextEditingController(
       text: loan == null ? '' : loan.principalAmount.toStringAsFixed(0),
+    );
+    _originalPrincipalController = TextEditingController(
+      text: loan == null || loan.originalPrincipalAmount == 0
+          ? ''
+          : loan.originalPrincipalAmount.toStringAsFixed(0),
     );
     _emiController = TextEditingController(
       text: loan == null ? '' : loan.emiAmount.toStringAsFixed(0),
@@ -658,11 +674,12 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
           ? ''
           : loan.interestRate.toString(),
     );
-    _totalEmisController = TextEditingController(
-      text: loan == null || loan.totalEmis == 0 ? '' : '${loan.totalEmis}',
+    final remainingMonths = loan?.remainingEmis ?? loan?.totalEmis ?? 0;
+    _termYearsController = TextEditingController(
+      text: remainingMonths <= 0 ? '' : '${remainingMonths ~/ 12}',
     );
-    _dueDayController = TextEditingController(
-      text: '${loan?.dueDay ?? DateTime.now().day.clamp(1, 28)}',
+    _termMonthsController = TextEditingController(
+      text: remainingMonths <= 0 ? '' : '${remainingMonths % 12}',
     );
     _categoryController = TextEditingController(
       text: loan?.category ?? 'Loans / EMI',
@@ -675,10 +692,11 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
     _nameController.dispose();
     _lenderController.dispose();
     _principalController.dispose();
+    _originalPrincipalController.dispose();
     _emiController.dispose();
     _interestController.dispose();
-    _totalEmisController.dispose();
-    _dueDayController.dispose();
+    _termYearsController.dispose();
+    _termMonthsController.dispose();
     _categoryController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -700,19 +718,27 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
     final name = _nameController.text.trim();
     final lender = _lenderController.text.trim();
     final principal = double.tryParse(_principalController.text.trim()) ?? 0;
+    final originalPrincipal =
+        double.tryParse(_originalPrincipalController.text.trim()) ?? 0;
     final emi = double.tryParse(_emiController.text.trim()) ?? 0;
     final interest = double.tryParse(_interestController.text.trim()) ?? 0;
-    final totalEmis = int.tryParse(_totalEmisController.text.trim()) ?? 0;
-    final dueDay = int.tryParse(_dueDayController.text.trim()) ?? 0;
+    final termYears = int.tryParse(_termYearsController.text.trim()) ?? 0;
+    final termMonths = int.tryParse(_termMonthsController.text.trim()) ?? 0;
+    final totalEmis = (termYears * 12) + termMonths;
+    final dueDay = _startDate.day;
     final category = _categoryController.text.trim();
     if (name.isEmpty ||
         principal <= 0 ||
         emi <= 0 ||
+        termYears < 0 ||
+        termMonths < 0 ||
+        termMonths > 11 ||
         totalEmis < 0 ||
         dueDay < 1 ||
         dueDay > 31) {
       setState(() {
-        _error = 'Add a name, positive amounts, and a due day from 1 to 31.';
+        _error =
+            'Add a name, positive amounts, and remaining months from 0 to 11.';
       });
       return;
     }
@@ -722,9 +748,11 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
         lender: lender,
         loanType: _loanType,
         principalAmount: principal,
+        originalPrincipalAmount: originalPrincipal,
         emiAmount: emi,
         currency: _currency,
         interestRate: interest,
+        rateType: _rateType,
         totalEmis: totalEmis,
         dueDay: dueDay,
         startDate: _startDate,
@@ -738,7 +766,7 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
   Widget build(BuildContext context) {
     final editing = widget.loan != null;
     return AlertDialog(
-      title: Text(editing ? 'Edit loan' : 'Add loan'),
+      title: Text(editing ? 'Edit loan' : 'Add existing loan'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -747,8 +775,8 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
             TextField(
               controller: _nameController,
               decoration: const InputDecoration(
-                labelText: 'Name',
-                hintText: 'Home loan, car loan',
+                labelText: 'Loan name',
+                hintText: 'Car loan',
               ),
               textInputAction: TextInputAction.next,
             ),
@@ -783,7 +811,7 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
                   child: TextField(
                     controller: _principalController,
                     decoration: InputDecoration(
-                      labelText: 'Principal',
+                      labelText: 'Remaining principal',
                       prefixText: '$_currency ',
                     ),
                     keyboardType: const TextInputType.numberWithOptions(
@@ -797,7 +825,7 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
                   child: TextField(
                     controller: _emiController,
                     decoration: InputDecoration(
-                      labelText: 'EMI',
+                      labelText: 'Monthly EMI',
                       prefixText: '$_currency ',
                     ),
                     keyboardType: const TextInputType.numberWithOptions(
@@ -807,6 +835,18 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _originalPrincipalController,
+              decoration: InputDecoration(
+                labelText: 'Original amount',
+                prefixText: '$_currency ',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
@@ -831,8 +871,8 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
               children: [
                 Expanded(
                   child: TextField(
-                    controller: _totalEmisController,
-                    decoration: const InputDecoration(labelText: 'Total EMIs'),
+                    controller: _termYearsController,
+                    decoration: const InputDecoration(labelText: 'Years left'),
                     keyboardType: TextInputType.number,
                     textInputAction: TextInputAction.next,
                   ),
@@ -840,8 +880,8 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
-                    controller: _dueDayController,
-                    decoration: const InputDecoration(labelText: 'Due day'),
+                    controller: _termMonthsController,
+                    decoration: const InputDecoration(labelText: 'Months left'),
                     keyboardType: TextInputType.number,
                     textInputAction: TextInputAction.next,
                   ),
@@ -849,19 +889,68 @@ class _LoanDraftDialogState extends State<_LoanDraftDialog> {
               ],
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _interestController,
-              decoration: const InputDecoration(labelText: 'Interest rate'),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              textInputAction: TextInputAction.next,
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _interestController,
+                    decoration: const InputDecoration(
+                      labelText: 'Current rate',
+                      suffixText: '%',
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    textInputAction: TextInputAction.next,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _rateType,
+                    decoration: const InputDecoration(
+                      labelText: 'Rate type',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _loanRateTypeOptions
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(_titleCase(item)),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _rateType = value);
+                      }
+                    },
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _pickStartDate,
-              icon: const Icon(Icons.calendar_today_outlined),
-              label: Text(DateFormatter.formatDate(_startDate)),
+              icon: const Icon(Icons.event_available_outlined),
+              label: Text('Next due ${DateFormatter.formatDate(_startDate)}'),
+            ),
+            const SizedBox(height: 12),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'Past EMIs stay summarized. New payments are tracked from the next due date.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1039,9 +1128,11 @@ class _LoanDraft {
     required this.lender,
     required this.loanType,
     required this.principalAmount,
+    required this.originalPrincipalAmount,
     required this.emiAmount,
     required this.currency,
     required this.interestRate,
+    required this.rateType,
     required this.totalEmis,
     required this.dueDay,
     required this.startDate,
@@ -1053,9 +1144,11 @@ class _LoanDraft {
   final String lender;
   final String loanType;
   final double principalAmount;
+  final double originalPrincipalAmount;
   final double emiAmount;
   final String currency;
   final double interestRate;
+  final String rateType;
   final int totalEmis;
   final int dueDay;
   final DateTime startDate;
@@ -1095,6 +1188,11 @@ String _loanSubtitle(Loan loan) {
   if (loan.lender.trim().isNotEmpty) {
     parts.add(loan.lender.trim());
   }
+  if (loan.rateType == 'floating') {
+    parts.add('Floating ${loan.interestRate.toStringAsFixed(2)}%');
+  } else if (loan.interestRate > 0) {
+    parts.add('${loan.interestRate.toStringAsFixed(2)}%');
+  }
   parts.add(AppMoney.formatCurrency(loan.principalAmount, loan.currency));
   return parts.join(' - ');
 }
@@ -1104,4 +1202,9 @@ String _emiProgress(Loan loan) {
     return '${loan.paidEmiCount} logged';
   }
   return '${loan.paidEmiCount}/${loan.totalEmis}';
+}
+
+String _titleCase(String value) {
+  if (value.isEmpty) return value;
+  return value[0].toUpperCase() + value.substring(1);
 }

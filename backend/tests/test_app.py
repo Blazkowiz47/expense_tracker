@@ -1135,6 +1135,45 @@ def test_loan_emi_logging_creates_or_updates_expense(tmp_path):
     assert edited_loan.json()["lastPaymentAt"] == updated_payload["payment"]["date"]
 
 
+def test_existing_loan_snapshot_starts_from_current_balance(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/loans",
+        headers=headers,
+        json={
+            "name": "Car loan",
+            "lender": "Santander",
+            "loanType": "Car",
+            "currentPrincipalAmount": 146087.67,
+            "originalPrincipalAmount": 150534,
+            "emiAmount": 3733,
+            "currency": "NOK",
+            "interestRate": 7.9,
+            "rateType": "floating",
+            "remainingEmis": 46,
+            "dueDay": 18,
+            "trackingStartedAt": "2026-06-18T00:00:00Z",
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    payload = created.json()
+    assert payload["principalAmount"] == 146087.67
+    assert payload["openingPrincipalAmount"] == 146087.67
+    assert payload["originalPrincipalAmount"] == 150534
+    assert payload["emiAmount"] == 3733
+    assert payload["currency"] == "NOK"
+    assert payload["interestRate"] == 7.9
+    assert payload["rateType"] == "floating"
+    assert payload["totalEmis"] == 46
+    assert payload["remainingEmis"] == 46
+    assert payload["paidEmiCount"] == 0
+    assert payload["estimatedOutstanding"] == 146087.67
+    assert payload["nextDueDate"] == "2026-06-18T00:00:00Z"
+
+
 def test_loan_inputs_return_api_errors(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
