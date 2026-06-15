@@ -305,6 +305,15 @@ class _FamilyPageState extends State<FamilyPage> {
     );
   }
 
+  Future<void> _openPlannedExpense(String category) {
+    final label = category.trim().isEmpty ? 'Other' : category.trim();
+    return _openSelectedFamily(
+      addExpense: true,
+      initialCategory: label,
+      initialDescription: label,
+    );
+  }
+
   Future<void> _openHouseholdSettleUp() async {
     final family = _selectedFamily;
     if (family == null) return;
@@ -740,6 +749,7 @@ class _FamilyPageState extends State<FamilyPage> {
           refreshToken: _monthlyPlanRefreshToken,
           groupId: family.id,
           title: 'Household plan',
+          onAddExpenseForCategory: _openPlannedExpense,
         ),
         if (_families.length > 1) ...[
           const SizedBox(height: 8),

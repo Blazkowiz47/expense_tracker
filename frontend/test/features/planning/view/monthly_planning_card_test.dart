@@ -166,6 +166,30 @@ void main() {
     expect(find.textContaining('INR 1750.00 spent'), findsOneWidget);
   });
 
+  testWidgets('category add action reports selected category', (tester) async {
+    final repository = _FakeMonthlyPlanRepository();
+    String? selectedCategory;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthlyPlanningCard(
+            repository: repository,
+            onAddExpenseForCategory: (category) {
+              selectedCategory = category;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add Groceries expense'));
+    await tester.pumpAndSettle();
+
+    expect(selectedCategory, 'Groceries');
+  });
+
   testWidgets('passes household group id and reloads when it changes', (
     tester,
   ) async {

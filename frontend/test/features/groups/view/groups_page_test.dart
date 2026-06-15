@@ -592,6 +592,42 @@ void main() {
     expect(descriptionField.controller?.text, 'Groceries');
   });
 
+  testWidgets('family page opens household expense from plan category', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              repository: _FakeGroupsRepository([familyGroup]),
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byTooltip('Add Groceries expense'));
+    await tester.tap(find.byTooltip('Add Groceries expense'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add household expense'), findsOneWidget);
+    expect(find.text('Monthly category'), findsOneWidget);
+    final descriptionField = tester.widget<TextField>(
+      find.byType(TextField).first,
+    );
+    expect(descriptionField.controller?.text, 'Groceries');
+  });
+
   testWidgets('family quick-add launch auto-opens only one household', (
     tester,
   ) async {

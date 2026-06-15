@@ -12,6 +12,7 @@ class MonthlyPlanningCard extends StatefulWidget {
     this.refreshToken,
     this.groupId,
     this.title = 'Monthly plan',
+    this.onAddExpenseForCategory,
     super.key,
   });
 
@@ -19,6 +20,7 @@ class MonthlyPlanningCard extends StatefulWidget {
   final Object? refreshToken;
   final String? groupId;
   final String title;
+  final ValueChanged<String>? onAddExpenseForCategory;
 
   @override
   State<MonthlyPlanningCard> createState() => _MonthlyPlanningCardState();
@@ -210,8 +212,14 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
           ...plan.categories
               .take(5)
               .map(
-                (category) =>
-                    _BudgetRow(category: category, currency: plan.currency),
+                (category) => _BudgetRow(
+                  category: category,
+                  currency: plan.currency,
+                  onAddExpense: widget.onAddExpenseForCategory == null
+                      ? null
+                      : () =>
+                            widget.onAddExpenseForCategory!(category.category),
+                ),
               ),
         ],
       ),
@@ -220,10 +228,15 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
 }
 
 class _BudgetRow extends StatelessWidget {
-  const _BudgetRow({required this.category, required this.currency});
+  const _BudgetRow({
+    required this.category,
+    required this.currency,
+    this.onAddExpense,
+  });
 
   final MonthlyPlanCategory category;
   final String currency;
+  final VoidCallback? onAddExpense;
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +260,20 @@ class _BudgetRow extends StatelessWidget {
                 '$currency ${category.actual.toStringAsFixed(0)} / ${category.budget.toStringAsFixed(0)}',
                 style: TextStyle(color: color, fontWeight: FontWeight.w600),
               ),
+              if (onAddExpense != null) ...[
+                const SizedBox(width: 4),
+                SizedBox(
+                  height: 32,
+                  width: 32,
+                  child: IconButton(
+                    tooltip: 'Add ${category.category} expense',
+                    padding: EdgeInsets.zero,
+                    iconSize: 18,
+                    onPressed: onAddExpense,
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 4),
