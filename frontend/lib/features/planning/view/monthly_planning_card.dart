@@ -14,6 +14,7 @@ class MonthlyPlanningCard extends StatefulWidget {
     this.title = 'Monthly plan',
     this.onAddExpenseForCategory,
     this.onReviewCategory,
+    this.onPlanLoaded,
     super.key,
   });
 
@@ -23,6 +24,7 @@ class MonthlyPlanningCard extends StatefulWidget {
   final String title;
   final ValueChanged<String>? onAddExpenseForCategory;
   final ValueChanged<String>? onReviewCategory;
+  final ValueChanged<MonthlyPlan>? onPlanLoaded;
 
   @override
   State<MonthlyPlanningCard> createState() => _MonthlyPlanningCardState();
@@ -80,6 +82,7 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
         _plan = plan;
         _loading = false;
       });
+      widget.onPlanLoaded?.call(plan);
     } catch (error) {
       if (!mounted) return;
       if (!showLoading && _plan != null) {
@@ -122,6 +125,7 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
         _plan = plan;
         _loading = false;
       });
+      widget.onPlanLoaded?.call(plan);
     } catch (error) {
       if (!mounted) return;
       setState(() {

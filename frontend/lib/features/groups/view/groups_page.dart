@@ -32,6 +32,8 @@ class GroupExpenseReviewFilter {
     this.searchQuery = '',
     this.category = '',
     this.currency = '',
+    this.missingCurrency = '',
+    this.missingCategoryOnly = false,
     this.missingReceiptOnly = false,
     this.currentMonthOnly = false,
   });
@@ -39,6 +41,8 @@ class GroupExpenseReviewFilter {
   final String searchQuery;
   final String category;
   final String currency;
+  final String missingCurrency;
+  final bool missingCategoryOnly;
   final bool missingReceiptOnly;
   final bool currentMonthOnly;
 }
@@ -519,6 +523,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   String _expenseSearchQuery = '';
   String _expenseCategoryFilter = _allExpenseCategoriesFilter;
   String _expenseCurrencyFilter = _allExpenseCurrenciesFilter;
+  String _expenseMissingCurrencyFilter = '';
+  bool _missingCategoryOnly = false;
   bool _missingReceiptOnly = false;
   bool _currentMonthOnly = false;
   final _billRepository = BillAiRepository();
@@ -717,6 +723,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               !_reviewCurrencies(expense).contains(_expenseCurrencyFilter)) {
             return false;
           }
+          if (_expenseMissingCurrencyFilter.isNotEmpty &&
+              _reviewCurrencies(
+                expense,
+              ).contains(_expenseMissingCurrencyFilter)) {
+            return false;
+          }
+          if (_missingCategoryOnly && expense.category.trim().isNotEmpty) {
+            return false;
+          }
           if (_missingReceiptOnly && expense.attachments.isNotEmpty) {
             return false;
           }
@@ -735,6 +750,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return _expenseSearchQuery.trim().isNotEmpty ||
         _expenseCategoryFilter != _allExpenseCategoriesFilter ||
         _expenseCurrencyFilter != _allExpenseCurrenciesFilter ||
+        _expenseMissingCurrencyFilter.isNotEmpty ||
+        _missingCategoryOnly ||
         _missingReceiptOnly ||
         _currentMonthOnly;
   }
@@ -745,6 +762,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       _expenseSearchQuery = '';
       _expenseCategoryFilter = _allExpenseCategoriesFilter;
       _expenseCurrencyFilter = _allExpenseCurrenciesFilter;
+      _expenseMissingCurrencyFilter = '';
+      _missingCategoryOnly = false;
       _missingReceiptOnly = false;
       _currentMonthOnly = false;
     });
@@ -907,6 +926,13 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     if (initialCurrency.isNotEmpty) {
       _expenseCurrencyFilter = initialCurrency;
     }
+    final initialMissingCurrency = _normalizeReviewCurrency(
+      initialReview.missingCurrency,
+    );
+    if (initialMissingCurrency.isNotEmpty) {
+      _expenseMissingCurrencyFilter = initialMissingCurrency;
+    }
+    _missingCategoryOnly = initialReview.missingCategoryOnly;
     _missingReceiptOnly = initialReview.missingReceiptOnly;
     _currentMonthOnly = initialReview.currentMonthOnly;
     _loadData();
@@ -2953,6 +2979,8 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                     searchQuery: _expenseSearchQuery,
                     categoryFilter: _expenseCategoryFilter,
                     currencyFilter: _expenseCurrencyFilter,
+                    missingCurrencyFilter: _expenseMissingCurrencyFilter,
+                    missingCategoryOnly: _missingCategoryOnly,
                     missingReceiptOnly: _missingReceiptOnly,
                     currentMonthOnly: _currentMonthOnly,
                     categoryOptions: _expenseCategoryOptions(_expenses),
@@ -2969,6 +2997,15 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                       if (value == null) return;
                       setState(() => _expenseCurrencyFilter = value);
                     },
+                    onMissingCurrencyChanged: (value) {
+                      setState(() {
+                        _expenseMissingCurrencyFilter = value
+                            ? _expenseMissingCurrencyFilter
+                            : '';
+                      });
+                    },
+                    onMissingCategoryChanged: (value) =>
+                        setState(() => _missingCategoryOnly = value),
                     onMissingReceiptChanged: (value) =>
                         setState(() => _missingReceiptOnly = value),
                     onCurrentMonthChanged: (value) =>
@@ -4776,6 +4813,8 @@ class _GroupExpenseReviewFiltersCard extends StatelessWidget {
     required this.searchQuery,
     required this.categoryFilter,
     required this.currencyFilter,
+    required this.missingCurrencyFilter,
+    required this.missingCategoryOnly,
     required this.missingReceiptOnly,
     required this.currentMonthOnly,
     required this.categoryOptions,
@@ -4785,6 +4824,8 @@ class _GroupExpenseReviewFiltersCard extends StatelessWidget {
     required this.onSearchChanged,
     required this.onCategoryChanged,
     required this.onCurrencyChanged,
+    required this.onMissingCurrencyChanged,
+    required this.onMissingCategoryChanged,
     required this.onMissingReceiptChanged,
     required this.onCurrentMonthChanged,
     required this.onClear,
@@ -4794,6 +4835,8 @@ class _GroupExpenseReviewFiltersCard extends StatelessWidget {
   final String searchQuery;
   final String categoryFilter;
   final String currencyFilter;
+  final String missingCurrencyFilter;
+  final bool missingCategoryOnly;
   final bool missingReceiptOnly;
   final bool currentMonthOnly;
   final List<String> categoryOptions;
@@ -4803,6 +4846,8 @@ class _GroupExpenseReviewFiltersCard extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<String?> onCurrencyChanged;
+  final ValueChanged<bool> onMissingCurrencyChanged;
+  final ValueChanged<bool> onMissingCategoryChanged;
   final ValueChanged<bool> onMissingReceiptChanged;
   final ValueChanged<bool> onCurrentMonthChanged;
   final VoidCallback onClear;
@@ -4895,6 +4940,19 @@ class _GroupExpenseReviewFiltersCard extends StatelessWidget {
                 label: const Text('Missing receipt'),
                 selected: missingReceiptOnly,
                 onSelected: onMissingReceiptChanged,
+              ),
+              if (missingCurrencyFilter.isNotEmpty)
+                FilterChip(
+                  avatar: const Icon(Icons.currency_exchange, size: 18),
+                  label: Text('Missing $missingCurrencyFilter conversion'),
+                  selected: true,
+                  onSelected: onMissingCurrencyChanged,
+                ),
+              FilterChip(
+                avatar: const Icon(Icons.label_off_outlined, size: 18),
+                label: const Text('Uncategorized'),
+                selected: missingCategoryOnly,
+                onSelected: onMissingCategoryChanged,
               ),
               FilterChip(
                 avatar: const Icon(Icons.calendar_month_outlined, size: 18),

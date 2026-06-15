@@ -11,6 +11,7 @@ import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/utils/group_transfer_simplifier.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
+import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/view/monthly_planning_card.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:flutter/material.dart';
@@ -59,6 +60,7 @@ class _FamilyPageState extends State<FamilyPage> {
   List<GroupExpense> _expenses = const [];
   List<GroupSettlement> _settlements = const [];
   GroupSummary? _selectedFamily;
+  MonthlyPlan? _selectedFamilyPlan;
   bool _loading = true;
   bool _loadingDetails = false;
   bool _loadedFamilyData = false;
@@ -200,6 +202,7 @@ class _FamilyPageState extends State<FamilyPage> {
         _members = const [];
         _expenses = const [];
         _settlements = const [];
+        _selectedFamilyPlan = null;
       }
     });
     try {
@@ -361,6 +364,49 @@ class _FamilyPageState extends State<FamilyPage> {
     );
   }
 
+  Future<void> _openMissingReceiptsReview() {
+    return _openSelectedFamily(
+      initialReviewFilter: const GroupExpenseReviewFilter(
+        missingReceiptOnly: true,
+        currentMonthOnly: true,
+      ),
+    );
+  }
+
+  Future<void> _openUncategorizedReview() {
+    return _openSelectedFamily(
+      initialReviewFilter: const GroupExpenseReviewFilter(
+        missingCategoryOnly: true,
+        currentMonthOnly: true,
+      ),
+    );
+  }
+
+  Future<void> _openOutsidePlanCurrencyReview() {
+    final currency = _selectedFamilyPlan?.currency.trim().toUpperCase() ?? '';
+    if (currency.isEmpty) {
+      return _openSelectedFamily(
+        initialReviewFilter: const GroupExpenseReviewFilter(
+          currentMonthOnly: true,
+        ),
+      );
+    }
+    return _openSelectedFamily(
+      initialReviewFilter: GroupExpenseReviewFilter(
+        missingCurrency: currency,
+        currentMonthOnly: true,
+      ),
+    );
+  }
+
+  void _handlePlanLoaded(MonthlyPlan plan) {
+    if (plan.groupId != null && plan.groupId != _selectedFamily?.id) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _selectedFamilyPlan = plan);
+  }
+
   Future<void> _openHouseholdSettleUp() async {
     final family = _selectedFamily;
     if (family == null) return;
@@ -509,6 +555,23 @@ class _FamilyPageState extends State<FamilyPage> {
             _amountMagnitude(b.amounts).compareTo(_amountMagnitude(a.amounts)),
       );
     return items;
+  }
+
+  _FamilyAuditCounts _auditCounts() {
+    final missingReceipts = _currentMonthExpenses
+        .where((expense) => expense.attachments.isEmpty)
+        .length;
+    final uncategorized = _currentMonthExpenses
+        .where((expense) => expense.category.trim().isEmpty)
+        .length;
+    final plan = _selectedFamilyPlan;
+    return _FamilyAuditCounts(
+      missingReceiptCount: missingReceipts,
+      uncategorizedCount: uncategorized,
+      outsidePlanCurrencyCount: plan?.excludedExpenseCount ?? 0,
+      outsidePlanCurrencyAmounts: plan?.excludedActualsByCurrency ?? const {},
+      planCurrency: plan?.currency ?? '',
+    );
   }
 
   Map<String, double> _sumAmounts(Iterable<GroupExpense> expenses) {
@@ -744,6 +807,7 @@ class _FamilyPageState extends State<FamilyPage> {
         : trackedTotal;
     final categories = _categoryTotals();
     final settlementSuggestions = _settlementSuggestions();
+    final auditCounts = _auditCounts();
 
     return AppPageContainer(
       onRefresh: () => _refreshFamily(),
@@ -760,6 +824,15 @@ class _FamilyPageState extends State<FamilyPage> {
           onOpen: () => _openSelectedFamily(),
           onAddExpense: _openGroceryExpense,
         ),
+        if (auditCounts.hasIssues) ...[
+          const SizedBox(height: 12),
+          _HouseholdAuditCard(
+            counts: auditCounts,
+            onMissingReceipts: _openMissingReceiptsReview,
+            onUncategorized: _openUncategorizedReview,
+            onOutsidePlanCurrency: _openOutsidePlanCurrencyReview,
+          ),
+        ],
         const SizedBox(height: 12),
         _FamilySettlementCard(
           suggestions: settlementSuggestions,
@@ -813,6 +886,7 @@ class _FamilyPageState extends State<FamilyPage> {
           title: 'Household plan',
           onAddExpenseForCategory: _openPlannedExpense,
           onReviewCategory: _openPlannedExpenseReview,
+          onPlanLoaded: _handlePlanLoaded,
         ),
         if (_families.length > 1) ...[
           const SizedBox(height: 8),
@@ -825,7 +899,10 @@ class _FamilyPageState extends State<FamilyPage> {
                     label: Text(item.name),
                     selected: item.id == family.id,
                     onSelected: (_) {
-                      setState(() => _selectedFamily = item);
+                      setState(() {
+                        _selectedFamily = item;
+                        _selectedFamilyPlan = null;
+                      });
                       _loadSelectedFamilyDetails();
                     },
                   ),
@@ -912,6 +989,125 @@ class _FamilySettlementSuggestion {
   final String toUid;
   final double amount;
   final String currency;
+}
+
+class _FamilyAuditCounts {
+  const _FamilyAuditCounts({
+    required this.missingReceiptCount,
+    required this.uncategorizedCount,
+    required this.outsidePlanCurrencyCount,
+    required this.outsidePlanCurrencyAmounts,
+    required this.planCurrency,
+  });
+
+  final int missingReceiptCount;
+  final int uncategorizedCount;
+  final int outsidePlanCurrencyCount;
+  final Map<String, double> outsidePlanCurrencyAmounts;
+  final String planCurrency;
+
+  bool get hasIssues =>
+      missingReceiptCount > 0 ||
+      uncategorizedCount > 0 ||
+      outsidePlanCurrencyCount > 0;
+
+  String get outsidePlanCurrencyLabel {
+    final currency = planCurrency.trim().toUpperCase();
+    return currency.isEmpty ? 'plan currency' : currency;
+  }
+}
+
+class _HouseholdAuditCard extends StatelessWidget {
+  const _HouseholdAuditCard({
+    required this.counts,
+    required this.onMissingReceipts,
+    required this.onUncategorized,
+    required this.onOutsidePlanCurrency,
+  });
+
+  final _FamilyAuditCounts counts;
+  final VoidCallback onMissingReceipts;
+  final VoidCallback onUncategorized;
+  final VoidCallback onOutsidePlanCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <Widget>[];
+    if (counts.missingReceiptCount > 0) {
+      items.add(
+        _AuditShortcut(
+          title: 'Missing receipts',
+          subtitle:
+              '${counts.missingReceiptCount} expense${counts.missingReceiptCount == 1 ? '' : 's'} this month',
+          icon: Icons.receipt_long_outlined,
+          onTap: onMissingReceipts,
+        ),
+      );
+    }
+    if (counts.uncategorizedCount > 0) {
+      items.add(
+        _AuditShortcut(
+          title: 'Uncategorized',
+          subtitle:
+              '${counts.uncategorizedCount} expense${counts.uncategorizedCount == 1 ? '' : 's'} needs a monthly category',
+          icon: Icons.label_off_outlined,
+          onTap: onUncategorized,
+        ),
+      );
+    }
+    if (counts.outsidePlanCurrencyCount > 0) {
+      final amountText = counts.outsidePlanCurrencyAmounts.isEmpty
+          ? '${counts.outsidePlanCurrencyCount} expense${counts.outsidePlanCurrencyCount == 1 ? '' : 's'}'
+          : AppMoney.formatCurrencyAmounts(counts.outsidePlanCurrencyAmounts);
+      items.add(
+        _AuditShortcut(
+          title: 'Outside ${counts.outsidePlanCurrencyLabel} plan',
+          subtitle: amountText,
+          icon: Icons.currency_exchange,
+          onTap: onOutsidePlanCurrency,
+        ),
+      );
+    }
+
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Review needed', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          ...items,
+        ],
+      ),
+    );
+  }
+}
+
+class _AuditShortcut extends StatelessWidget {
+  const _AuditShortcut({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: onTap,
+    );
+  }
 }
 
 class _HouseholdSetupInput {

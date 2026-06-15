@@ -146,21 +146,29 @@ class _FakeFreshnessRepository extends FreshnessRepository {
 }
 
 class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
-  _FakeMonthlyPlanRepository()
-    : super(client: MockClient((_) async => http.Response('{}', 200)));
+  _FakeMonthlyPlanRepository({
+    this.excludedExpenseCount = 0,
+    this.excludedActualsByCurrency = const {},
+  }) : super(client: MockClient((_) async => http.Response('{}', 200)));
+
+  final int excludedExpenseCount;
+  final Map<String, double> excludedActualsByCurrency;
 
   @override
   Future<MonthlyPlan> fetchPlan({
     required String month,
     String? groupId,
   }) async {
-    return const MonthlyPlan(
+    return MonthlyPlan(
       month: '2026-06',
+      groupId: groupId,
       currency: 'INR',
       totalBudget: 5000,
       totalActual: 1200,
       totalRemaining: 3800,
-      categories: [
+      excludedExpenseCount: excludedExpenseCount,
+      excludedActualsByCurrency: excludedActualsByCurrency,
+      categories: const [
         MonthlyPlanCategory(
           category: 'Groceries',
           budget: 5000,
@@ -572,7 +580,19 @@ void main() {
         child: MaterialApp(
           home: Scaffold(
             body: FamilyPage(
-              repository: _FakeGroupsRepository([familyGroup]),
+              repository: _FakeGroupsRepository(
+                [familyGroup],
+                expenses: [
+                  _groupExpense(
+                    id: 'expense-clean',
+                    description: 'Monthly grocery run',
+                    amount: 1200,
+                    category: 'Groceries',
+                    attachments: const ['https://example.com/receipt.jpg'],
+                    date: DateTime.now(),
+                  ),
+                ],
+              ),
               monthlyPlanRepository: _FakeMonthlyPlanRepository(),
             ),
           ),
@@ -607,7 +627,19 @@ void main() {
         child: MaterialApp(
           home: Scaffold(
             body: FamilyPage(
-              repository: _FakeGroupsRepository([familyGroup]),
+              repository: _FakeGroupsRepository(
+                [familyGroup],
+                expenses: [
+                  _groupExpense(
+                    id: 'expense-clean-plan',
+                    description: 'Monthly grocery run',
+                    amount: 1200,
+                    category: 'Groceries',
+                    attachments: const ['https://example.com/receipt.jpg'],
+                    date: DateTime.now(),
+                  ),
+                ],
+              ),
               monthlyPlanRepository: _FakeMonthlyPlanRepository(),
             ),
           ),
@@ -616,7 +648,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.byTooltip('Add Groceries expense'));
+    await tester.scrollUntilVisible(
+      find.byTooltip('Add Groceries expense'),
+      120,
+    );
     await tester.tap(find.byTooltip('Add Groceries expense'));
     await tester.pumpAndSettle();
 
@@ -745,6 +780,143 @@ void main() {
     expect(find.text('1 match'), findsOneWidget);
   });
 
+  testWidgets('family audit shortcut opens uncategorized review', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final today = DateTime.now();
+    final repository = _FakeGroupsRepository(
+      [familyGroup],
+      expenses: [
+        _groupExpense(
+          id: 'expense-groceries',
+          description: 'Monthly grocery run',
+          amount: 1200,
+          category: 'Groceries',
+          attachments: const [],
+          date: today,
+        ),
+        _groupExpense(
+          id: 'expense-mystery',
+          description: 'Mystery item',
+          amount: 300,
+          category: '',
+          attachments: const ['https://example.com/receipt.jpg'],
+          date: today,
+        ),
+        _groupExpense(
+          id: 'expense-other',
+          description: 'Explicit other',
+          amount: 200,
+          category: 'Other',
+          attachments: const ['https://example.com/other.jpg'],
+          date: today,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              repository: repository,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(
+                excludedExpenseCount: 1,
+                excludedActualsByCurrency: const {'USD': 12},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review needed'), findsOneWidget);
+    expect(find.text('Missing receipts'), findsOneWidget);
+    expect(find.text('Uncategorized'), findsOneWidget);
+    expect(find.text('Outside INR plan'), findsOneWidget);
+
+    await tester.tap(find.text('Uncategorized').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Search expenses'), findsOneWidget);
+    final uncategorizedChip = tester.widget<FilterChip>(
+      find.widgetWithText(FilterChip, 'Uncategorized'),
+    );
+    expect(uncategorizedChip.selected, isTrue);
+    expect(find.text('Mystery item'), findsOneWidget);
+    expect(find.text('Explicit other'), findsNothing);
+    expect(find.text('Monthly grocery run'), findsNothing);
+    expect(find.text('1 match'), findsOneWidget);
+  });
+
+  testWidgets('family audit shortcut opens outside plan currency review', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final today = DateTime.now();
+    final repository = _FakeGroupsRepository(
+      [familyGroup],
+      expenses: [
+        _groupExpense(
+          id: 'expense-imported',
+          description: 'Imported groceries',
+          amount: 12,
+          currency: 'USD',
+          category: 'Groceries',
+          attachments: const ['https://example.com/imported.jpg'],
+          date: today,
+        ),
+        _groupExpense(
+          id: 'expense-internet',
+          description: 'Internet bill',
+          amount: 1200,
+          currency: 'INR',
+          category: 'Utilities',
+          attachments: const ['https://example.com/bill.jpg'],
+          date: today,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: FamilyPage(
+              repository: repository,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(
+                excludedExpenseCount: 1,
+                excludedActualsByCurrency: const {'USD': 12},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Outside INR plan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Search expenses'), findsOneWidget);
+    expect(find.text('Missing INR conversion'), findsOneWidget);
+    expect(find.text('Imported groceries'), findsOneWidget);
+    expect(find.text('Internet bill'), findsNothing);
+    expect(find.text('1 match'), findsOneWidget);
+  });
+
   testWidgets('family quick-add launch auto-opens only one household', (
     tester,
   ) async {
@@ -817,8 +989,7 @@ void main() {
     expect(find.text('Rao family'), findsWidgets);
     expect(find.text('Choose household for groceries'), findsOneWidget);
     expect(find.text('Add here'), findsOneWidget);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -260));
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Parents household'), 120);
     expect(find.text('Parents household'), findsOneWidget);
     await tester.tap(find.text('Parents household'));
     await tester.pumpAndSettle();
@@ -851,6 +1022,7 @@ GroupExpense _groupExpense({
   String groupId = 'family-1',
   String currency = 'INR',
   String category = '',
+  Map<String, double> convertedAmounts = const {},
   List<String> attachments = const [],
 }) {
   return GroupExpense(
@@ -863,6 +1035,7 @@ GroupExpense _groupExpense({
     splitWith: const ['member-1'],
     amount: amount,
     currency: currency,
+    convertedAmounts: convertedAmounts,
     category: category,
     description: description,
     attachments: attachments,
