@@ -791,6 +791,21 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     return [_allExpenseCurrenciesFilter, ...values];
   }
 
+  List<String> _expenseAuditLabels(GroupExpense expense) {
+    final labels = <String>[];
+    if (expense.attachments.isEmpty) {
+      labels.add('Missing receipt');
+    }
+    if (expense.category.trim().isEmpty) {
+      labels.add('Uncategorized');
+    }
+    if (_expenseMissingCurrencyFilter.isNotEmpty &&
+        !_reviewCurrencies(expense).contains(_expenseMissingCurrencyFilter)) {
+      labels.add('Missing $_expenseMissingCurrencyFilter conversion');
+    }
+    return labels;
+  }
+
   Map<String, double> _netAmountsByCurrency(
     Map<String, GroupLentBorrowed> balances,
   ) {
@@ -3045,6 +3060,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         (entry) => entry.key != expense.currency,
                       ),
                     );
+                    final auditLabels = _expenseAuditLabels(expense);
                     return AppCard(
                       child: ListTile(
                         onTap: _busy ? null : () => _editExpense(expense),
@@ -3076,6 +3092,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 'Saved as ${AppMoney.formatCurrencyAmounts(convertedOtherAmounts)}',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
+                            ],
+                            if (auditLabels.isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              _ExpenseAuditBadges(labels: auditLabels),
                             ],
                             if (expense.attachments.isNotEmpty) ...[
                               const SizedBox(height: 6),
@@ -4979,6 +4999,42 @@ class _GroupExpenseReviewFiltersCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _ExpenseAuditBadges extends StatelessWidget {
+  const _ExpenseAuditBadges({required this.labels});
+
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: labels
+          .map(
+            (label) => DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.errorContainer.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: colors.error.withValues(alpha: 0.24)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.onErrorContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
     );
   }
 }

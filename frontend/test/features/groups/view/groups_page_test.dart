@@ -708,6 +708,7 @@ void main() {
 
     expect(find.text('Weekly groceries'), findsOneWidget);
     expect(find.text('Internet bill'), findsNothing);
+    expect(find.text('Missing receipt'), findsWidgets);
     expect(find.text('1 match'), findsOneWidget);
 
     await tester.tap(find.text('All categories'));
@@ -911,7 +912,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Search expenses'), findsOneWidget);
-    expect(find.text('Missing INR conversion'), findsOneWidget);
+    expect(find.text('Missing INR conversion'), findsWidgets);
     expect(find.text('Imported groceries'), findsOneWidget);
     expect(find.text('Internet bill'), findsNothing);
     expect(find.text('1 match'), findsOneWidget);
