@@ -42,6 +42,9 @@ class ActivityPage extends StatefulWidget {
 enum _ActivityRange { week, month, year }
 
 class _ActivityPageState extends State<ActivityPage> {
+  static const _allCategoriesFilter = 'All categories';
+  static const _allCurrenciesFilter = 'All currencies';
+
   ExpenseRepository? _repository;
   http.Client? _ownedGroupsClient;
   late final ApiGroupsRepository _groupsRepository;
@@ -55,6 +58,12 @@ class _ActivityPageState extends State<ActivityPage> {
   DateTime? _activityEventsNextCursor;
   DateTime? _activityFreshnessCursor;
   _ActivityRange _range = _ActivityRange.week;
+  final TextEditingController _historySearchController =
+      TextEditingController();
+  String _historySearchQuery = '';
+  String _historyCategoryFilter = _allCategoriesFilter;
+  String _historyCurrencyFilter = _allCurrenciesFilter;
+  bool _missingReceiptOnly = false;
   bool _hasMoreActivityEvents = false;
   bool _loadingMoreActivityEvents = false;
   bool _loadedRepository = false;
@@ -78,6 +87,7 @@ class _ActivityPageState extends State<ActivityPage> {
 
   @override
   void dispose() {
+    _historySearchController.dispose();
     _ownedGroupsClient?.close();
     if (_ownsFreshnessRepository) {
       _freshnessRepository.dispose();
@@ -490,6 +500,77 @@ class _ActivityPageState extends State<ActivityPage> {
         .toList(growable: false);
   }
 
+  List<_ActivityTimelineEntry> _filteredTimelineEntries(
+    List<_ActivityTimelineEntry> entries,
+  ) {
+    final query = _historySearchQuery.trim().toLowerCase();
+    final terms = query
+        .split(RegExp(r'\s+'))
+        .where((term) => term.isNotEmpty)
+        .toList(growable: false);
+    return entries
+        .where((entry) {
+          if (terms.isNotEmpty) {
+            final haystack = entry.searchableText.toLowerCase();
+            if (!terms.every(haystack.contains)) {
+              return false;
+            }
+          }
+          if (_historyCategoryFilter != _allCategoriesFilter &&
+              entry.filterCategory != _historyCategoryFilter) {
+            return false;
+          }
+          if (_historyCurrencyFilter != _allCurrenciesFilter &&
+              !entry.filterCurrencies.contains(_historyCurrencyFilter)) {
+            return false;
+          }
+          if (_missingReceiptOnly && !entry.missingReceipt) {
+            return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
+  }
+
+  bool get _historyFiltersActive {
+    return _historySearchQuery.trim().isNotEmpty ||
+        _historyCategoryFilter != _allCategoriesFilter ||
+        _historyCurrencyFilter != _allCurrenciesFilter ||
+        _missingReceiptOnly;
+  }
+
+  void _clearHistoryFilters() {
+    _historySearchController.clear();
+    setState(() {
+      _historySearchQuery = '';
+      _historyCategoryFilter = _allCategoriesFilter;
+      _historyCurrencyFilter = _allCurrenciesFilter;
+      _missingReceiptOnly = false;
+    });
+  }
+
+  List<String> _historyCategoryOptions(List<_ActivityTimelineEntry> entries) {
+    final values =
+        entries
+            .map((entry) => entry.filterCategory)
+            .where((value) => value.trim().isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    return [_allCategoriesFilter, ...values];
+  }
+
+  List<String> _historyCurrencyOptions(List<_ActivityTimelineEntry> entries) {
+    final values =
+        entries
+            .expand((entry) => entry.filterCurrencies)
+            .where((value) => value.trim().isNotEmpty)
+            .toSet()
+            .toList(growable: false)
+          ..sort();
+    return [_allCurrenciesFilter, ...values];
+  }
+
   List<AppChartPoint> _trendPoints(
     List<_ActivityExpenseEntry> entries,
     DateTime start,
@@ -718,6 +799,12 @@ class _ActivityPageState extends State<ActivityPage> {
           start,
           end,
         );
+        final filteredPeriodTimelineEntries = _filteredTimelineEntries(
+          periodTimelineEntries,
+        );
+        final filteredTimelineEntries = _filteredTimelineEntries(
+          timelineEntries,
+        );
         final trendCurrency = _singleCurrencyForTrend(
           currentTotals,
           previousTotals,
@@ -750,12 +837,46 @@ class _ActivityPageState extends State<ActivityPage> {
             _CategoryBreakdownCard(categories: categories),
             const SizedBox(height: 20),
             const AppSectionHeader(title: 'History'),
-            if (periodTimelineEntries.isNotEmpty)
-              ...periodTimelineEntries.map(
+            _ActivityHistoryFiltersCard(
+              controller: _historySearchController,
+              searchQuery: _historySearchQuery,
+              categoryFilter: _historyCategoryFilter,
+              currencyFilter: _historyCurrencyFilter,
+              missingReceiptOnly: _missingReceiptOnly,
+              categoryOptions: _historyCategoryOptions(timelineEntries),
+              currencyOptions: _historyCurrencyOptions(timelineEntries),
+              filtersActive: _historyFiltersActive,
+              resultCount: filteredPeriodTimelineEntries.length,
+              onSearchChanged: (value) =>
+                  setState(() => _historySearchQuery = value),
+              onCategoryChanged: (value) {
+                if (value == null) return;
+                setState(() => _historyCategoryFilter = value);
+              },
+              onCurrencyChanged: (value) {
+                if (value == null) return;
+                setState(() => _historyCurrencyFilter = value);
+              },
+              onMissingReceiptChanged: (value) =>
+                  setState(() => _missingReceiptOnly = value),
+              onClear: _clearHistoryFilters,
+            ),
+            const SizedBox(height: 12),
+            if (filteredPeriodTimelineEntries.isNotEmpty)
+              ...filteredPeriodTimelineEntries.map(
                 (entry) => _TimelineActivityTile(
                   entry: entry,
                   onTap: entry.canOpen ? () => _openTimelineEntry(entry) : null,
                 ),
+              )
+            else if (_historyFiltersActive)
+              AppEmptyState(
+                title: 'No matching activity',
+                subtitle: periodTimelineEntries.isEmpty
+                    ? 'Try a different period or clear filters.'
+                    : 'Clear filters or adjust your search.',
+                actionLabel: 'Clear filters',
+                onAction: _clearHistoryFilters,
               )
             else if (timelineEntries.isNotEmpty) ...[
               const AppEmptyState(
@@ -764,7 +885,7 @@ class _ActivityPageState extends State<ActivityPage> {
               ),
               const SizedBox(height: 12),
               const AppSectionHeader(title: 'Older history'),
-              ...timelineEntries.map(
+              ...filteredTimelineEntries.map(
                 (entry) => _TimelineActivityTile(
                   entry: entry,
                   onTap: entry.canOpen ? () => _openTimelineEntry(entry) : null,
@@ -803,6 +924,151 @@ class _ActivityPageState extends State<ActivityPage> {
           ],
         );
       },
+    );
+  }
+}
+
+class _ActivityHistoryFiltersCard extends StatelessWidget {
+  const _ActivityHistoryFiltersCard({
+    required this.controller,
+    required this.searchQuery,
+    required this.categoryFilter,
+    required this.currencyFilter,
+    required this.missingReceiptOnly,
+    required this.categoryOptions,
+    required this.currencyOptions,
+    required this.filtersActive,
+    required this.resultCount,
+    required this.onSearchChanged,
+    required this.onCategoryChanged,
+    required this.onCurrencyChanged,
+    required this.onMissingReceiptChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final String searchQuery;
+  final String categoryFilter;
+  final String currencyFilter;
+  final bool missingReceiptOnly;
+  final List<String> categoryOptions;
+  final List<String> currencyOptions;
+  final bool filtersActive;
+  final int resultCount;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<String?> onCategoryChanged;
+  final ValueChanged<String?> onCurrencyChanged;
+  final ValueChanged<bool> onMissingReceiptChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              labelText: 'Search history',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: searchQuery.trim().isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      onPressed: () {
+                        controller.clear();
+                        onSearchChanged('');
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+            textInputAction: TextInputAction.search,
+            onChanged: onSearchChanged,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 190,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: categoryOptions.contains(categoryFilter)
+                      ? categoryFilter
+                      : categoryOptions.first,
+                  decoration: const InputDecoration(
+                    labelText: 'Category',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: categoryOptions
+                      .map(
+                        (category) => DropdownMenuItem<String>(
+                          value: category,
+                          child: Text(
+                            category,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: onCategoryChanged,
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: currencyOptions.contains(currencyFilter)
+                      ? currencyFilter
+                      : currencyOptions.first,
+                  decoration: const InputDecoration(
+                    labelText: 'Currency',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: currencyOptions
+                      .map(
+                        (currency) => DropdownMenuItem<String>(
+                          value: currency,
+                          child: Text(currency),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: onCurrencyChanged,
+                ),
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.receipt_long_outlined, size: 18),
+                label: const Text('Missing receipt'),
+                selected: missingReceiptOnly,
+                onSelected: onMissingReceiptChanged,
+              ),
+              if (filtersActive)
+                TextButton.icon(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.filter_alt_off_outlined),
+                  label: const Text('Clear'),
+                ),
+            ],
+          ),
+          if (filtersActive) ...[
+            const SizedBox(height: 8),
+            Text(
+              '$resultCount match${resultCount == 1 ? '' : 'es'} in this period',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -859,6 +1125,9 @@ class _ActivityExpenseEntry {
     required this.amountsByCurrency,
     required this.date,
     required this.icon,
+    required this.filterCategory,
+    required this.filterCurrencies,
+    required this.missingReceipt,
     this.personalExpense,
     this.groupExpense,
   });
@@ -872,6 +1141,9 @@ class _ActivityExpenseEntry {
       amountsByCurrency: {expense.currency: expense.amount},
       date: expense.createdAt,
       icon: Icons.receipt_long_outlined,
+      filterCategory: _normalizeFilterLabel(expense.category ?? ''),
+      filterCurrencies: _currencyFilters({expense.currency: expense.amount}),
+      missingReceipt: false,
       personalExpense: expense,
     );
   }
@@ -892,6 +1164,9 @@ class _ActivityExpenseEntry {
       icon: entry.group.groupType == GroupType.family
           ? Icons.home_outlined
           : Icons.group_outlined,
+      filterCategory: _normalizeFilterLabel(entry.expense.category),
+      filterCurrencies: _currencyFilters(entry.expense.amountsByCurrency),
+      missingReceipt: entry.expense.attachments.isEmpty,
       groupExpense: entry,
     );
   }
@@ -903,6 +1178,9 @@ class _ActivityExpenseEntry {
   final Map<String, double> amountsByCurrency;
   final DateTime date;
   final IconData icon;
+  final String filterCategory;
+  final List<String> filterCurrencies;
+  final bool missingReceipt;
   final Expense? personalExpense;
   final _GroupExpenseEntry? groupExpense;
 }
@@ -916,6 +1194,9 @@ class _ActivityTimelineEntry {
     required this.icon,
     this.positive = false,
     this.neutral = true,
+    this.filterCategory = 'Other',
+    this.filterCurrencies = const [],
+    this.missingReceipt = false,
     this.personalExpense,
     this.groupExpense,
   });
@@ -929,6 +1210,9 @@ class _ActivityTimelineEntry {
       amountText: AppMoney.formatCurrency(entry.amount, entry.currency),
       date: entry.date,
       icon: entry.icon,
+      filterCategory: entry.filterCategory,
+      filterCurrencies: entry.filterCurrencies,
+      missingReceipt: entry.missingReceipt,
       personalExpense: entry.personalExpense,
       groupExpense: entry.groupExpense,
     );
@@ -972,6 +1256,8 @@ class _ActivityTimelineEntry {
       ),
       date: settlement.createdAt,
       icon: group == null ? Icons.handshake_outlined : Icons.payments_outlined,
+      filterCategory: 'Settlement',
+      filterCurrencies: [settlement.currency],
     );
   }
 
@@ -993,6 +1279,8 @@ class _ActivityTimelineEntry {
       icon: Icons.event_repeat_outlined,
       positive: isIncome,
       neutral: !isIncome,
+      filterCategory: 'Recurring',
+      filterCurrencies: [occurrence.currency],
     );
   }
 
@@ -1021,10 +1309,40 @@ class _ActivityTimelineEntry {
   final IconData icon;
   final bool positive;
   final bool neutral;
+  final String filterCategory;
+  final List<String> filterCurrencies;
+  final bool missingReceipt;
   final Expense? personalExpense;
   final _GroupExpenseEntry? groupExpense;
 
   bool get canOpen => personalExpense != null || groupExpense != null;
+
+  String get searchableText {
+    return [
+      title,
+      subtitle,
+      amountText,
+      filterCategory,
+      ...filterCurrencies,
+      if (missingReceipt) 'missing receipt',
+    ].join(' ');
+  }
+}
+
+String _normalizeFilterLabel(String value) {
+  final label = value.trim();
+  return label.isEmpty ? 'Other' : label;
+}
+
+List<String> _currencyFilters(Map<String, double> amountsByCurrency) {
+  final values =
+      amountsByCurrency.keys
+          .map((currency) => currency.trim().toUpperCase())
+          .where((currency) => currency.isNotEmpty)
+          .toSet()
+          .toList(growable: false)
+        ..sort();
+  return values.isEmpty ? const ['INR'] : values;
 }
 
 class _SpendSummaryCard extends StatelessWidget {

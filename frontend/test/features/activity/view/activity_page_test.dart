@@ -161,6 +161,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await _scrollUntilTextVisible(tester, 'Coffee');
     expect(find.text('Coffee'), findsOneWidget);
 
     await tester.tap(find.text('Coffee'));
@@ -321,6 +322,176 @@ void main() {
 
     expect(find.text('Groceries'), findsOneWidget);
     expect(find.text('Family · Home · $todayLabel'), findsOneWidget);
+  });
+
+  testWidgets('filters activity history by search category and currency', (
+    tester,
+  ) async {
+    final today = DateTime.now();
+    final expenseRepository = _FakeExpenseRepository();
+    final expensesBloc = ExpensesBloc(repository: expenseRepository);
+    final dashboardCubit = DashboardSnapshotCubit(
+      repository: const MockDashboardSnapshotRepository(),
+    )..load();
+    final groupsRepository = _FakeGroupsRepository(
+      groups: const [
+        GroupSummary(
+          id: 'family-1',
+          name: 'Home',
+          groupType: GroupType.family,
+          memberCount: 3,
+        ),
+      ],
+      expensesByGroup: {
+        'family-1': [
+          _groupExpense(
+            id: 'family-groceries',
+            groupId: 'family-1',
+            description: 'Weekly groceries',
+            amount: 80,
+            currency: 'USD',
+            category: 'Groceries',
+            date: today,
+          ),
+          _groupExpense(
+            id: 'family-utilities',
+            groupId: 'family-1',
+            description: 'Internet bill',
+            amount: 1200,
+            currency: 'INR',
+            category: 'Utilities',
+            date: today,
+          ),
+        ],
+      },
+    );
+    addTearDown(expensesBloc.close);
+    addTearDown(dashboardCubit.close);
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: UserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+
+    await tester.pumpWidget(
+      RepositoryProvider<ExpenseRepository>.value(
+        value: expenseRepository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: expensesBloc),
+            BlocProvider.value(value: dashboardCubit),
+            BlocProvider.value(value: authCubit),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: InkRipple.splashFactory),
+            home: ActivityPage(groupsRepository: groupsRepository),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Search history',
+      ),
+      'weekly',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Weekly groceries'), findsOneWidget);
+    expect(find.text('Internet bill'), findsNothing);
+    expect(find.text('1 match in this period'), findsOneWidget);
+
+    await tester.tap(find.text('All categories'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Groceries').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('All currencies'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('USD').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Weekly groceries'), findsOneWidget);
+    expect(find.text('Internet bill'), findsNothing);
+  });
+
+  testWidgets('filters activity history to missing group receipts', (
+    tester,
+  ) async {
+    final today = DateTime.now();
+    final expenseRepository = _FakeExpenseRepository();
+    final expensesBloc = ExpensesBloc(repository: expenseRepository);
+    final dashboardCubit = DashboardSnapshotCubit(
+      repository: const MockDashboardSnapshotRepository(),
+    )..load();
+    final groupsRepository = _FakeGroupsRepository(
+      groups: const [
+        GroupSummary(
+          id: 'family-1',
+          name: 'Home',
+          groupType: GroupType.family,
+          memberCount: 3,
+        ),
+      ],
+      expensesByGroup: {
+        'family-1': [
+          _groupExpense(
+            id: 'missing-receipt',
+            groupId: 'family-1',
+            description: 'Pharmacy',
+            amount: 300,
+            category: 'Health',
+            date: today,
+          ),
+          _groupExpense(
+            id: 'has-receipt',
+            groupId: 'family-1',
+            description: 'School books',
+            amount: 700,
+            category: 'School and kids',
+            attachments: const ['https://example.com/bill.jpg'],
+            date: today,
+          ),
+        ],
+      },
+    );
+    addTearDown(expensesBloc.close);
+    addTearDown(dashboardCubit.close);
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: UserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+
+    await tester.pumpWidget(
+      RepositoryProvider<ExpenseRepository>.value(
+        value: expenseRepository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: expensesBloc),
+            BlocProvider.value(value: dashboardCubit),
+            BlocProvider.value(value: authCubit),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: InkRipple.splashFactory),
+            home: ActivityPage(groupsRepository: groupsRepository),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Missing receipt'));
+    await tester.pumpAndSettle();
+
+    await _scrollUntilTextVisible(tester, 'Pharmacy');
+    expect(find.text('Pharmacy'), findsOneWidget);
+    expect(find.text('School books'), findsNothing);
+    expect(find.text('1 match in this period'), findsOneWidget);
   });
 
   testWidgets(
@@ -592,6 +763,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pumpAndSettle();
 
+    await _scrollUntilTextVisible(tester, 'Dinner');
     await tester.tap(find.text('Dinner'));
     await tester.pumpAndSettle();
 
@@ -600,12 +772,24 @@ void main() {
   });
 }
 
+Future<void> _scrollUntilTextVisible(WidgetTester tester, String text) async {
+  await tester.scrollUntilVisible(
+    find.text(text),
+    300,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+}
+
 GroupExpense _groupExpense({
   required String id,
   required String groupId,
   required String description,
   required double amount,
   required DateTime date,
+  String currency = 'INR',
+  String category = '',
+  List<String> attachments = const [],
 }) {
   return GroupExpense(
     id: id,
@@ -616,8 +800,10 @@ GroupExpense _groupExpense({
     splitMode: 'equally',
     splitWith: const ['user-1', 'user-2'],
     amount: amount,
+    currency: currency,
+    category: category,
     description: description,
-    attachments: const [],
+    attachments: attachments,
     date: date,
     createdAt: date,
     updatedAt: date,
