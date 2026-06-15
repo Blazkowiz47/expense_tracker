@@ -9,7 +9,13 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 const _recurringCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
-const _recurringFrequencyOptions = <String>['monthly', 'weekly', 'daily'];
+const _recurringFrequencyOptions = <String>[
+  'monthly',
+  'quarterly',
+  'yearly',
+  'weekly',
+  'daily',
+];
 
 class RecurringPage extends StatefulWidget {
   const RecurringPage({
@@ -720,6 +726,16 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
   var _frequency = 'monthly';
   String? _error;
 
+  void _applyPreset(_RecurringPreset preset) {
+    setState(() {
+      _kind = preset.kind;
+      _titleController.text = preset.title;
+      _categoryController.text = preset.category;
+      _frequency = preset.frequency;
+      _dayController.text = '${DateTime.now().day.clamp(1, 28)}';
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -810,6 +826,20 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
                   }
                 });
               },
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _recurringPresets
+                  .map(
+                    (preset) => ActionChip(
+                      avatar: Icon(preset.icon, size: 18),
+                      label: Text(preset.label),
+                      onPressed: () => _applyPreset(preset),
+                    ),
+                  )
+                  .toList(growable: false),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -907,6 +937,59 @@ class _CreateRecurringDialogState extends State<_CreateRecurringDialog> {
     );
   }
 }
+
+class _RecurringPreset {
+  const _RecurringPreset({
+    required this.label,
+    required this.title,
+    required this.kind,
+    required this.category,
+    required this.frequency,
+    required this.icon,
+  });
+
+  final String label;
+  final String title;
+  final String kind;
+  final String category;
+  final String frequency;
+  final IconData icon;
+}
+
+const _recurringPresets = <_RecurringPreset>[
+  _RecurringPreset(
+    label: 'Salary',
+    title: 'Salary',
+    kind: 'income',
+    category: 'Salary',
+    frequency: 'monthly',
+    icon: Icons.account_balance_wallet_outlined,
+  ),
+  _RecurringPreset(
+    label: 'Rent',
+    title: 'Rent',
+    kind: 'expense',
+    category: 'Rent',
+    frequency: 'monthly',
+    icon: Icons.home_work_outlined,
+  ),
+  _RecurringPreset(
+    label: 'Insurance',
+    title: 'Insurance premium',
+    kind: 'expense',
+    category: 'Insurance',
+    frequency: 'yearly',
+    icon: Icons.verified_user_outlined,
+  ),
+  _RecurringPreset(
+    label: 'Subscription',
+    title: 'Subscription',
+    kind: 'expense',
+    category: 'Subscriptions',
+    frequency: 'monthly',
+    icon: Icons.subscriptions_outlined,
+  ),
+];
 
 class _ConfirmActualDialog extends StatefulWidget {
   const _ConfirmActualDialog({required this.occurrence});
@@ -1100,6 +1183,8 @@ String _frequencyLabel(String frequency) {
   return switch (frequency.trim().toLowerCase()) {
     'daily' => 'Daily',
     'weekly' => 'Weekly',
+    'quarterly' => 'Quarterly',
+    'yearly' => 'Yearly',
     _ => 'Monthly',
   };
 }

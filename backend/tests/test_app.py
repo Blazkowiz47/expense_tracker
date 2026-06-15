@@ -1032,6 +1032,41 @@ def test_recurring_payment_confirmation_creates_or_updates_expense(tmp_path):
     assert expenses[0]["amount"] == 12400
 
 
+def test_yearly_recurring_policy_only_generates_in_due_month(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Car insurance",
+            "kind": "expense",
+            "amount": 7200,
+            "currency": "NOK",
+            "category": "Insurance",
+            "frequency": "yearly",
+            "dayOfMonth": 18,
+            "startDate": "2026-06-18T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["frequency"] == "yearly"
+    assert created.json()["nextDueDate"] == "2026-06-18T00:00:00Z"
+
+    june = client.get("/api/v1/recurring/occurrences?month=2026-06", headers=headers)
+    assert june.status_code == 200, june.text
+    assert [item["title"] for item in june.json()["occurrences"]] == ["Car insurance"]
+
+    july = client.get("/api/v1/recurring/occurrences?month=2026-07", headers=headers)
+    assert july.status_code == 200, july.text
+    assert july.json()["occurrences"] == []
+
+    next_june = client.get("/api/v1/recurring/occurrences?month=2027-06", headers=headers)
+    assert next_june.status_code == 200, next_june.text
+    assert [item["title"] for item in next_june.json()["occurrences"]] == ["Car insurance"]
+
+
 def test_loan_emi_logging_creates_or_updates_expense(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
@@ -2235,6 +2270,7 @@ def test_group_expense_saves_currency_snapshots_for_group_currencies(tmp_path):
 def test_group_attachment_upload_accepts_multipart_file(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
+    outsider_headers = register(client, "outsider@example.com")
 
     group = client.post("/api/v1/groups", headers=headers, json={"name": "Trip"})
     assert group.status_code == 201, group.text
@@ -2259,6 +2295,17 @@ def test_group_attachment_upload_accepts_multipart_file(tmp_path):
     )
     assert upload.status_code == 201, upload.text
     assert upload.json()["url"].endswith("receipt.jpg")
+
+    raw_url = upload.json()["url"]
+    public_fetch = client.get(raw_url)
+    assert public_fetch.status_code == 401
+
+    outsider_fetch = client.get(raw_url, headers=outsider_headers)
+    assert outsider_fetch.status_code == 403
+
+    member_fetch = client.get(raw_url, headers=headers)
+    assert member_fetch.status_code == 200
+    assert member_fetch.content == b"receipt-bytes"
 
 
 def test_dashboard_includes_split_group_balance_items(tmp_path):

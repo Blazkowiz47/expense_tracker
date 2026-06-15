@@ -26,6 +26,7 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
   final List<RecurringOccurrence> _occurrences;
   int fetchTemplateCount = 0;
   String? confirmedOccurrenceId;
+  _CreatedRecurring? createdTemplate;
   String? updatedTemplateId;
   String? pausedTemplateId;
   String? resumedTemplateId;
@@ -61,6 +62,43 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
           ),
         )
         .toList(growable: false);
+  }
+
+  @override
+  Future<RecurringTemplate> createTemplate({
+    required String title,
+    required String kind,
+    required double amount,
+    required String category,
+    required String currency,
+    required String frequency,
+    required int dayOfMonth,
+    required DateTime startDate,
+  }) async {
+    createdTemplate = _CreatedRecurring(
+      title: title,
+      kind: kind,
+      amount: amount,
+      category: category,
+      currency: currency,
+      frequency: frequency,
+      dayOfMonth: dayOfMonth,
+    );
+    final created = RecurringTemplate(
+      id: 'template-created',
+      title: title,
+      kind: kind,
+      amount: amount,
+      currency: currency,
+      category: category,
+      frequency: frequency,
+      dayOfMonth: dayOfMonth,
+      startDate: startDate,
+      nextDueDate: startDate,
+      active: true,
+    );
+    _templates = [created, ..._templates];
+    return created;
   }
 
   @override
@@ -165,6 +203,26 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
   }
 }
 
+class _CreatedRecurring {
+  const _CreatedRecurring({
+    required this.title,
+    required this.kind,
+    required this.amount,
+    required this.category,
+    required this.currency,
+    required this.frequency,
+    required this.dayOfMonth,
+  });
+
+  final String title;
+  final String kind;
+  final double amount;
+  final String category;
+  final String currency;
+  final String frequency;
+  final int dayOfMonth;
+}
+
 RecurringOccurrence _defaultOccurrence() {
   return RecurringOccurrence(
     id: 'occ-rent',
@@ -233,6 +291,41 @@ void main() {
     expect(find.text('Currency'), findsOneWidget);
     expect(find.text('Frequency'), findsOneWidget);
     expect(find.text('Monthly'), findsOneWidget);
+    expect(find.text('Insurance'), findsOneWidget);
+  });
+
+  testWidgets('insurance preset creates a yearly payment rule', (tester) async {
+    final repository = _FakeRecurringRepository(occurrences: const []);
+    await tester.pumpWidget(
+      MaterialApp(home: RecurringPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add recurring'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Insurance'));
+    await tester.pumpAndSettle();
+
+    final fields = find.byType(TextField);
+    expect(
+      tester.widget<TextField>(fields.at(0)).controller?.text,
+      'Insurance premium',
+    );
+    expect(
+      tester.widget<TextField>(fields.at(3)).controller?.text,
+      'Insurance',
+    );
+
+    await tester.enterText(fields.at(1), '7200');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(repository.createdTemplate?.title, 'Insurance premium');
+    expect(repository.createdTemplate?.kind, 'expense');
+    expect(repository.createdTemplate?.category, 'Insurance');
+    expect(repository.createdTemplate?.frequency, 'yearly');
+    expect(repository.createdTemplate?.amount, 7200);
+    expect(find.text('Insurance premium'), findsOneWidget);
   });
 
   testWidgets('edits a saved recurring rule from the rules list', (

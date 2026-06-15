@@ -1439,8 +1439,8 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     def create_recurring(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         require_json(body, "title", "category", "frequency", "startDate")
         frequency = str(body["frequency"]).strip().lower()
-        if frequency not in {"daily", "weekly", "monthly"}:
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly or monthly"))
+        if frequency not in recurring_frequency_values():
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly, monthly, quarterly or yearly"))
         kind = str(body.get("kind") or "expense").strip().lower()
         if kind not in {"expense", "income"}:
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "kind must be expense or income"))
@@ -1463,7 +1463,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "frequency": frequency,
             "dayOfMonth": day_of_month,
             "startDate": start,
-            "nextDueDate": recurring_due_date_for_month(
+            "nextDueDate": recurring_next_due_date(
                 {"startDate": start, "dayOfMonth": day_of_month, "frequency": frequency},
                 max(current_month(), f"{start.year:04d}-{start.month:02d}"),
             ),
@@ -1634,12 +1634,15 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         return json_ready(summary)
 
     @app.get("/uploads/{path:path}")
-    def serve_upload(path: str) -> FileResponse:
-        full = (upload_dir / path).resolve()
-        if upload_dir.resolve() not in full.parents and full != upload_dir.resolve():
+    def serve_upload(path: str, user: dict[str, Any] = Depends(current_user)) -> FileResponse:
+        active_upload_dir = app.state.upload_dir.resolve()
+        full = (active_upload_dir / path).resolve()
+        if active_upload_dir not in full.parents and full != active_upload_dir:
             raise HTTPException(status_code=403, detail=api_error("FORBIDDEN", "invalid upload path"))
         if not full.exists():
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "upload not found"))
+        if not can_access_upload_path(app.state.db, path, user["uid"]):
+            raise HTTPException(status_code=403, detail=api_error("FORBIDDEN", "upload not available to this user"))
         return FileResponse(full)
 
     frontend_dist = Path(os.getenv("FRONTEND_DIST", str(ROOT.parent / "frontend" / "build" / "web")))
@@ -3040,8 +3043,8 @@ def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -
         updates["category"] = category
     if "frequency" in body:
         frequency = str(body.get("frequency") or "monthly").strip().lower()
-        if frequency not in {"daily", "weekly", "monthly"}:
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly or monthly"))
+        if frequency not in recurring_frequency_values():
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly, monthly, quarterly or yearly"))
         updates["frequency"] = frequency
     if "startDate" in body:
         updates["startDate"] = parse_dt(str(body.get("startDate") or ""))
@@ -3062,12 +3065,16 @@ def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -
     merged = {**existing, **updates}
     if any(field in updates for field in {"startDate", "dayOfMonth", "frequency", "active"}):
         start = aware(merged.get("startDate") or now())
-        updates["nextDueDate"] = recurring_due_date_for_month(
+        updates["nextDueDate"] = recurring_next_due_date(
             merged,
             max(current_month(), f"{start.year:04d}-{start.month:02d}"),
         )
     updates["updatedAt"] = now()
     return updates
+
+
+def recurring_frequency_values() -> set[str]:
+    return {"daily", "weekly", "monthly", "quarterly", "yearly"}
 
 
 def reconcile_recurring_template_occurrences(db: Any, uid: str, template: dict[str, Any] | None) -> None:
@@ -3138,6 +3145,20 @@ def recurring_due_dates_for_month(template: dict[str, Any], month: str) -> list[
             return []
         return [due_date]
 
+    if frequency in {"quarterly", "yearly"}:
+        year, month_number = [int(part) for part in month.split("-")]
+        month_delta = (
+            (year * 12 + (month_number - 1))
+            - (template_start.year * 12 + (template_start.month - 1))
+        )
+        interval_months = 3 if frequency == "quarterly" else 12
+        if month_delta < 0 or month_delta % interval_months != 0:
+            return []
+        due_date = recurring_due_date_for_month(template, month)
+        if due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
+            return []
+        return [due_date]
+
     if frequency not in {"daily", "weekly"}:
         return []
     interval = timedelta(days=1 if frequency == "daily" else 7)
@@ -3166,6 +3187,17 @@ def recurring_due_date_for_month(template: dict[str, Any], month: str) -> dateti
     last_day = calendar.monthrange(year, month_number)[1]
     day = int(template.get("dayOfMonth") or start.day)
     return datetime(year, month_number, min(day, last_day), tzinfo=UTC)
+
+
+def recurring_next_due_date(template: dict[str, Any], from_month: str) -> datetime:
+    period = normalize_month(from_month)
+    for offset in range(0, 25):
+        candidate_month = add_months(period, offset)
+        dates = recurring_due_dates_for_month(template, candidate_month)
+        if dates:
+            return dates[0]
+    start = aware(template.get("startDate") or now())
+    return next_due(start, str(template.get("frequency") or "monthly").lower())
 
 
 def ensure_recurring_occurrences(db: Any, uid: str, month: str) -> int:
@@ -4199,7 +4231,8 @@ def next_due(start: datetime, frequency: str) -> datetime:
         return start + timedelta(days=1)
     if frequency == "weekly":
         return start + timedelta(days=7)
-    month = start.month + 1
+    month_increment = 12 if frequency == "yearly" else 3 if frequency == "quarterly" else 1
+    month = start.month + month_increment
     year = start.year + (month - 1) // 12
     month = ((month - 1) % 12) + 1
     day = min(start.day, 28)
@@ -4220,9 +4253,22 @@ def upload_path_from_url(app: FastAPI, url: str) -> Path:
     if not url.startswith("/uploads/"):
         raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "unsupported attachment url"))
     full = (app.state.upload_dir / url.removeprefix("/uploads/")).resolve()
+    if app.state.upload_dir.resolve() not in full.parents and full != app.state.upload_dir.resolve():
+        raise HTTPException(status_code=403, detail=api_error("FORBIDDEN", "invalid upload path"))
     if not full.exists():
         raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "attachment not found"))
     return full
+
+
+def can_access_upload_path(db: Any, path: str, uid: str) -> bool:
+    parts = [part for part in Path(path).parts if part not in {"", "."}]
+    if len(parts) < 2:
+        return False
+    if parts[0] in {"users", "bills"}:
+        return parts[1] == uid
+    if parts[0] == "groups" and len(parts) >= 3:
+        return bool(db.groups.find_one({"id": parts[1], "memberUids": uid}))
+    return False
 
 
 async def run_bill_extraction(app: FastAPI, job_id: str) -> None:

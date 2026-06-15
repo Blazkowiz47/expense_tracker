@@ -1346,6 +1346,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
   Future<void> _openAttachmentPreview({
     required String title,
     required String url,
+    required String expenseId,
   }) async {
     await showDialog<void>(
       context: context,
@@ -1378,36 +1379,36 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               ),
               Flexible(
                 child: InteractiveViewer(
-                  child: Image.network(
-                    url,
-                    gaplessPlayback: true,
-                    webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) {
-                        return child;
+                  child: FutureBuilder<Uint8List>(
+                    future: widget.repository.fetchAttachmentPreviewBytes(
+                      groupId: widget.group.id,
+                      expenseId: expenseId,
+                      attachmentUrl: url,
+                    ),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return Center(
+                          child: Text(
+                            'Loading attachment...',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        );
                       }
-                      final expectedBytes = loadingProgress.expectedTotalBytes;
-                      final loadedBytes = loadingProgress.cumulativeBytesLoaded;
-                      final progress =
-                          expectedBytes == null || expectedBytes <= 0
-                          ? null
-                          : loadedBytes / expectedBytes;
-                      return Center(
-                        child: Text(
-                          progress == null
-                              ? 'Loading attachment...'
-                              : 'Loading ${(progress * 100).clamp(0, 100).toStringAsFixed(0)}%',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                      final bytes = snapshot.data;
+                      if (snapshot.hasError || bytes == null) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text('Failed to load attachment preview.'),
+                          ),
+                        );
+                      }
+                      return Image.memory(
+                        bytes,
+                        gaplessPlayback: true,
+                        fit: BoxFit.contain,
                       );
                     },
-                    errorBuilder: (context, error, stackTrace) => const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('Failed to load attachment preview.'),
-                      ),
-                    ),
                   ),
                 ),
               ),
@@ -2016,70 +2017,12 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                     );
                                   }
 
-                                  if (kIsWeb &&
-                                      previewable &&
-                                      previewUrl != null) {
-                                    return ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: SizedBox(
-                                        width: 100,
-                                        height: 140,
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            Container(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .surfaceContainerHighest,
-                                              alignment: Alignment.center,
-                                              child: const SizedBox(
-                                                width: 24,
-                                                height: 24,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2.2,
-                                                    ),
-                                              ),
-                                            ),
-                                            Image.network(
-                                              previewUrl,
-                                              key: ValueKey(
-                                                '$previewUrl|attachment-thumb-web',
-                                              ),
-                                              gaplessPlayback: true,
-                                              webHtmlElementStrategy:
-                                                  WebHtmlElementStrategy.prefer,
-                                              fit: BoxFit.cover,
-                                              errorBuilder:
-                                                  (
-                                                    context,
-                                                    error,
-                                                    stackTrace,
-                                                  ) => Container(
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .surfaceContainerHighest,
-                                                    alignment: Alignment.center,
-                                                    child: const Text(
-                                                      'Preview unavailable',
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                    ),
-                                                  ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  }
-
-                                  if (!kIsWeb &&
-                                      previewable &&
-                                      previewUrl != null) {
+                                  if (previewable && previewUrl != null) {
                                     return InkWell(
                                       onTap: () => _openAttachmentPreview(
                                         title: item.label,
                                         url: previewUrl,
+                                        expenseId: expenseId,
                                       ),
                                       borderRadius: BorderRadius.circular(8),
                                       child: Container(
@@ -2094,7 +2037,9 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                           ).colorScheme.surfaceContainerHighest,
                                         ),
                                         alignment: Alignment.center,
-                                        child: const Icon(Icons.zoom_in),
+                                        child: const Icon(
+                                          Icons.visibility_outlined,
+                                        ),
                                       ),
                                     );
                                   }
