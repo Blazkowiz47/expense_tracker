@@ -214,6 +214,8 @@ class _GroupsPageState extends State<GroupsPage> {
         name: created.name,
         groupType: created.type,
         members: created.members,
+        ownerRole: created.ownerRole,
+        memberRolesByContact: created.memberRolesByContact,
       );
       if (!mounted) return;
       await _loadGroups();
@@ -335,8 +337,16 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   late final ApiFriendsRepository _friendsRepository;
   final List<_DialogMember> _members = <_DialogMember>[];
   String? _memberError;
+  String _ownerRole = 'Member';
+  String _memberRole = 'Member';
   bool _resolvingMember = false;
   late GroupType _type;
+
+  bool get _isFamily => _type == GroupType.family;
+
+  bool _looksLikeEmail(String value) {
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim());
+  }
 
   @override
   void initState() {
@@ -369,6 +379,16 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
       _resolvingMember = true;
       _memberError = null;
     });
+    if (_isFamily && _looksLikeEmail(input)) {
+      setState(() {
+        _members.add(
+          _DialogMember(contact: input, label: input, role: _memberRole),
+        );
+        _memberInputController.clear();
+        _resolvingMember = false;
+      });
+      return;
+    }
     try {
       final resolved = await _friendsRepository.resolveFriend(input);
       if (!mounted) return;
@@ -377,7 +397,13 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
         return;
       }
       setState(() {
-        _members.add(_DialogMember(contact: input, label: resolved.label));
+        _members.add(
+          _DialogMember(
+            contact: input,
+            label: resolved.label,
+            role: _isFamily ? _memberRole : '',
+          ),
+        );
         _memberInputController.clear();
       });
     } catch (error) {
@@ -408,7 +434,18 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
     }
 
     final members = _members.map((m) => m.contact).toList(growable: false);
-    final input = _CreateGroupInput(name: name, type: _type, members: members);
+    final memberRolesByContact = <String, String>{
+      if (_isFamily)
+        for (final member in _members)
+          if (member.role.trim().isNotEmpty) member.contact: member.role.trim(),
+    };
+    final input = _CreateGroupInput(
+      name: name,
+      type: _type,
+      members: members,
+      ownerRole: _isFamily ? _ownerRole : '',
+      memberRolesByContact: memberRolesByContact,
+    );
     Navigator.of(context).pop(input);
   }
 
@@ -416,53 +453,101 @@ class _CreateGroupDialogState extends State<_CreateGroupDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(labelText: 'Group name'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _memberInputController,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _addMemberFromInput(),
-            decoration: InputDecoration(
-              labelText: 'Add members (email or phone)',
-              hintText: 'alice@example.com, +15551234567',
-              errorText: _memberError,
-              suffixIcon: _resolvingMember
-                  ? const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Group name'),
+            ),
+            if (_isFamily) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _ownerRole,
+                decoration: const InputDecoration(
+                  labelText: 'Your role',
+                  border: OutlineInputBorder(),
+                ),
+                items: familyRoleOptions
+                    .map(
+                      (role) =>
+                          DropdownMenuItem(value: role, child: Text(role)),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _ownerRole = value);
+                  }
+                },
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: _memberInputController,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _addMemberFromInput(),
+              decoration: InputDecoration(
+                labelText: 'Add members (email or phone)',
+                hintText: 'alice@example.com, +15551234567',
+                errorText: _memberError,
+                suffixIcon: _resolvingMember
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        onPressed: _addMemberFromInput,
+                        icon: const Icon(Icons.add),
+                      ),
+              ),
+            ),
+            if (_isFamily) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _memberRole,
+                decoration: const InputDecoration(
+                  labelText: 'Member role',
+                  border: OutlineInputBorder(),
+                ),
+                items: familyRoleOptions
+                    .map(
+                      (role) =>
+                          DropdownMenuItem(value: role, child: Text(role)),
+                    )
+                    .toList(growable: false),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _memberRole = value);
+                  }
+                },
+              ),
+            ],
+            if (_members.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _members
+                    .map(
+                      (member) => InputChip(
+                        label: Text(
+                          _isFamily && member.role.trim().isNotEmpty
+                              ? '${member.label} · ${member.role}'
+                              : member.label,
+                        ),
+                        onDeleted: () => _removeMember(member),
                       ),
                     )
-                  : IconButton(
-                      onPressed: _addMemberFromInput,
-                      icon: const Icon(Icons.add),
-                    ),
-            ),
-          ),
-          if (_members.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _members
-                  .map(
-                    (member) => InputChip(
-                      label: Text(member.label),
-                      onDeleted: () => _removeMember(member),
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
+                    .toList(growable: false),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1145,36 +1230,69 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   Future<void> _addMember() async {
     final controller = TextEditingController();
-    final contact = await showDialog<String>(
+    var role = 'Member';
+    final input = await showDialog<({String contact, String role})>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add member'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Email or phone',
-            hintText: 'friend@example.com or +15551234567',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add member'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Email or phone',
+                  hintText: 'friend@example.com or +15551234567',
+                ),
+              ),
+              if (widget.group.groupType == GroupType.family) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: role,
+                  decoration: const InputDecoration(
+                    labelText: 'Role',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: familyRoleOptions
+                      .map(
+                        (item) =>
+                            DropdownMenuItem(value: item, child: Text(item)),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => role = value);
+                    }
+                  },
+                ),
+              ],
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop((
+                contact: controller.text.trim(),
+                role: widget.group.groupType == GroupType.family ? role : '',
+              )),
+              child: const Text('Add'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Add'),
-          ),
-        ],
       ),
     );
-    if (contact == null || contact.isEmpty || !mounted) return;
+    if (input == null || input.contact.isEmpty || !mounted) return;
     setState(() => _busyAction = _GroupBusyAction.addingMember);
     try {
       final updated = await widget.repository.addMember(
         groupId: widget.group.id,
-        emailOrPhone: contact,
+        emailOrPhone: input.contact,
+        role: input.role,
       );
       if (!mounted) return;
       setState(() {
@@ -5173,16 +5291,25 @@ class _CreateGroupInput {
     required this.name,
     required this.type,
     required this.members,
+    this.ownerRole = '',
+    this.memberRolesByContact = const {},
   });
 
   final String name;
   final GroupType type;
   final List<String> members;
+  final String ownerRole;
+  final Map<String, String> memberRolesByContact;
 }
 
 class _DialogMember {
-  const _DialogMember({required this.contact, required this.label});
+  const _DialogMember({
+    required this.contact,
+    required this.label,
+    this.role = '',
+  });
 
   final String contact;
   final String label;
+  final String role;
 }

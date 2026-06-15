@@ -41,6 +41,15 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   final List<GroupSettlement> settlements = [];
   int fetchGroupCount = 0;
   ({
+    String name,
+    GroupType groupType,
+    List<String> members,
+    String ownerRole,
+    Map<String, String> memberRolesByContact,
+  })?
+  recordedCreateGroup;
+  ({String groupId, String emailOrPhone, String role})? recordedAddMember;
+  ({
     String groupId,
     String expenseId,
     List<String> targetCurrencies,
@@ -67,6 +76,29 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   }
 
   @override
+  Future<GroupSummary> createGroup({
+    required String name,
+    required GroupType groupType,
+    List<String> members = const [],
+    String ownerRole = '',
+    Map<String, String> memberRolesByContact = const {},
+  }) async {
+    recordedCreateGroup = (
+      name: name,
+      groupType: groupType,
+      members: members,
+      ownerRole: ownerRole,
+      memberRolesByContact: memberRolesByContact,
+    );
+    return GroupSummary(
+      id: 'created-group',
+      name: name,
+      groupType: groupType,
+      memberCount: members.length + 1,
+    );
+  }
+
+  @override
   Future<List<GroupMember>> getCachedMembers(String groupId) async => const [];
 
   @override
@@ -75,6 +107,28 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
 
   @override
   Future<List<GroupMember>> fetchMembers(String groupId) async => members;
+
+  @override
+  Future<GroupSummary> addMember({
+    required String groupId,
+    required String emailOrPhone,
+    String role = '',
+  }) async {
+    recordedAddMember = (
+      groupId: groupId,
+      emailOrPhone: emailOrPhone,
+      role: role,
+    );
+    final group = groups.first;
+    return GroupSummary(
+      id: group.id,
+      name: group.name,
+      groupType: group.groupType,
+      memberCount: members.length + 1,
+      pendingInviteCount: group.pendingInviteCount,
+      pendingInvites: group.pendingInvites,
+    );
+  }
 
   @override
   Future<List<GroupExpense>> fetchExpenses(String groupId) async =>
@@ -415,6 +469,50 @@ void main() {
     expect(find.text('Groceries'), findsWidgets);
   });
 
+  testWidgets('family create dialog sends roles for household invites', (
+    tester,
+  ) async {
+    final repository = _FakeGroupsRepository(const []);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GroupsPage(groupType: GroupType.family, repository: repository),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Create family group').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(_textFieldWithLabel('Group name'), 'Our household');
+    expect(_dropdownWithLabel('Your role'), findsOneWidget);
+    await tester.tap(_dropdownWithLabel('Member role'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Wife').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      _textFieldWithLabel('Add members (email or phone)'),
+      'spouse@example.com',
+    );
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    expect(find.text('spouse@example.com · Wife'), findsOneWidget);
+
+    await tester.tap(find.text('Create'));
+    await tester.pumpAndSettle();
+
+    expect(repository.recordedCreateGroup?.name, 'Our household');
+    expect(repository.recordedCreateGroup?.groupType, GroupType.family);
+    expect(repository.recordedCreateGroup?.members, ['spouse@example.com']);
+    expect(repository.recordedCreateGroup?.ownerRole, 'Member');
+    expect(repository.recordedCreateGroup?.memberRolesByContact, {
+      'spouse@example.com': 'Wife',
+    });
+  });
+
   testWidgets('family page surfaces pending household invites', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -539,6 +637,42 @@ void main() {
     expect(find.text('Scan bill'), findsOneWidget);
     expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
     expect(find.text('Monthly category'), findsOneWidget);
+  });
+
+  testWidgets('family add member dialog sends selected role', (tester) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final repository = _FakeGroupsRepository([familyGroup]);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: GroupDetailsPage(group: familyGroup, repository: repository),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Add member'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      _textFieldWithLabel('Email or phone'),
+      'brother@example.com',
+    );
+    await tester.tap(_dropdownWithLabel('Role'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Brother').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+
+    expect(repository.recordedAddMember?.groupId, familyGroup.id);
+    expect(repository.recordedAddMember?.emailOrPhone, 'brother@example.com');
+    expect(repository.recordedAddMember?.role, 'Brother');
   });
 
   testWidgets('group settle up dialog defaults to active balance currency', (
@@ -1080,6 +1214,14 @@ void main() {
 Finder _textFieldWithLabel(String label) {
   return find.byWidgetPredicate(
     (widget) => widget is TextField && widget.decoration?.labelText == label,
+  );
+}
+
+Finder _dropdownWithLabel(String label) {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is DropdownButtonFormField<String> &&
+        widget.decoration.labelText == label,
   );
 }
 
