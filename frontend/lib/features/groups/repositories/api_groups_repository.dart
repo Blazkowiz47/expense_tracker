@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/core/utils/backend_date_codec.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
@@ -293,7 +294,7 @@ class ApiGroupsRepository {
         'category': category,
         'attachments': attachments,
         if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
-        'date': date.toUtc().toIso8601String(),
+        'date': BackendDateCodec.encodeDate(date),
       },
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
@@ -331,7 +332,7 @@ class ApiGroupsRepository {
         'category': category,
         'attachments': attachments,
         if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
-        'date': date.toUtc().toIso8601String(),
+        'date': BackendDateCodec.encodeDate(date),
       },
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
@@ -380,6 +381,7 @@ class ApiGroupsRepository {
     required double amount,
     String currency = 'INR',
     String note = '',
+    DateTime? date,
   }) async {
     final response = await _request(
       method: 'POST',
@@ -390,6 +392,25 @@ class ApiGroupsRepository {
         'amount': amount,
         'currency': currency,
         'note': note,
+        if (date != null) 'date': BackendDateCodec.encodeDate(date),
+      },
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return GroupSettlement.fromJson(payload);
+  }
+
+  Future<GroupSettlement> updateSettlement({
+    required String groupId,
+    required String settlementId,
+    required DateTime date,
+    String? note,
+  }) async {
+    final response = await _request(
+      method: 'PUT',
+      path: '/api/v1/groups/$groupId/settlements/$settlementId',
+      body: <String, dynamic>{
+        'date': BackendDateCodec.encodeDate(date),
+        if (note != null) 'note': note,
       },
     );
     final payload = jsonDecode(response.body) as Map<String, dynamic>;

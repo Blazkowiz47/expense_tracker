@@ -1,20 +1,20 @@
-class GroupSettlement {
-  const GroupSettlement({
+class FriendSettlement {
+  const FriendSettlement({
     required this.id,
-    required this.groupId,
+    required this.uids,
     required this.payerUid,
     required this.receiverUid,
     required this.amount,
-    this.currency = 'INR',
-    this.note = '',
-    required this.createdBy,
+    required this.currency,
     required this.date,
     required this.createdAt,
+    this.note = '',
+    this.createdBy = '',
     this.updatedAt,
   });
 
   final String id;
-  final String groupId;
+  final List<String> uids;
   final String payerUid;
   final String receiverUid;
   final double amount;
@@ -25,10 +25,13 @@ class GroupSettlement {
   final DateTime createdAt;
   final DateTime? updatedAt;
 
-  factory GroupSettlement.fromJson(Map<String, dynamic> json) {
-    return GroupSettlement(
+  factory FriendSettlement.fromJson(Map<String, dynamic> json) {
+    return FriendSettlement(
       id: (json['id'] as String?) ?? '',
-      groupId: (json['groupId'] as String?) ?? '',
+      uids: (json['uids'] as List<dynamic>? ?? const [])
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false),
       payerUid: (json['payerUid'] as String?) ?? '',
       receiverUid: (json['receiverUid'] as String?) ?? '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0,

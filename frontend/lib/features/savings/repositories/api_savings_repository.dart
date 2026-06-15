@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/core/utils/backend_date_codec.dart';
 import 'package:expense_tracker/features/savings/models/savings_goal.dart';
 import 'package:http/http.dart' as http;
 
@@ -179,13 +180,40 @@ class ApiSavingsRepository {
         if (targetAmount != null) 'targetAmount': targetAmount,
         'feeAmount': feeAmount,
         if (feeCurrency != null) 'feeCurrency': feeCurrency,
-        'date': date.toUtc().toIso8601String(),
+        'date': BackendDateCodec.encodeDate(date),
         'notes': notes,
       }),
     );
     if (response.statusCode != 201) {
       throw Exception(
         'add savings contribution failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return SavingsContributionResult.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<SavingsContributionResult> updateContribution({
+    required String goalId,
+    required String contributionId,
+    required DateTime date,
+    String? notes,
+  }) async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/savings/goals/$goalId/contributions/$contributionId',
+    );
+    final response = await _client.put(
+      uri,
+      headers: await _headers(json: true),
+      body: jsonEncode(<String, dynamic>{
+        'date': BackendDateCodec.encodeDate(date),
+        if (notes != null) 'notes': notes,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'update savings contribution failed (${response.statusCode}): ${response.body}',
       );
     }
     return SavingsContributionResult.fromJson(
@@ -230,7 +258,7 @@ class ApiSavingsRepository {
       'accountName': accountName,
       'expectedReturnRate': expectedReturnRate,
       if (maturityDate != null)
-        'maturityDate': maturityDate.toUtc().toIso8601String(),
+        'maturityDate': BackendDateCodec.encodeDate(maturityDate),
       'notes': notes,
     };
   }

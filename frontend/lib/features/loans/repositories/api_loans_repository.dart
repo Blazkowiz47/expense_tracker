@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/core/utils/backend_date_codec.dart';
 import 'package:expense_tracker/features/loans/models/loan.dart';
 import 'package:http/http.dart' as http;
 
@@ -169,13 +170,40 @@ class ApiLoansRepository {
       body: jsonEncode(<String, dynamic>{
         'paymentType': paymentType,
         'amount': amount,
-        'date': date.toUtc().toIso8601String(),
+        'date': BackendDateCodec.encodeDate(date),
         'notes': notes,
       }),
     );
     if (response.statusCode != 201) {
       throw Exception(
         'log loan payment failed (${response.statusCode}): ${response.body}',
+      );
+    }
+    return LoanPaymentResult.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<LoanPaymentResult> updatePayment({
+    required String loanId,
+    required String paymentId,
+    required DateTime date,
+    String? notes,
+  }) async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/loans/$loanId/payments/$paymentId',
+    );
+    final response = await _client.put(
+      uri,
+      headers: await _headers(json: true),
+      body: jsonEncode(<String, dynamic>{
+        'date': BackendDateCodec.encodeDate(date),
+        if (notes != null) 'notes': notes,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(
+        'update loan payment failed (${response.statusCode}): ${response.body}',
       );
     }
     return LoanPaymentResult.fromJson(
@@ -224,8 +252,8 @@ class ApiLoansRepository {
       'totalEmis': totalEmis,
       'remainingEmis': totalEmis,
       'dueDay': dueDay,
-      'startDate': startDate.toUtc().toIso8601String(),
-      'trackingStartedAt': startDate.toUtc().toIso8601String(),
+      'startDate': BackendDateCodec.encodeDate(startDate),
+      'trackingStartedAt': BackendDateCodec.encodeDate(startDate),
       'category': category,
       'notes': notes,
     };

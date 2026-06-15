@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/core/utils/backend_date_codec.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:http/http.dart' as http;
 
@@ -45,7 +46,7 @@ class ExpenseRepository {
             'category': expense.category ?? 'Personal',
             'description': expense.description ?? expense.title,
             'paymentMethod': expense.paymentMethod ?? 'cash',
-            'date': expense.createdAt.toUtc().toIso8601String(),
+            'date': BackendDateCodec.encodeDate(expense.createdAt),
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )
@@ -82,7 +83,7 @@ class ExpenseRepository {
             'category': expense.category ?? 'Personal',
             'description': expense.description ?? expense.title,
             'paymentMethod': expense.paymentMethod ?? 'cash',
-            'date': expense.createdAt.toUtc().toIso8601String(),
+            'date': BackendDateCodec.encodeDate(expense.createdAt),
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )

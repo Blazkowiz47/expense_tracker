@@ -203,6 +203,17 @@ class _LoansPageState extends State<LoansPage> {
     );
   }
 
+  Future<void> _openPaymentHistory(Loan loan) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) =>
+          _LoanPaymentsDialog(loan: loan, repository: _repository),
+    );
+    if (changed == true) {
+      await _loadLoans(showLoading: false);
+    }
+  }
+
   Future<void> _archiveLoan(Loan loan) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -321,6 +332,7 @@ class _LoansPageState extends State<LoansPage> {
                       loan: loan,
                       busy: _busyLoanId == loan.id,
                       onLogPayment: () => _logPayment(loan),
+                      onViewPayments: () => _openPaymentHistory(loan),
                       onEdit: () => _openLoanDialog(loan: loan),
                       onArchive: () => _archiveLoan(loan),
                     ),
@@ -459,6 +471,7 @@ class _LoanCard extends StatelessWidget {
     required this.loan,
     required this.busy,
     required this.onLogPayment,
+    required this.onViewPayments,
     required this.onEdit,
     required this.onArchive,
   });
@@ -466,6 +479,7 @@ class _LoanCard extends StatelessWidget {
   final Loan loan;
   final bool busy;
   final VoidCallback onLogPayment;
+  final VoidCallback onViewPayments;
   final VoidCallback onEdit;
   final VoidCallback onArchive;
 
@@ -564,14 +578,20 @@ class _LoanCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               FilledButton.icon(
                 onPressed: busy ? null : onLogPayment,
                 icon: const Icon(Icons.receipt_long_outlined),
                 label: const Text('Log EMI'),
               ),
-              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: busy ? null : onViewPayments,
+                icon: const Icon(Icons.history_outlined),
+                label: const Text('History'),
+              ),
               TextButton.icon(
                 onPressed: busy ? null : onEdit,
                 icon: const Icon(Icons.edit_outlined),
@@ -612,6 +632,166 @@ class _LoanActionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
+    );
+  }
+}
+
+class _LoanPaymentsDialog extends StatefulWidget {
+  const _LoanPaymentsDialog({required this.loan, required this.repository});
+
+  final Loan loan;
+  final ApiLoansRepository repository;
+
+  @override
+  State<_LoanPaymentsDialog> createState() => _LoanPaymentsDialogState();
+}
+
+class _LoanPaymentsDialogState extends State<_LoanPaymentsDialog> {
+  var _payments = <LoanPayment>[];
+  var _loading = true;
+  String? _busyPaymentId;
+  String? _error;
+  var _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPayments();
+  }
+
+  Future<void> _loadPayments({bool showLoading = true}) async {
+    setState(() {
+      _loading = showLoading;
+      _error = null;
+    });
+    try {
+      final payments = await widget.repository.fetchPayments(widget.loan.id);
+      if (!mounted) return;
+      setState(() {
+        _payments = payments;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _changeDate(LoanPayment payment) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: payment.date,
+      firstDate: DateTime(1990),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() {
+      _busyPaymentId = payment.id;
+      _error = null;
+    });
+    try {
+      await widget.repository.updatePayment(
+        loanId: widget.loan.id,
+        paymentId: payment.id,
+        date: picked,
+        notes: payment.notes,
+      );
+      if (!mounted) return;
+      _changed = true;
+      await _loadPayments(showLoading: false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _busyPaymentId = null);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${widget.loan.name} payments'),
+      content: SizedBox(
+        width: 520,
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_error != null) ...[
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_payments.isEmpty)
+                    const Text('No payments logged yet.')
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 360),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _payments.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final payment = _payments[index];
+                          final busy = _busyPaymentId == payment.id;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              payment.isEmi
+                                  ? Icons.event_repeat
+                                  : Icons.savings_outlined,
+                            ),
+                            title: Text(
+                              AppMoney.formatCurrency(
+                                payment.amount,
+                                payment.currency,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${payment.isEmi ? 'EMI' : 'Prepayment'} · ${DateFormatter.formatDate(payment.date)}',
+                            ),
+                            trailing: busy
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : IconButton(
+                                    tooltip: 'Change date',
+                                    onPressed: () => _changeDate(payment),
+                                    icon: const Icon(
+                                      Icons.calendar_today_outlined,
+                                    ),
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_changed),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }

@@ -12,14 +12,22 @@ class _FakeLoansRepository extends ApiLoansRepository {
       super(client: MockClient((_) async => http.Response('{}', 200)));
 
   var _loans = <Loan>[];
+  var _payments = <LoanPayment>[];
   _CreatedLoan? createdLoan;
   String? loggedLoanId;
   String? loggedPaymentType;
   double? loggedAmount;
+  String? updatedPaymentId;
+  DateTime? updatedPaymentDate;
 
   @override
   Future<List<Loan>> fetchLoans({bool includeArchived = false}) async {
     return _loans.where((loan) => includeArchived || !loan.archived).toList();
+  }
+
+  @override
+  Future<List<LoanPayment>> fetchPayments(String loanId) async {
+    return _payments.where((payment) => payment.loanId == loanId).toList();
   }
 
   @override
@@ -97,22 +105,64 @@ class _FakeLoansRepository extends ApiLoansRepository {
     _loans = _loans
         .map((loan) => loan.id == loanId ? updated : loan)
         .toList(growable: false);
+    final payment = LoanPayment(
+      id: 'payment-${_payments.length + 1}',
+      loanId: loanId,
+      paymentType: paymentType,
+      period: '${date.year}-${date.month.toString().padLeft(2, '0')}',
+      amount: amount,
+      currency: existing.currency,
+      date: date,
+      expenseId: 'expense-${_payments.length + 1}',
+      notes: notes,
+      createdAt: date,
+      updatedAt: date,
+    );
+    _payments = [payment, ..._payments];
     return LoanPaymentResult(
       loan: updated,
-      payment: LoanPayment(
-        id: 'payment-1',
-        loanId: loanId,
-        paymentType: paymentType,
-        period: '${date.year}-${date.month.toString().padLeft(2, '0')}',
-        amount: amount,
-        currency: existing.currency,
-        date: date,
-        expenseId: 'expense-1',
-        notes: notes,
-        createdAt: date,
-        updatedAt: date,
-      ),
-      expense: const <String, dynamic>{'id': 'expense-1'},
+      payment: payment,
+      expense: <String, dynamic>{'id': payment.expenseId},
+    );
+  }
+
+  @override
+  Future<LoanPaymentResult> updatePayment({
+    required String loanId,
+    required String paymentId,
+    required DateTime date,
+    String? notes,
+  }) async {
+    updatedPaymentId = paymentId;
+    updatedPaymentDate = date;
+    final existingLoan = _loans.firstWhere((loan) => loan.id == loanId);
+    final existingPayment = _payments.firstWhere(
+      (payment) => payment.id == paymentId,
+    );
+    final updatedPayment = LoanPayment(
+      id: existingPayment.id,
+      loanId: existingPayment.loanId,
+      paymentType: existingPayment.paymentType,
+      period: '${date.year}-${date.month.toString().padLeft(2, '0')}',
+      amount: existingPayment.amount,
+      currency: existingPayment.currency,
+      date: date,
+      expenseId: existingPayment.expenseId,
+      notes: notes ?? existingPayment.notes,
+      createdAt: existingPayment.createdAt,
+      updatedAt: date,
+    );
+    _payments = _payments
+        .map((payment) => payment.id == paymentId ? updatedPayment : payment)
+        .toList(growable: false);
+    final updatedLoan = existingLoan.copyWith(lastPaymentAt: date);
+    _loans = _loans
+        .map((loan) => loan.id == loanId ? updatedLoan : loan)
+        .toList(growable: false);
+    return LoanPaymentResult(
+      loan: updatedLoan,
+      payment: updatedPayment,
+      expense: <String, dynamic>{'id': updatedPayment.expenseId},
     );
   }
 }
@@ -252,5 +302,40 @@ void main() {
     expect(repository.loggedAmount, 5000);
     expect(find.textContaining('Progress: 1/12'), findsOneWidget);
     expect(find.text('EMI logged as expense.'), findsOneWidget);
+  });
+
+  testWidgets('loan payment history allows correcting the paid date', (
+    tester,
+  ) async {
+    final repository = _FakeLoansRepository(loans: [_loan()]);
+    await tester.pumpWidget(
+      MaterialApp(home: LoansPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Log EMI'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+
+    final historyButton = find.widgetWithText(OutlinedButton, 'History');
+    await tester.ensureVisible(historyButton);
+    await tester.tap(historyButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Car loan payments'), findsOneWidget);
+    expect(find.textContaining('EMI ·'), findsOneWidget);
+    expect(find.byTooltip('Change date'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Change date'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    expect(repository.updatedPaymentId, 'payment-1');
+    expect(repository.updatedPaymentDate, isNotNull);
   });
 }

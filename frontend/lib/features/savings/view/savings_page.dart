@@ -200,6 +200,17 @@ class _SavingsPageState extends State<SavingsPage> {
     );
   }
 
+  Future<void> _openContributionHistory(SavingsGoal goal) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) =>
+          _SavingsContributionsDialog(goal: goal, repository: _repository),
+    );
+    if (changed == true) {
+      await _loadGoals(showLoading: false);
+    }
+  }
+
   Future<void> _archiveGoal(SavingsGoal goal) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -318,6 +329,7 @@ class _SavingsPageState extends State<SavingsPage> {
                       goal: goal,
                       busy: _busyGoalId == goal.id,
                       onLogContribution: () => _logContribution(goal),
+                      onViewContributions: () => _openContributionHistory(goal),
                       onEdit: () => _openGoalDialog(goal: goal),
                       onArchive: () => _archiveGoal(goal),
                     ),
@@ -456,6 +468,7 @@ class _SavingsGoalCard extends StatelessWidget {
     required this.goal,
     required this.busy,
     required this.onLogContribution,
+    required this.onViewContributions,
     required this.onEdit,
     required this.onArchive,
   });
@@ -463,6 +476,7 @@ class _SavingsGoalCard extends StatelessWidget {
   final SavingsGoal goal;
   final bool busy;
   final VoidCallback onLogContribution;
+  final VoidCallback onViewContributions;
   final VoidCallback onEdit;
   final VoidCallback onArchive;
 
@@ -599,14 +613,20 @@ class _SavingsGoalCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 14),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               FilledButton.icon(
                 onPressed: busy ? null : onLogContribution,
                 icon: const Icon(Icons.add_card_outlined),
                 label: const Text('Log saving'),
               ),
-              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: busy ? null : onViewContributions,
+                icon: const Icon(Icons.history_outlined),
+                label: const Text('History'),
+              ),
               TextButton.icon(
                 onPressed: busy ? null : onEdit,
                 icon: const Icon(Icons.edit_outlined),
@@ -647,6 +667,169 @@ class _SavingsActionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
+    );
+  }
+}
+
+class _SavingsContributionsDialog extends StatefulWidget {
+  const _SavingsContributionsDialog({
+    required this.goal,
+    required this.repository,
+  });
+
+  final SavingsGoal goal;
+  final ApiSavingsRepository repository;
+
+  @override
+  State<_SavingsContributionsDialog> createState() =>
+      _SavingsContributionsDialogState();
+}
+
+class _SavingsContributionsDialogState
+    extends State<_SavingsContributionsDialog> {
+  var _contributions = <SavingsContribution>[];
+  var _loading = true;
+  String? _busyContributionId;
+  String? _error;
+  var _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadContributions();
+  }
+
+  Future<void> _loadContributions({bool showLoading = true}) async {
+    setState(() {
+      _loading = showLoading;
+      _error = null;
+    });
+    try {
+      final contributions = await widget.repository.fetchContributions(
+        widget.goal.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _contributions = contributions;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _changeDate(SavingsContribution contribution) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: contribution.date,
+      firstDate: DateTime(1990),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() {
+      _busyContributionId = contribution.id;
+      _error = null;
+    });
+    try {
+      await widget.repository.updateContribution(
+        goalId: widget.goal.id,
+        contributionId: contribution.id,
+        date: picked,
+        notes: contribution.notes,
+      );
+      if (!mounted) return;
+      _changed = true;
+      await _loadContributions(showLoading: false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _busyContributionId = null);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${widget.goal.name} history'),
+      content: SizedBox(
+        width: 540,
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_error != null) ...[
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_contributions.isEmpty)
+                    const Text('No savings logged yet.')
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 360),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _contributions.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final contribution = _contributions[index];
+                          final busy = _busyContributionId == contribution.id;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.savings_outlined),
+                            title: Text(
+                              AppMoney.formatCurrency(
+                                contribution.targetAmount,
+                                contribution.targetCurrency,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${AppMoney.formatCurrency(contribution.sourceAmount, contribution.sourceCurrency)} sent · ${DateFormatter.formatDate(contribution.date)}',
+                            ),
+                            trailing: busy
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : IconButton(
+                                    tooltip: 'Change date',
+                                    onPressed: () => _changeDate(contribution),
+                                    icon: const Icon(
+                                      Icons.calendar_today_outlined,
+                                    ),
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(_changed),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }

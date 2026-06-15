@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/core/utils/backend_date_codec.dart';
 import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
 import 'package:http/http.dart' as http;
 
@@ -66,7 +67,7 @@ class ApiRecurringRepository {
         'category': category,
         'frequency': frequency,
         'dayOfMonth': dayOfMonth,
-        'startDate': startDate.toUtc().toIso8601String(),
+        'startDate': BackendDateCodec.encodeDate(startDate),
       }),
     );
     if (response.statusCode != 201) {
@@ -99,7 +100,8 @@ class ApiRecurringRepository {
         'category': category,
         'frequency': frequency,
         'dayOfMonth': dayOfMonth,
-        if (startDate != null) 'startDate': startDate.toUtc().toIso8601String(),
+        if (startDate != null)
+          'startDate': BackendDateCodec.encodeDate(startDate),
       },
     );
   }
@@ -208,7 +210,7 @@ class ApiRecurringRepository {
       },
       body: jsonEncode(<String, dynamic>{
         'actualAmount': actualAmount,
-        'actualDate': actualDate.toUtc().toIso8601String(),
+        'actualDate': BackendDateCodec.encodeDate(actualDate),
       }),
     );
     if (response.statusCode != 200) {

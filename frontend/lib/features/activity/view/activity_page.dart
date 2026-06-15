@@ -1243,7 +1243,7 @@ class _ActivityTimelineEntry {
         : receiver == 'You'
         ? '$payer paid you'
         : '$payer paid $receiver';
-    final date = _timelineDate(settlement.createdAt);
+    final date = _timelineDate(settlement.date);
     final groupLabel = group == null
         ? 'Friend settlement'
         : '${_groupKindLabel(group)} · ${group.name}';
@@ -1254,7 +1254,7 @@ class _ActivityTimelineEntry {
         settlement.amount,
         settlement.currency,
       ),
-      date: settlement.createdAt,
+      date: settlement.date,
       icon: group == null ? Icons.handshake_outlined : Icons.payments_outlined,
       filterCategory: 'Settlement',
       filterCurrencies: [settlement.currency],

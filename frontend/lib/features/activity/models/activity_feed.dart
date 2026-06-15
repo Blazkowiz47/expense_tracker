@@ -153,7 +153,9 @@ class ActivitySettlement {
     required this.receiverUid,
     required this.amount,
     required this.currency,
+    required this.date,
     required this.createdAt,
+    this.updatedAt,
     this.groupId = '',
     this.note = '',
   });
@@ -165,7 +167,9 @@ class ActivitySettlement {
   final double amount;
   final String currency;
   final String note;
+  final DateTime date;
   final DateTime createdAt;
+  final DateTime? updatedAt;
 
   factory ActivitySettlement.fromJson(Map<String, dynamic> json) {
     return ActivitySettlement(
@@ -176,9 +180,16 @@ class ActivitySettlement {
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       currency: _normalizeCurrency(json['currency']),
       note: (json['note'] as String?) ?? '',
+      date:
+          DateTime.tryParse((json['date'] as String?) ?? '')?.toUtc() ??
+          DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toUtc() ??
+          DateTime.now().toUtc(),
       createdAt:
           DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toUtc() ??
           DateTime.now().toUtc(),
+      updatedAt: DateTime.tryParse(
+        (json['updatedAt'] as String?) ?? '',
+      )?.toUtc(),
     );
   }
 }

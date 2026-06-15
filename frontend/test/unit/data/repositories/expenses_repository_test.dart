@@ -114,10 +114,7 @@ void main() {
     expect(payload['category'], 'Personal');
     expect(payload['description'], 'Lunch');
     expect(payload['paymentMethod'], 'cash');
-    expect(
-      payload['date'],
-      DateTime(2026, 2, 25, 12, 30).toUtc().toIso8601String(),
-    );
+    expect(payload['date'], '2026-02-25T12:30:00.000Z');
   });
 
   test('updateExpense sends PUT and replaces cached expense', () async {
@@ -171,10 +168,7 @@ void main() {
     expect(payload['category'], 'Food');
     expect(payload['description'], 'Updated\nDinner notes');
     expect(payload['paymentMethod'], 'card');
-    expect(
-      payload['date'],
-      DateTime(2026, 2, 25, 12, 30).toUtc().toIso8601String(),
-    );
+    expect(payload['date'], '2026-02-25T12:30:00.000Z');
   });
 
   test('deleteExpense sends DELETE and removes local cache entry', () async {

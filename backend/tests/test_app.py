@@ -438,6 +438,7 @@ def test_activity_feed_includes_settlements_and_recurring_confirmations(tmp_path
             "direction": "paid",
             "amount": 25,
             "currency": "USD",
+            "date": "2026-05-29T08:00:00Z",
         },
     )
     assert friend_settlement.status_code == 201, friend_settlement.text
@@ -457,6 +458,7 @@ def test_activity_feed_includes_settlements_and_recurring_confirmations(tmp_path
             "direction": "paid",
             "amount": 50,
             "currency": "INR",
+            "date": "2026-05-28T08:00:00Z",
         },
     )
     assert group_settlement.status_code == 201, group_settlement.text
@@ -503,12 +505,15 @@ def test_activity_feed_includes_settlements_and_recurring_confirmations(tmp_path
     assert friend_entry["viewerUid"] == alice_uid
     assert friend_entry["payer"]["uid"] == alice_uid
     assert friend_entry["receiver"]["uid"] == bob_uid
+    assert friend_entry["date"] == "2026-05-29T08:00:00Z"
     assert friend_entry["settlement"]["currency"] == "USD"
+    assert friend_entry["settlement"]["date"] == "2026-05-29T08:00:00Z"
 
     group_entry = next(entry for entry in entries if entry["kind"] == "groupSettlement")
     assert group_entry["group"]["name"] == "Household"
     assert group_entry["payer"]["uid"] == bob_uid
     assert group_entry["receiver"]["uid"] == alice_uid
+    assert group_entry["date"] == "2026-05-28T08:00:00Z"
     assert group_entry["settlement"]["amount"] == 50
 
     recurring_entry = next(entry for entry in entries if entry["kind"] == "recurringConfirmation")
@@ -598,11 +603,13 @@ def test_bill_upload_extraction_and_create_expense(tmp_path):
     assert job.status_code == 200
     assert job.json()["status"] == "completed"
     assert job.json()["result"]["merchant"] == "Cafe Oslo"
+    assert job.json()["result"]["date"] == "2026-05-30T10:00:00Z"
 
     expense = client.post(f"/api/v1/bills/{job_id}/create-expense", headers=headers)
     assert expense.status_code == 201
     assert expense.json()["description"] == "Cafe Oslo"
     assert expense.json()["amount"] == 42.5
+    assert expense.json()["date"] == "2026-05-30T10:00:00Z"
     items = client.get("/api/v1/receipt-items?q=milk", headers=headers)
     assert items.status_code == 200, items.text
     assert items.json()["items"][0]["normalizedName"] == "milk"
@@ -1136,12 +1143,30 @@ def test_loan_emi_logging_creates_or_updates_expense(tmp_path):
     assert updated_payload["loan"]["paidEmiCount"] == 1
     assert updated_payload["loan"]["totalPaidAmount"] == 5500
 
+    moved = client.put(
+        f"/api/v1/loans/{loan_id}/payments/{payload['payment']['id']}",
+        headers=headers,
+        json={"date": "2026-07-02T12:00:00Z"},
+    )
+    assert moved.status_code == 200, moved.text
+    moved_payload = moved.json()
+    assert moved_payload["payment"]["id"] == payload["payment"]["id"]
+    assert moved_payload["payment"]["date"] == "2026-07-02T12:00:00Z"
+    assert moved_payload["payment"]["period"] == "2026-07"
+    assert moved_payload["expense"]["id"] == expense_id
+    assert moved_payload["expense"]["date"] == "2026-07-02T12:00:00Z"
+    assert moved_payload["expense"]["sourcePeriod"] == "2026-07"
+    assert moved_payload["expense"]["amount"] == 5500
+    assert moved_payload["loan"]["paidEmiCount"] == 1
+    assert moved_payload["loan"]["totalPaidAmount"] == 5500
+
     expenses = client.get("/api/v1/expenses?category=Loans%20/%20EMI", headers=headers)
     assert expenses.status_code == 200, expenses.text
     loan_expenses = expenses.json()["expenses"]
     assert len(loan_expenses) == 1
     assert loan_expenses[0]["id"] == expense_id
     assert loan_expenses[0]["amount"] == 5500
+    assert loan_expenses[0]["date"] == "2026-07-02T12:00:00Z"
 
     direct_edit = client.put(
         f"/api/v1/expenses/{expense_id}",
@@ -1151,7 +1176,7 @@ def test_loan_emi_logging_creates_or_updates_expense(tmp_path):
             "currency": "INR",
             "category": "Other",
             "description": "manual edit",
-            "date": "2026-06-20T10:00:00Z",
+            "date": "2026-07-02T12:00:00Z",
         },
     )
     assert direct_edit.status_code == 409, direct_edit.text
@@ -1167,7 +1192,7 @@ def test_loan_emi_logging_creates_or_updates_expense(tmp_path):
         json={"name": "Home loan revised"},
     )
     assert edited_loan.status_code == 200, edited_loan.text
-    assert edited_loan.json()["lastPaymentAt"] == updated_payload["payment"]["date"]
+    assert edited_loan.json()["lastPaymentAt"] == moved_payload["payment"]["date"]
 
 
 def test_existing_loan_snapshot_starts_from_current_balance(tmp_path):
@@ -1329,6 +1354,22 @@ def test_savings_goal_contribution_uses_fx_snapshot(tmp_path):
     )
     assert contributions.status_code == 200, contributions.text
     assert len(contributions.json()["contributions"]) == 1
+
+    moved = client.put(
+        f"/api/v1/savings/goals/{goal_id}/contributions/{contribution['id']}",
+        headers=headers,
+        json={"date": "2026-07-01T09:00:00Z", "notes": "Corrected date"},
+    )
+    assert moved.status_code == 200, moved.text
+    moved_payload = moved.json()
+    moved_contribution = moved_payload["contribution"]
+    assert moved_contribution["id"] == contribution["id"]
+    assert moved_contribution["date"] == "2026-07-01T09:00:00Z"
+    assert moved_contribution["notes"] == "Corrected date"
+    assert moved_contribution["exchangeRate"] == 8.5
+    assert moved_contribution["exchangeRateAsOf"] == "2026-06-15T00:00:00Z"
+    assert moved_payload["goal"]["totalSavedAmount"] == 8500
+    assert moved_payload["goal"]["lastContributionAt"] == "2026-07-01T09:00:00Z"
 
 
 def test_family_visible_savings_are_filtered_for_household_members(tmp_path):
@@ -1886,9 +1927,31 @@ def test_friend_settlement_is_visible_to_both_users(tmp_path):
     settlement = client.post(
         "/api/v1/friends/settlements",
         headers=headers_a,
-        json={"friendUid": added.json()["uid"], "direction": "paid", "amount": 120, "currency": "USD"},
+        json={
+            "friendUid": added.json()["uid"],
+            "direction": "paid",
+            "amount": 120,
+            "currency": "USD",
+            "date": "2026-06-05T08:00:00Z",
+        },
     )
     assert settlement.status_code == 201, settlement.text
+    assert settlement.json()["date"] == "2026-06-05T08:00:00Z"
+    edited = client.put(
+        f"/api/v1/friends/settlements/{settlement.json()['id']}",
+        headers=headers_a,
+        json={"date": "2026-06-06T08:00:00Z"},
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["date"] == "2026-06-06T08:00:00Z"
+    assert edited.json()["amount"] == 120
+    history = client.get(
+        f"/api/v1/friends/settlements?friendUid={added.json()['uid']}",
+        headers=headers_a,
+    )
+    assert history.status_code == 200, history.text
+    assert history.json()["settlements"][0]["id"] == settlement.json()["id"]
+    assert history.json()["settlements"][0]["date"] == "2026-06-06T08:00:00Z"
     settlement_nok = client.post(
         "/api/v1/friends/settlements",
         headers=headers_a,
@@ -2044,16 +2107,28 @@ def test_group_settlement_is_shared_and_updates_group_balances(tmp_path):
             "direction": "paid",
             "amount": 50,
             "currency": "INR",
+            "date": "2026-06-05T08:00:00Z",
         },
     )
     assert settlement.status_code == 201, settlement.text
     payload = settlement.json()
     assert payload["payerUid"] == bob_uid
     assert payload["receiverUid"] == alice_uid
+    assert payload["date"] == "2026-06-05T08:00:00Z"
+
+    edited = client.put(
+        f"/api/v1/groups/{group_id}/settlements/{payload['id']}",
+        headers=headers_a,
+        json={"date": "2026-06-06T08:00:00Z"},
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["date"] == "2026-06-06T08:00:00Z"
+    assert edited.json()["amount"] == 50
 
     history = client.get(f"/api/v1/groups/{group_id}/settlements", headers=headers_a)
     assert history.status_code == 200, history.text
     assert history.json()["settlements"][0]["id"] == payload["id"]
+    assert history.json()["settlements"][0]["date"] == "2026-06-06T08:00:00Z"
 
     groups = client.get("/api/v1/groups", headers=headers_a)
     balances = groups.json()["groups"][0]["displayData"]["memberBalances"]

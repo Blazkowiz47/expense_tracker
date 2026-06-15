@@ -68,6 +68,8 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
     String currency,
   })?
   recordedGroupSettlement;
+  String? updatedGroupSettlementId;
+  DateTime? updatedGroupSettlementDate;
 
   @override
   Future<List<GroupSummary>> getCachedGroups() async => const [];
@@ -220,6 +222,7 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
     required double amount,
     String currency = 'INR',
     String note = '',
+    DateTime? date,
   }) async {
     recordedGroupSettlement = (
       groupId: groupId,
@@ -236,10 +239,41 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
       amount: amount,
       currency: currency,
       createdBy: 'member-1',
+      date: date ?? DateTime(2026, 6, 7),
       createdAt: DateTime(2026, 6, 7),
     );
     settlements.insert(0, settlement);
     return settlement;
+  }
+
+  @override
+  Future<GroupSettlement> updateSettlement({
+    required String groupId,
+    required String settlementId,
+    required DateTime date,
+    String? note,
+  }) async {
+    updatedGroupSettlementId = settlementId;
+    updatedGroupSettlementDate = date;
+    final index = settlements.indexWhere(
+      (settlement) => settlement.id == settlementId,
+    );
+    final existing = settlements[index];
+    final updated = GroupSettlement(
+      id: existing.id,
+      groupId: existing.groupId,
+      payerUid: existing.payerUid,
+      receiverUid: existing.receiverUid,
+      amount: existing.amount,
+      currency: existing.currency,
+      note: note ?? existing.note,
+      createdBy: existing.createdBy,
+      date: date,
+      createdAt: existing.createdAt,
+      updatedAt: date,
+    );
+    settlements[index] = updated;
+    return updated;
   }
 }
 
@@ -806,6 +840,83 @@ void main() {
     expect(repository.recordedGroupSettlement?.amount, 650);
     expect(repository.recordedGroupSettlement?.currency, 'NOK');
     expect(find.text('Nisha paid Sushrut'), findsOneWidget);
+  });
+
+  testWidgets('group settlement history allows correcting paid date', (
+    tester,
+  ) async {
+    final authCubit = AuthCubit(
+      repository: _FakeAuthRepository(),
+      userProfileRepository: _FakeUserProfileRepository(),
+    );
+    addTearDown(authCubit.close);
+    final members = const [
+      GroupMember(
+        uid: 'member-1',
+        displayName: 'Nisha',
+        email: 'nisha@example.com',
+        phone: '',
+        role: 'Wife',
+      ),
+      GroupMember(
+        uid: 'member-2',
+        displayName: 'Sushrut',
+        email: 'sushrut@example.com',
+        phone: '',
+        role: 'Husband',
+      ),
+    ];
+    final repository =
+        _FakeGroupsRepository(
+            [familyGroup],
+            members: members,
+            expenses: const [],
+          )
+          ..settlements.add(
+            GroupSettlement(
+              id: 'settlement-1',
+              groupId: familyGroup.id,
+              payerUid: 'member-2',
+              receiverUid: 'member-1',
+              amount: 600,
+              currency: 'INR',
+              createdBy: 'member-2',
+              date: DateTime(2026, 6, 5),
+              createdAt: DateTime(2026, 6, 7),
+            ),
+          );
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: authCubit,
+        child: MaterialApp(
+          home: GroupSettingsPage(
+            repository: repository,
+            groupId: familyGroup.id,
+            groupName: familyGroup.name,
+            members: members,
+            expenses: const [],
+            simplifyBalances: true,
+            memberCountFallback: members.length,
+            autoRefresh: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Settlement history'), findsOneWidget);
+    expect(find.text('Paid on 05/06/2026'), findsOneWidget);
+    expect(find.byTooltip('Change date'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Change date'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    expect(repository.updatedGroupSettlementId, 'settlement-1');
+    expect(repository.updatedGroupSettlementDate, isNotNull);
   });
 
   testWidgets('family page opens grocery expense form from household card', (

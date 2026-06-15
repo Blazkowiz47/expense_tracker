@@ -2468,6 +2468,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                                 billResult!.merchant.trim(),
                               if (billResult!.amount > 0)
                                 '${billResult!.currency} ${billResult!.amount.toStringAsFixed(2)}',
+                              DateFormatter.formatDate(billResult!.date),
                               billResult!.category,
                             ].where((item) => item.trim().isNotEmpty).join(' · '),
                             style: Theme.of(context).textTheme.bodySmall,
@@ -3325,6 +3326,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   bool _loadedSettings = false;
   String? _settlingMemberUid;
   String? _updatingRoleUid;
+  String? _updatingSettlementId;
   List<GroupSettlement> _settlements = const [];
   Map<String, Map<String, double>> _settlementNetByCurrency = const {};
   DateTime? _settingsFreshnessCursor;
@@ -3466,6 +3468,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     final formKey = GlobalKey<FormState>();
     var direction = 'paid';
     var currency = _preferredSettlementCurrency(member);
+    var date = DateTime.now();
     final currencyOptions = _settlementCurrencyOptions();
     return showDialog<_GroupSettleUpInput>(
       context: context,
@@ -3529,6 +3532,22 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: date,
+                      firstDate: DateTime(1990),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setDialogState(() => date = picked);
+                    }
+                  },
+                  icon: const Icon(Icons.calendar_today_outlined),
+                  label: Text(DateFormatter.formatDate(date)),
+                ),
               ],
             ),
           ),
@@ -3546,6 +3565,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                     amount: amount,
                     direction: direction,
                     currency: currency,
+                    date: date,
                   ),
                 );
               },
@@ -3568,6 +3588,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         direction: input.direction,
         amount: input.amount,
         currency: input.currency,
+        date: input.date,
       );
       await _loadSettlementBalances();
       if (!mounted) return;
@@ -3586,6 +3607,39 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     } finally {
       if (mounted) {
         setState(() => _settlingMemberUid = null);
+      }
+    }
+  }
+
+  Future<void> _changeSettlementDate(GroupSettlement settlement) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: settlement.date,
+      firstDate: DateTime(1990),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() => _updatingSettlementId = settlement.id);
+    try {
+      await widget.repository.updateSettlement(
+        groupId: widget.groupId,
+        settlementId: settlement.id,
+        date: picked,
+        note: settlement.note,
+      );
+      await _loadSettlementBalances();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Settlement date updated.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _updatingSettlementId = null);
       }
     }
   }
@@ -3866,25 +3920,42 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
               ),
             )
           else
-            ..._settlements
-                .take(6)
-                .map(
-                  (settlement) => AppCard(
-                    child: ListTile(
-                      leading: const AppAvatar(icon: Icons.handshake_outlined),
-                      title: Text(_settlementSummary(settlement)),
-                      subtitle: Text(
-                        DateFormatter.formatDate(settlement.createdAt),
-                      ),
-                      trailing: Text(
+            ..._settlements.map((settlement) {
+              final busy = _updatingSettlementId == settlement.id;
+              return AppCard(
+                child: ListTile(
+                  leading: const AppAvatar(icon: Icons.handshake_outlined),
+                  title: Text(_settlementSummary(settlement)),
+                  subtitle: Text(
+                    'Paid on ${DateFormatter.formatDate(settlement.date)}',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
                         AppMoney.formatCurrency(
                           settlement.amount,
                           settlement.currency,
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      busy
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : IconButton(
+                              tooltip: 'Change date',
+                              onPressed: () =>
+                                  _changeSettlementDate(settlement),
+                              icon: const Icon(Icons.calendar_today_outlined),
+                            ),
+                    ],
                   ),
                 ),
+              );
+            }),
           const SizedBox(height: 16),
           const AppSectionHeader(title: 'Advanced settings'),
           AppCard(
@@ -4025,11 +4096,13 @@ class _GroupSettleUpInput {
     required this.amount,
     required this.direction,
     required this.currency,
+    required this.date,
   });
 
   final double amount;
   final String direction;
   final String currency;
+  final DateTime date;
 }
 
 class _SplitSelectionResult {

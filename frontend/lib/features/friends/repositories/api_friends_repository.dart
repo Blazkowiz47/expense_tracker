@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
 import 'package:expense_tracker/core/config/api_config.dart';
+import 'package:expense_tracker/core/utils/backend_date_codec.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
+import 'package:expense_tracker/features/friends/models/friend_settlement.dart';
 import 'package:http/http.dart' as http;
 
 class ApiFriendsRepository {
@@ -77,11 +79,31 @@ class ApiFriendsRepository {
     );
   }
 
+  Future<List<FriendSettlement>> fetchSettlements({
+    String friendUid = '',
+  }) async {
+    final query = friendUid.trim().isEmpty
+        ? ''
+        : '?friendUid=${Uri.encodeQueryComponent(friendUid.trim())}';
+    final response = await _request(
+      method: 'GET',
+      path: '/api/v1/friends/settlements$query',
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawSettlements =
+        (payload['settlements'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>();
+    return rawSettlements
+        .map(FriendSettlement.fromJson)
+        .toList(growable: false);
+  }
+
   Future<void> recordSettlement({
     required String friendUid,
     required String direction,
     required double amount,
     String currency = 'INR',
+    DateTime? date,
   }) async {
     await _request(
       method: 'POST',
@@ -91,7 +113,22 @@ class ApiFriendsRepository {
         'direction': direction,
         'amount': amount,
         'currency': currency,
+        if (date != null) 'date': BackendDateCodec.encodeDate(date),
       },
+    );
+  }
+
+  Future<FriendSettlement> updateSettlementDate({
+    required String settlementId,
+    required DateTime date,
+  }) async {
+    final response = await _request(
+      method: 'PUT',
+      path: '/api/v1/friends/settlements/$settlementId',
+      body: <String, dynamic>{'date': BackendDateCodec.encodeDate(date)},
+    );
+    return FriendSettlement.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
     );
   }
 
@@ -113,6 +150,11 @@ class ApiFriendsRepository {
     final request = switch (method) {
       'GET' => _client.get(uri, headers: headers),
       'POST' => _client.post(
+        uri,
+        headers: headers,
+        body: body == null ? null : jsonEncode(body),
+      ),
+      'PUT' => _client.put(
         uri,
         headers: headers,
         body: body == null ? null : jsonEncode(body),

@@ -925,6 +925,60 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "expense": expense_out(expense),
         }
 
+    @app.put("/api/v1/loans/{loan_id}/payments/{payment_id}")
+    def update_loan_payment(loan_id: str, payment_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        loan = app.state.db.loans.find_one({"id": loan_id, "uid": user["uid"]})
+        if not loan:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "loan not found"))
+        payment = app.state.db.loan_payments.find_one({"id": payment_id, "uid": user["uid"], "loanId": loan_id})
+        if not payment:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "loan payment not found"))
+        payment_date = parse_dt(str(body.get("date") or iso(payment.get("date") or now())))
+        period = f"{payment_date.year:04d}-{payment_date.month:02d}"
+        payment_type = str(payment.get("paymentType") or "emi")
+        updates: dict[str, Any] = {
+            "date": payment_date,
+            "period": period,
+            "updatedAt": now(),
+        }
+        if "notes" in body:
+            updates["notes"] = str(body.get("notes") or "").strip()
+        if payment_type == "emi":
+            existing_for_period = app.state.db.loan_payments.find_one({
+                "uid": user["uid"],
+                "loanId": loan_id,
+                "paymentType": "emi",
+                "period": period,
+                "id": {"$ne": payment_id},
+            })
+            if existing_for_period:
+                raise HTTPException(status_code=409, detail=api_error("ALREADY_EXISTS", "another EMI is already logged for this month"))
+            updates["emiKey"] = loan_emi_key(user["uid"], loan_id, period)
+        app.state.db.loan_payments.update_one(
+            {"id": payment_id, "uid": user["uid"], "loanId": loan_id},
+            {"$set": updates},
+        )
+        expense = None
+        if payment.get("expenseId"):
+            expense_updates = {
+                "date": payment_date,
+                "sourcePeriod": period,
+                "updatedAt": updates["updatedAt"],
+            }
+            app.state.db.expenses.update_one(
+                {"id": payment["expenseId"], "uid": user["uid"]},
+                {"$set": expense_updates},
+            )
+            expense = app.state.db.expenses.find_one({"id": payment["expenseId"], "uid": user["uid"]})
+        recompute_loan_payment_summary(app.state.db, user["uid"], loan_id, updates["updatedAt"])
+        updated_payment = app.state.db.loan_payments.find_one({"id": payment_id, "uid": user["uid"], "loanId": loan_id}) or {**payment, **updates}
+        updated_loan = app.state.db.loans.find_one({"id": loan_id, "uid": user["uid"]}) or loan
+        return {
+            "loan": loan_out(app.state.db, updated_loan),
+            "payment": loan_payment_out(updated_payment),
+            "expense": expense_out(expense) if expense else {},
+        }
+
     @app.get("/api/v1/savings/goals")
     def list_savings_goals(
         includeArchived: bool = False,
@@ -996,6 +1050,32 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         return {
             "goal": savings_goal_out(app.state.db, updated_goal),
             "contribution": savings_contribution_out(contribution),
+        }
+
+    @app.put("/api/v1/savings/goals/{goal_id}/contributions/{contribution_id}")
+    def update_savings_contribution(goal_id: str, contribution_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        goal = app.state.db.savings_goals.find_one({"id": goal_id, "uid": user["uid"]})
+        if not goal:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "savings goal not found"))
+        contribution = app.state.db.savings_contributions.find_one({"id": contribution_id, "goalId": goal_id, "uid": user["uid"]})
+        if not contribution:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "savings contribution not found"))
+        updates: dict[str, Any] = {
+            "date": parse_dt(str(body.get("date") or iso(contribution.get("date") or now()))),
+            "updatedAt": now(),
+        }
+        if "notes" in body:
+            updates["notes"] = str(body.get("notes") or "").strip()
+        app.state.db.savings_contributions.update_one(
+            {"id": contribution_id, "goalId": goal_id, "uid": user["uid"]},
+            {"$set": updates},
+        )
+        recompute_savings_goal_summary(app.state.db, user["uid"], goal_id, updates["updatedAt"])
+        updated_goal = app.state.db.savings_goals.find_one({"id": goal_id, "uid": user["uid"]}) or goal
+        updated_contribution = app.state.db.savings_contributions.find_one({"id": contribution_id, "goalId": goal_id, "uid": user["uid"]}) or {**contribution, **updates}
+        return {
+            "goal": savings_goal_out(app.state.db, updated_goal),
+            "contribution": savings_contribution_out(updated_contribution),
         }
 
     @app.get("/api/v1/expenses-export.csv")
@@ -1148,6 +1228,15 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "balancesByCurrency": friend_balance_map_by_currency(app.state.db, user["uid"]),
         }
 
+    @app.get("/api/v1/friends/settlements")
+    def list_friend_settlements(friendUid: str = "", user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        filters: dict[str, Any] = {"uids": user["uid"]}
+        friend_uid = friendUid.strip()
+        if friend_uid:
+            filters["uids"] = {"$all": [user["uid"], friend_uid]}
+        docs = app.state.db.friend_settlements.find(filters).sort("date", DESCENDING)
+        return {"settlements": [friend_settlement_out(doc) for doc in docs]}
+
     @app.post("/api/v1/friends/settlements", status_code=201)
     def create_friend_settlement(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         friend_uid = str(body.get("friendUid") or "").strip()
@@ -1178,10 +1267,30 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
             "note": str(body.get("note") or "").strip(),
             "createdBy": user["uid"],
+            "date": parse_dt(str(body.get("date") or iso(now()))),
             "createdAt": now(),
+            "updatedAt": now(),
         }
         app.state.db.friend_settlements.insert_one(doc)
         return json_ready(friend_settlement_out(doc))
+
+    @app.put("/api/v1/friends/settlements/{settlement_id}")
+    def update_friend_settlement(settlement_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        settlement = app.state.db.friend_settlements.find_one({"id": settlement_id, "uids": user["uid"]})
+        if not settlement:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "settlement not found"))
+        updates: dict[str, Any] = {
+            "date": parse_dt(str(body.get("date") or iso(settlement.get("date") or settlement.get("createdAt") or now()))),
+            "updatedAt": now(),
+        }
+        if "note" in body:
+            updates["note"] = str(body.get("note") or "").strip()
+        app.state.db.friend_settlements.update_one(
+            {"id": settlement_id, "uids": user["uid"]},
+            {"$set": updates},
+        )
+        updated = app.state.db.friend_settlements.find_one({"id": settlement_id, "uids": user["uid"]}) or {**settlement, **updates}
+        return json_ready(friend_settlement_out(updated))
 
     @app.post("/api/v1/friends/remove")
     def remove_friend(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
@@ -1347,7 +1456,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             touch_group(app.state.db, group_id)
             return JSONResponse(status_code=201, content=json_ready(group_expense_out(doc)))
         if parts == ["settlements"] and request.method == "GET":
-            docs = app.state.db.group_settlements.find({"groupId": group_id}).sort("createdAt", -1)
+            docs = app.state.db.group_settlements.find({"groupId": group_id}).sort("date", -1)
             return {"settlements": [group_settlement_out(doc) for doc in docs]}
         if parts == ["settlements"] and request.method == "POST":
             body = await request.json()
@@ -1375,11 +1484,31 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 "currency": normalize_currency(body.get("currency") or "INR"),
                 "note": str(body.get("note") or "").strip(),
                 "createdBy": user["uid"],
+                "date": parse_dt(str(body.get("date") or iso(now()))),
                 "createdAt": now(),
+                "updatedAt": now(),
             }
             app.state.db.group_settlements.insert_one(doc)
             touch_group(app.state.db, group_id)
             return JSONResponse(status_code=201, content=json_ready(group_settlement_out(doc)))
+        if len(parts) == 2 and parts[0] == "settlements" and request.method == "PUT":
+            body = await request.json()
+            existing = app.state.db.group_settlements.find_one({"groupId": group_id, "id": parts[1]})
+            if not existing:
+                raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "settlement not found"))
+            updates = {
+                "date": parse_dt(str(body.get("date") or iso(existing.get("date") or existing.get("createdAt") or now()))),
+                "updatedAt": now(),
+            }
+            if "note" in body:
+                updates["note"] = str(body.get("note") or "").strip()
+            app.state.db.group_settlements.update_one(
+                {"groupId": group_id, "id": parts[1]},
+                {"$set": updates},
+            )
+            touch_group(app.state.db, group_id)
+            updated = app.state.db.group_settlements.find_one({"groupId": group_id, "id": parts[1]}) or {**existing, **updates}
+            return JSONResponse(status_code=200, content=json_ready(group_settlement_out(updated)))
         if len(parts) == 2 and parts[0] == "expenses" and request.method == "PUT":
             body = await request.json()
             existing = app.state.db.group_expenses.find_one({"groupId": group_id, "id": parts[1]})
@@ -1673,11 +1802,15 @@ def ensure_indexes(db: Any) -> None:
     db.friendships.create_index([("uids", ASCENDING), ("updatedAt", ASCENDING)])
     db.friendship_tombstones.create_index([("uids", ASCENDING), ("deletedAt", ASCENDING)])
     db.friend_settlements.create_index([("uids", ASCENDING), ("createdAt", ASCENDING)])
+    db.friend_settlements.create_index([("uids", ASCENDING), ("date", ASCENDING)])
+    db.friend_settlements.create_index([("uids", ASCENDING), ("updatedAt", ASCENDING)])
     db.groups.create_index("memberUids")
     db.groups.create_index("pendingInvites.emailNormalized")
     db.group_expenses.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
     db.group_expenses.create_index([("groupId", ASCENDING), ("updatedAt", ASCENDING)])
     db.group_settlements.create_index([("groupId", ASCENDING), ("createdAt", ASCENDING)])
+    db.group_settlements.create_index([("groupId", ASCENDING), ("date", ASCENDING)])
+    db.group_settlements.create_index([("groupId", ASCENDING), ("updatedAt", ASCENDING)])
     db.group_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.group_expense_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
@@ -1903,6 +2036,20 @@ def latest_collection_time(
     return aware(value) if isinstance(value, datetime) else None
 
 
+def latest_collection_time_any(
+    db: Any,
+    collection_name: str,
+    filters: dict[str, Any],
+    fields: list[str],
+) -> datetime | None:
+    return max_time(
+        *[
+            latest_collection_time(db, collection_name, filters, field)
+            for field in fields
+        ]
+    )
+
+
 def user_group_ids(db: Any, uid: str) -> list[str]:
     return [
         doc["id"]
@@ -1928,11 +2075,11 @@ def group_freshness(db: Any, uid: str) -> datetime | None:
             {"groupId": {"$in": group_ids}},
             "updatedAt",
         )
-        settlement_latest = latest_collection_time(
+        settlement_latest = latest_collection_time_any(
             db,
             "group_settlements",
             {"groupId": {"$in": group_ids}},
-            "createdAt",
+            ["updatedAt", "createdAt"],
         )
     else:
         settlement_latest = None
@@ -1949,7 +2096,7 @@ def friends_freshness(db: Any, uid: str) -> datetime | None:
     return max_time(
         latest_collection_time(db, "friendships", {"uids": uid}, "updatedAt"),
         latest_collection_time(db, "friendship_tombstones", {"uids": uid}, "deletedAt"),
-        latest_collection_time(db, "friend_settlements", {"uids": uid}, "createdAt"),
+        latest_collection_time_any(db, "friend_settlements", {"uids": uid}, ["updatedAt", "createdAt"]),
     )
 
 
@@ -2009,7 +2156,7 @@ def activity_freshness(db: Any, uid: str) -> datetime | None:
     return max_time(
         personal_expense_freshness(db, uid),
         group_freshness(db, uid),
-        latest_collection_time(db, "friend_settlements", {"uids": uid}, "createdAt"),
+        latest_collection_time_any(db, "friend_settlements", {"uids": uid}, ["updatedAt", "createdAt"]),
         latest_collection_time(
             db,
             "recurring_occurrences",
@@ -2101,6 +2248,17 @@ def activity_since_filter(since: datetime | None, field: str = "updatedAt") -> d
     return {} if since is None else {field: {"$gt": since}}
 
 
+def settlement_activity_since_filter(since: datetime | None) -> dict[str, Any]:
+    if since is None:
+        return {}
+    return {
+        "$or": [
+            {"updatedAt": {"$gt": since}},
+            {"createdAt": {"$gt": since}},
+        ]
+    }
+
+
 def activity_entry_sort_time(entry: dict[str, Any]) -> datetime:
     for key in ["updatedAt", "date"]:
         value = entry.get(key)
@@ -2177,7 +2335,7 @@ def activity_feed_entries(
     if "friend_settlements" in include_sections:
         settlement_filter = {
             "uids": uid,
-            **activity_since_filter(since, "createdAt"),
+            **settlement_activity_since_filter(since),
         }
         settlements = list(db.friend_settlements.find(settlement_filter))
         user_ids = {
@@ -2195,8 +2353,8 @@ def activity_feed_entries(
                 {
                     "kind": "friendSettlement",
                     "id": settlement.get("id", ""),
-                    "date": settlement.get("createdAt"),
-                    "updatedAt": settlement.get("createdAt"),
+                    "date": settlement.get("date") or settlement.get("createdAt"),
+                    "updatedAt": settlement.get("updatedAt") or settlement.get("createdAt"),
                     "viewerUid": uid,
                     "payer": activity_user_summary(
                         users_by_uid.get(payer_uid),
@@ -2216,7 +2374,7 @@ def activity_feed_entries(
         if groups_by_id:
             settlement_filter = {
                 "groupId": {"$in": list(groups_by_id.keys())},
-                **activity_since_filter(since, "createdAt"),
+                **settlement_activity_since_filter(since),
             }
             settlements = list(db.group_settlements.find(settlement_filter))
             user_ids = {
@@ -2238,8 +2396,8 @@ def activity_feed_entries(
                         "kind": "groupSettlement",
                         "id": settlement.get("id", ""),
                         "groupId": settlement.get("groupId", ""),
-                        "date": settlement.get("createdAt"),
-                        "updatedAt": settlement.get("createdAt"),
+                        "date": settlement.get("date") or settlement.get("createdAt"),
+                        "updatedAt": settlement.get("updatedAt") or settlement.get("createdAt"),
                         "viewerUid": uid,
                         "group": activity_group_summary(group),
                         "payer": activity_user_summary(
@@ -2943,6 +3101,22 @@ def savings_goal_out(db: Any, doc: dict[str, Any], owner: dict[str, Any] | None 
     })
 
 
+def recompute_savings_goal_summary(db: Any, uid: str, goal_id: str, updated_at: datetime | None = None) -> None:
+    latest = db.savings_contributions.find_one(
+        {"uid": uid, "goalId": goal_id},
+        sort=[("date", DESCENDING)],
+    )
+    db.savings_goals.update_one(
+        {"id": goal_id, "uid": uid},
+        {
+            "$set": {
+                "lastContributionAt": latest.get("date") if latest else None,
+                "updatedAt": updated_at or now(),
+            }
+        },
+    )
+
+
 def savings_contribution_out(doc: dict[str, Any]) -> dict[str, Any]:
     return json_ready({
         key: doc.get(key)
@@ -3596,37 +3770,39 @@ def dashboard_action_items(db: Any, uid: str) -> list[dict[str, Any]]:
 
 
 def friend_settlement_out(doc: dict[str, Any]) -> dict[str, Any]:
-    return json_ready({
-        key: doc.get(key)
-        for key in [
-            "id",
-            "uids",
-            "payerUid",
-            "receiverUid",
-            "amount",
-            "currency",
-            "note",
-            "createdBy",
-            "createdAt",
-        ]
-    })
+    return json_ready(
+        {
+            "id": doc.get("id"),
+            "uids": doc.get("uids"),
+            "payerUid": doc.get("payerUid"),
+            "receiverUid": doc.get("receiverUid"),
+            "amount": doc.get("amount"),
+            "currency": doc.get("currency"),
+            "note": doc.get("note"),
+            "createdBy": doc.get("createdBy"),
+            "date": doc.get("date") or doc.get("createdAt"),
+            "createdAt": doc.get("createdAt"),
+            "updatedAt": doc.get("updatedAt") or doc.get("createdAt"),
+        }
+    )
 
 
 def group_settlement_out(doc: dict[str, Any]) -> dict[str, Any]:
-    return json_ready({
-        key: doc.get(key)
-        for key in [
-            "id",
-            "groupId",
-            "payerUid",
-            "receiverUid",
-            "amount",
-            "currency",
-            "note",
-            "createdBy",
-            "createdAt",
-        ]
-    })
+    return json_ready(
+        {
+            "id": doc.get("id"),
+            "groupId": doc.get("groupId"),
+            "payerUid": doc.get("payerUid"),
+            "receiverUid": doc.get("receiverUid"),
+            "amount": doc.get("amount"),
+            "currency": doc.get("currency"),
+            "note": doc.get("note"),
+            "createdBy": doc.get("createdBy"),
+            "date": doc.get("date") or doc.get("createdAt"),
+            "createdAt": doc.get("createdAt"),
+            "updatedAt": doc.get("updatedAt") or doc.get("createdAt"),
+        }
+    )
 
 
 def friend_balance_map_by_currency(db: Any, uid: str) -> dict[str, dict[str, float]]:

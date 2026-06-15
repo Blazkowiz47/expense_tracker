@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
+import 'package:expense_tracker/features/friends/models/friend_settlement.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/friends/utils/settlement_balance_calculator.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
@@ -39,12 +41,14 @@ class _FriendsPageState extends State<FriendsPage> {
   late final bool _ownsFreshnessRepository;
 
   List<FriendContact> _friends = const [];
+  List<FriendSettlement> _friendSettlements = const [];
   Map<String, Map<String, double>> _friendSettlementNetByUid = const {};
   bool _loading = true;
   bool _loadedFriends = false;
   bool _addingFriend = false;
   bool _showFriendAddedSuccess = false;
   String? _removingFriendUid;
+  String? _updatingSettlementId;
   String? _error;
   DateTime? _friendsFreshnessCursor;
 
@@ -97,9 +101,11 @@ class _FriendsPageState extends State<FriendsPage> {
     try {
       final friends = await _repository.fetchFriends();
       final settlementMap = await _loadSettlementBalances();
+      final settlements = await _loadFriendSettlements();
       if (!mounted) return;
       setState(() {
         _friends = friends;
+        _friendSettlements = settlements;
         _friendSettlementNetByUid = settlementMap;
         _loadedFriends = true;
       });
@@ -116,6 +122,14 @@ class _FriendsPageState extends State<FriendsPage> {
       if (mounted) {
         setState(() => _loading = false);
       }
+    }
+  }
+
+  Future<List<FriendSettlement>> _loadFriendSettlements() async {
+    try {
+      return await _repository.fetchSettlements();
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -251,10 +265,15 @@ class _FriendsPageState extends State<FriendsPage> {
         direction: input.direction,
         amount: input.amount,
         currency: input.currency,
+        date: input.date,
       );
       final settlementMap = await _loadSettlementBalances();
+      final settlements = await _loadFriendSettlements();
       if (!mounted) return;
-      setState(() => _friendSettlementNetByUid = settlementMap);
+      setState(() {
+        _friendSettlementNetByUid = settlementMap;
+        _friendSettlements = settlements;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -274,11 +293,63 @@ class _FriendsPageState extends State<FriendsPage> {
     }
   }
 
+  Future<void> _changeSettlementDate(FriendSettlement settlement) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: settlement.date,
+      firstDate: DateTime(1990),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() => _updatingSettlementId = settlement.id);
+    try {
+      await _repository.updateSettlementDate(
+        settlementId: settlement.id,
+        date: picked,
+      );
+      final settlements = await _loadFriendSettlements();
+      if (!mounted) return;
+      setState(() => _friendSettlements = settlements);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Settlement date updated.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    } finally {
+      if (mounted) {
+        setState(() => _updatingSettlementId = null);
+      }
+    }
+  }
+
+  String _settlementSummary(FriendSettlement settlement) {
+    final friend = _friendForSettlement(settlement);
+    if (friend == null) return 'Settlement';
+    return settlement.payerUid == friend.uid
+        ? '${friend.label} paid you'
+        : 'You paid ${friend.label}';
+  }
+
+  FriendContact? _friendForSettlement(FriendSettlement settlement) {
+    for (final friend in _friends) {
+      if (settlement.uids.contains(friend.uid) ||
+          settlement.payerUid == friend.uid ||
+          settlement.receiverUid == friend.uid) {
+        return friend;
+      }
+    }
+    return null;
+  }
+
   Future<_SettleUpInput?> _openSettleUpDialog(FriendContact friend) async {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
     var direction = 'paid';
     var currency = 'INR';
+    var date = DateTime.now();
     return showDialog<_SettleUpInput>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -347,6 +418,22 @@ class _FriendsPageState extends State<FriendsPage> {
                     return null;
                   },
                 ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: date,
+                      firstDate: DateTime(1990),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setDialogState(() => date = picked);
+                    }
+                  },
+                  icon: const Icon(Icons.calendar_today_outlined),
+                  label: Text(DateFormatter.formatDate(date)),
+                ),
               ],
             ),
           ),
@@ -364,6 +451,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     amount: amount,
                     direction: direction,
                     currency: currency,
+                    date: date,
                   ),
                 );
               },
@@ -465,6 +553,48 @@ class _FriendsPageState extends State<FriendsPage> {
                   onRemove: () => _removeFriendFlow(friend),
                 );
               }),
+            if (_friendSettlements.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const AppSectionHeader(title: 'Settlement history'),
+              ..._friendSettlements.map((settlement) {
+                final busy = _updatingSettlementId == settlement.id;
+                return AppCard(
+                  child: ListTile(
+                    leading: const AppAvatar(icon: Icons.handshake_outlined),
+                    title: Text(_settlementSummary(settlement)),
+                    subtitle: Text(
+                      'Paid on ${DateFormatter.formatDate(settlement.date)}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          AppMoney.formatCurrency(
+                            settlement.amount,
+                            settlement.currency,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        busy
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : IconButton(
+                                tooltip: 'Change date',
+                                onPressed: () =>
+                                    _changeSettlementDate(settlement),
+                                icon: const Icon(Icons.calendar_today_outlined),
+                              ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
           ],
         ),
         if (_addingFriend || _showFriendAddedSuccess)
@@ -605,9 +735,11 @@ class _SettleUpInput {
     required this.amount,
     required this.direction,
     required this.currency,
+    required this.date,
   });
 
   final double amount;
   final String direction;
   final String currency;
+  final DateTime date;
 }

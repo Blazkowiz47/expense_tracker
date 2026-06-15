@@ -12,14 +12,24 @@ class _FakeSavingsRepository extends ApiSavingsRepository {
       super(client: MockClient((_) async => http.Response('{}', 200)));
 
   var _goals = <SavingsGoal>[];
+  var _contributions = <SavingsContribution>[];
   _CreatedGoal? createdGoal;
   String? loggedGoalId;
   double? loggedSourceAmount;
   double? loggedTargetAmount;
+  String? updatedContributionId;
+  DateTime? updatedContributionDate;
 
   @override
   Future<List<SavingsGoal>> fetchGoals({bool includeArchived = false}) async {
     return _goals.where((goal) => includeArchived || !goal.archived).toList();
+  }
+
+  @override
+  Future<List<SavingsContribution>> fetchContributions(String goalId) async {
+    return _contributions
+        .where((contribution) => contribution.goalId == goalId)
+        .toList();
   }
 
   @override
@@ -102,28 +112,77 @@ class _FakeSavingsRepository extends ApiSavingsRepository {
     _goals = _goals
         .map((goal) => goal.id == goalId ? updated : goal)
         .toList(growable: false);
+    final contribution = SavingsContribution(
+      id: 'contribution-${_contributions.length + 1}',
+      goalId: goalId,
+      sourceAmount: sourceAmount,
+      sourceCurrency: sourceCurrency,
+      targetAmount: target,
+      targetCurrency: existing.targetCurrency,
+      feeAmount: feeAmount,
+      feeCurrency: feeCurrency ?? sourceCurrency,
+      exchangeRate: target / sourceAmount,
+      marketRate: 8.5,
+      marketTargetAmount: sourceAmount * 8.5,
+      exchangeRateProvider: 'fake-fx',
+      exchangeRateFetchedAt: date,
+      exchangeRateAsOf: date,
+      date: date,
+      notes: notes,
+      createdAt: date,
+      updatedAt: date,
+    );
+    _contributions = [contribution, ..._contributions];
+    return SavingsContributionResult(goal: updated, contribution: contribution);
+  }
+
+  @override
+  Future<SavingsContributionResult> updateContribution({
+    required String goalId,
+    required String contributionId,
+    required DateTime date,
+    String? notes,
+  }) async {
+    updatedContributionId = contributionId;
+    updatedContributionDate = date;
+    final existingGoal = _goals.firstWhere((goal) => goal.id == goalId);
+    final existingContribution = _contributions.firstWhere(
+      (contribution) => contribution.id == contributionId,
+    );
+    final updatedContribution = SavingsContribution(
+      id: existingContribution.id,
+      goalId: existingContribution.goalId,
+      sourceAmount: existingContribution.sourceAmount,
+      sourceCurrency: existingContribution.sourceCurrency,
+      targetAmount: existingContribution.targetAmount,
+      targetCurrency: existingContribution.targetCurrency,
+      feeAmount: existingContribution.feeAmount,
+      feeCurrency: existingContribution.feeCurrency,
+      exchangeRate: existingContribution.exchangeRate,
+      marketRate: existingContribution.marketRate,
+      marketTargetAmount: existingContribution.marketTargetAmount,
+      exchangeRateProvider: existingContribution.exchangeRateProvider,
+      exchangeRateFetchedAt: existingContribution.exchangeRateFetchedAt,
+      exchangeRateAsOf: existingContribution.exchangeRateAsOf,
+      date: date,
+      notes: notes ?? existingContribution.notes,
+      createdAt: existingContribution.createdAt,
+      updatedAt: date,
+    );
+    _contributions = _contributions
+        .map(
+          (contribution) => contribution.id == contributionId
+              ? updatedContribution
+              : contribution,
+        )
+        .toList(growable: false);
+    final updatedGoal = existingGoal.copyWith(lastContributionAt: date);
+    _goals = _goals
+        .map((goal) => goal.id == goalId ? updatedGoal : goal)
+        .toList(growable: false);
     return SavingsContributionResult(
-      goal: updated,
-      contribution: SavingsContribution(
-        id: 'contribution-1',
-        goalId: goalId,
-        sourceAmount: sourceAmount,
-        sourceCurrency: sourceCurrency,
-        targetAmount: target,
-        targetCurrency: existing.targetCurrency,
-        feeAmount: feeAmount,
-        feeCurrency: feeCurrency ?? sourceCurrency,
-        exchangeRate: target / sourceAmount,
-        marketRate: 8.5,
-        marketTargetAmount: sourceAmount * 8.5,
-        exchangeRateProvider: 'fake-fx',
-        exchangeRateFetchedAt: date,
-        exchangeRateAsOf: date,
-        date: date,
-        notes: notes,
-        createdAt: date,
-        updatedAt: date,
-      ),
+      goal: updatedGoal,
+      contribution: updatedContribution,
     );
   }
 }
@@ -281,6 +340,47 @@ void main() {
     expect(repository.loggedTargetAmount, 8500);
     expect(find.textContaining('Saved: ₹8,500.00'), findsOneWidget);
     expect(find.text('Saving logged.'), findsOneWidget);
+  });
+
+  testWidgets('savings history allows correcting the contribution date', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final repository = _FakeSavingsRepository(goals: [_goal()]);
+    await tester.pumpWidget(
+      MaterialApp(home: SavingsPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Log saving'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '1000');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+
+    final historyButton = find.widgetWithText(OutlinedButton, 'History');
+    await tester.ensureVisible(historyButton);
+    await tester.tap(historyButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('India savings history'), findsOneWidget);
+    expect(find.textContaining('sent ·'), findsOneWidget);
+    expect(find.byTooltip('Change date'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Change date'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1').last);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    expect(repository.updatedContributionId, 'contribution-1');
+    expect(repository.updatedContributionDate, isNotNull);
   });
 }
 

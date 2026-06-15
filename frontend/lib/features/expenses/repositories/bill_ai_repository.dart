@@ -12,6 +12,7 @@ class BillExtractionResult {
     required this.merchant,
     required this.amount,
     required this.date,
+    required this.dateExtracted,
     required this.currency,
     required this.category,
     required this.notes,
@@ -23,6 +24,7 @@ class BillExtractionResult {
   final String merchant;
   final double amount;
   final DateTime date;
+  final bool dateExtracted;
   final String currency;
   final String category;
   final String notes;
@@ -31,11 +33,12 @@ class BillExtractionResult {
   final List<String> warnings;
 
   factory BillExtractionResult.fromJson(Map<String, dynamic> json) {
+    final parsedDate = DateTime.tryParse((json['date'] as String?) ?? '');
     return BillExtractionResult(
       merchant: (json['merchant'] as String?) ?? '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
-      date:
-          DateTime.tryParse((json['date'] as String?) ?? '') ?? DateTime.now(),
+      date: parsedDate ?? DateTime.now(),
+      dateExtracted: parsedDate != null,
       currency: (json['currency'] as String?) ?? 'INR',
       category: (json['category'] as String?) ?? 'Personal',
       notes: (json['notes'] as String?) ?? '',

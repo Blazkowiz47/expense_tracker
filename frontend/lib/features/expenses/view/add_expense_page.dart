@@ -242,7 +242,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
       setState(() {
         _billResult = result;
         _receiptItems = result.lineItems;
-        _expenseDate = result.date;
+        if (result.dateExtracted) {
+          _expenseDate = result.date;
+        }
         _category = _normalizedChoice(result.category, _categories, 'Personal');
         _currency = _normalizedChoice(result.currency, _currencies, 'INR');
         _extractingBill = false;
@@ -823,6 +825,13 @@ class _BillReviewPanel extends StatelessWidget {
                 ),
               ),
             ],
+            const SizedBox(height: 8),
+            Text(
+              result.dateExtracted
+                  ? 'Receipt date applied: ${DateFormatter.formatDate(result.date)}'
+                  : 'No receipt date found. Date field stays editable.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 8),
             ReceiptLineItemsReview(
               items: items,

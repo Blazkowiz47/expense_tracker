@@ -4,6 +4,7 @@ import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/friends/models/friend_contact.dart';
+import 'package:expense_tracker/features/friends/models/friend_settlement.dart';
 import 'package:expense_tracker/features/friends/repositories/api_friends_repository.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:flutter/material.dart';
@@ -34,9 +35,18 @@ class _FakeFriendsRepository extends ApiFriendsRepository {
     ),
   ];
   final List<
-    ({String friendUid, String direction, double amount, String currency})
+    ({
+      String friendUid,
+      String direction,
+      double amount,
+      String currency,
+      DateTime? date,
+    })
   >
   recordedSettlements = [];
+  List<FriendSettlement> settlements = const [];
+  String? updatedSettlementId;
+  DateTime? updatedSettlementDate;
   Map<String, Map<String, double>> balances = const {};
   int fetchFriendsCount = 0;
 
@@ -61,21 +71,78 @@ class _FakeFriendsRepository extends ApiFriendsRepository {
   Future<Map<String, Map<String, double>>> fetchBalances() async => balances;
 
   @override
+  Future<List<FriendSettlement>> fetchSettlements({
+    String friendUid = '',
+  }) async {
+    return settlements
+        .where(
+          (settlement) =>
+              friendUid.trim().isEmpty || settlement.uids.contains(friendUid),
+        )
+        .toList(growable: false);
+  }
+
+  @override
   Future<void> recordSettlement({
     required String friendUid,
     required String direction,
     required double amount,
     String currency = 'INR',
+    DateTime? date,
   }) async {
     recordedSettlements.add((
       friendUid: friendUid,
       direction: direction,
       amount: amount,
       currency: currency,
+      date: date,
     ));
     balances = {
       friendUid: {currency: amount},
     };
+    final settlement = FriendSettlement(
+      id: 'settlement-${settlements.length + 1}',
+      uids: ['user-1', friendUid],
+      payerUid: 'user-1',
+      receiverUid: friendUid,
+      amount: amount,
+      currency: currency,
+      date: date ?? DateTime(2026, 6, 7),
+      createdAt: DateTime(2026, 6, 7),
+    );
+    settlements = [settlement, ...settlements];
+  }
+
+  @override
+  Future<FriendSettlement> updateSettlementDate({
+    required String settlementId,
+    required DateTime date,
+  }) async {
+    updatedSettlementId = settlementId;
+    updatedSettlementDate = date;
+    final index = settlements.indexWhere(
+      (settlement) => settlement.id == settlementId,
+    );
+    final existing = settlements[index];
+    final updated = FriendSettlement(
+      id: existing.id,
+      uids: existing.uids,
+      payerUid: existing.payerUid,
+      receiverUid: existing.receiverUid,
+      amount: existing.amount,
+      currency: existing.currency,
+      note: existing.note,
+      createdBy: existing.createdBy,
+      date: date,
+      createdAt: existing.createdAt,
+      updatedAt: date,
+    );
+    settlements = [
+      ...settlements.take(index),
+      updated,
+      ...settlements.skip(index + 1),
+    ];
+    return updated;
   }
 }
 
@@ -127,6 +194,8 @@ void main() {
       await tester.tap(find.text('Test Friend'));
       await tester.pumpAndSettle();
 
+      expect(find.byIcon(Icons.calendar_today_outlined), findsOneWidget);
+
       await tester.enterText(find.byType(TextFormField).first, '120');
       await tester.tap(find.text('Record'));
       await tester.pumpAndSettle();
@@ -137,9 +206,22 @@ void main() {
       expect(settlement.direction, 'paid');
       expect(settlement.amount, 120);
       expect(settlement.currency, 'INR');
+      expect(settlement.date, isNotNull);
       expect(expenseRepository.created, isEmpty);
       expect(find.text('owes you'), findsOneWidget);
-      expect(find.text('₹120.00'), findsOneWidget);
+      expect(find.text('₹120.00'), findsWidgets);
+      expect(find.text('Settlement history'), findsOneWidget);
+      expect(find.text('You paid Test Friend'), findsOneWidget);
+      expect(find.byTooltip('Change date'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Change date'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1').last);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      expect(friendsRepository.updatedSettlementId, 'settlement-1');
+      expect(friendsRepository.updatedSettlementDate, isNotNull);
     },
   );
 
