@@ -830,7 +830,16 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     );
   }
 
-  String _targetCurrencyForExpense(GroupExpense expense) {
+  String _targetCurrencyForExpense(
+    GroupExpense expense, {
+    String preferredCurrency = '',
+  }) {
+    final preferred = _normalizeReviewCurrency(preferredCurrency);
+    if (preferred.isNotEmpty &&
+        preferred != expense.currency &&
+        !expense.convertedAmounts.containsKey(preferred)) {
+      return preferred;
+    }
     for (final option in _groupCurrencyOptions) {
       if (option != expense.currency &&
           expense.convertedAmounts.containsKey(option)) {
@@ -1310,6 +1319,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     List<String>? initialAttachments,
     DateTime? initialUpdatedAt,
     String? initialUpdatedBy,
+    List<String> attentionLabels = const [],
   }) {
     final descriptionController = TextEditingController(
       text: initialDescription ?? '',
@@ -1317,6 +1327,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final amountController = TextEditingController(
       text: initialAmount == null ? '' : initialAmount.toStringAsFixed(2),
     );
+    final attachmentsScrollController = ScrollController();
     return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) {
@@ -1507,6 +1518,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (attentionLabels.isNotEmpty) ...[
+                        _ExpenseAttentionPanel(labels: attentionLabels),
+                        const SizedBox(height: 12),
+                      ],
                       TextField(
                         controller: descriptionController,
                         decoration: const InputDecoration(
@@ -1791,8 +1806,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxHeight: 260),
                           child: Scrollbar(
+                            controller: attachmentsScrollController,
                             thumbVisibility: true,
                             child: ListView.separated(
+                              controller: attachmentsScrollController,
                               scrollDirection: Axis.horizontal,
                               itemCount: attachmentItems.length,
                               separatorBuilder: (_, index) =>
@@ -2448,7 +2465,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           },
         );
       },
-    );
+    ).whenComplete(attachmentsScrollController.dispose);
   }
 
   Future<void> _addExpense({
@@ -2605,12 +2622,16 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       ),
       initialCurrency: expense.currency,
       initialCategory: expense.category,
-      initialTargetCurrency: _targetCurrencyForExpense(expense),
+      initialTargetCurrency: _targetCurrencyForExpense(
+        expense,
+        preferredCurrency: _expenseMissingCurrencyFilter,
+      ),
       initialDate: expense.date,
       showMonthlyCategory: widget.group.groupType == GroupType.family,
       initialAttachments: expense.attachments,
       initialUpdatedAt: expense.updatedAt,
       initialUpdatedBy: _resolvePayerLabel(expense.updatedBy, participants),
+      attentionLabels: _expenseAuditLabels(expense),
     );
 
     if (!mounted) return;
@@ -2667,6 +2688,11 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
     final originalPaidBy = _resolvePayerLabel(expense.paidBy, participants);
     final originalTargetCurrency = _targetCurrencyForExpense(expense);
+    final missingRequestedConversion = targetCurrencies.any(
+      (item) =>
+          item != expense.currency &&
+          !expense.convertedAmounts.containsKey(item),
+    );
     final originalSplitMode = expense.splitMode.isNotEmpty
         ? expense.splitMode
         : 'equally';
@@ -2687,6 +2713,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         currency != expense.currency ||
         (targetCurrencies.isNotEmpty &&
             targetCurrencies.first != originalTargetCurrency) ||
+        missingRequestedConversion ||
         category != expense.category ||
         (amount - expense.amount).abs() > 0.000001 ||
         paidBy != originalPaidBy ||
@@ -4998,6 +5025,52 @@ class _GroupExpenseReviewFiltersCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _ExpenseAttentionPanel extends StatelessWidget {
+  const _ExpenseAttentionPanel({required this.labels});
+
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.errorContainer.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.error.withValues(alpha: 0.18)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.priority_high_rounded,
+                  size: 18,
+                  color: colors.error,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Needs attention',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: colors.onErrorContainer,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            _ExpenseAuditBadges(labels: labels),
+          ],
+        ),
       ),
     );
   }

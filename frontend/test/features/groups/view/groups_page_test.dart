@@ -42,6 +42,14 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
   int fetchGroupCount = 0;
   ({
     String groupId,
+    String expenseId,
+    List<String> targetCurrencies,
+    String category,
+    List<String> attachments,
+  })?
+  recordedExpenseUpdate;
+  ({
+    String groupId,
     String memberUid,
     String direction,
     double amount,
@@ -89,6 +97,53 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
           updatedAt: DateTime.now(),
         ),
       ];
+
+  @override
+  Future<GroupExpense> updateExpense({
+    required String groupId,
+    required String expenseId,
+    required String description,
+    required String paidBy,
+    required String splitMode,
+    required List<String> splitWith,
+    Map<String, double> splitAmounts = const {},
+    required double amount,
+    String currency = 'INR',
+    List<String> targetCurrencies = const [],
+    String category = '',
+    List<String> attachments = const [],
+    required DateTime date,
+  }) async {
+    recordedExpenseUpdate = (
+      groupId: groupId,
+      expenseId: expenseId,
+      targetCurrencies: targetCurrencies,
+      category: category,
+      attachments: attachments,
+    );
+    return GroupExpense(
+      id: expenseId,
+      groupId: groupId,
+      createdBy: 'member-1',
+      updatedBy: 'member-1',
+      paidBy: paidBy,
+      splitMode: splitMode,
+      splitWith: splitWith,
+      splitAmounts: splitAmounts,
+      amount: amount,
+      currency: currency,
+      convertedAmounts: {
+        currency: amount,
+        for (final target in targetCurrencies) target: amount,
+      },
+      category: category,
+      description: description,
+      attachments: attachments,
+      date: date,
+      createdAt: date,
+      updatedAt: date,
+    );
+  }
 
   @override
   Future<List<GroupSettlement>> fetchSettlements(String groupId) async =>
@@ -916,6 +971,19 @@ void main() {
     expect(find.text('Imported groceries'), findsOneWidget);
     expect(find.text('Internet bill'), findsNothing);
     expect(find.text('1 match'), findsOneWidget);
+
+    await tester.tap(find.text('Imported groceries'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit group expense'), findsOneWidget);
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('Missing INR conversion'), findsWidgets);
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(repository.recordedExpenseUpdate?.expenseId, 'expense-imported');
+    expect(repository.recordedExpenseUpdate?.targetCurrencies, ['INR']);
   });
 
   testWidgets('family quick-add launch auto-opens only one household', (
