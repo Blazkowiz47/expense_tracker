@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 import mimetypes
 import os
 import re
@@ -82,6 +83,58 @@ def normalize_currency(value: Any, default: str = "INR") -> str:
     if not re.fullmatch(r"[A-Z]{3}", currency):
         raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "currency must be a 3-letter ISO code"))
     return currency
+
+
+_MISSING = object()
+
+
+def body_first(body: dict[str, Any], names: tuple[str, ...], default: Any = _MISSING) -> Any:
+    for name in names:
+        if name in body:
+            return body.get(name)
+    if default is _MISSING:
+        return None
+    return default
+
+
+def finite_number(value: Any, field: str) -> float:
+    if isinstance(value, bool):
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be a number"))
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be a number")) from exc
+    if not math.isfinite(parsed):
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be finite"))
+    return parsed
+
+
+def positive_number(value: Any, field: str) -> float:
+    parsed = finite_number(value, field)
+    if parsed <= 0:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be positive"))
+    return parsed
+
+
+def non_negative_number(value: Any, field: str) -> float:
+    parsed = finite_number(value, field)
+    if parsed < 0:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} cannot be negative"))
+    return parsed
+
+
+def non_negative_int(value: Any, field: str) -> int:
+    parsed = finite_number(value, field)
+    if parsed < 0 or not parsed.is_integer():
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be a non-negative integer"))
+    return int(parsed)
+
+
+def bounded_int(value: Any, field: str, minimum: int, maximum: int) -> int:
+    parsed = finite_number(value, field)
+    if not parsed.is_integer() or parsed < minimum or parsed > maximum:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be between {minimum} and {maximum}"))
+    return int(parsed)
 
 
 def json_ready(value: Any) -> Any:
@@ -464,6 +517,8 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         existing = app.state.db.expenses.find_one({"id": expense_id, "uid": user["uid"]})
         if not existing:
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
+        if is_loan_payment_expense(existing):
+            raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be updated from Loans"))
         updated = build_expense(body, user["uid"], expense_id=expense_id, created_at=existing["createdAt"])
         app.state.db.expenses.replace_one({"id": expense_id, "uid": user["uid"]}, updated)
         return expense_out(updated)
@@ -473,11 +528,186 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         existing = app.state.db.expenses.find_one({"id": expense_id, "uid": user["uid"]})
         if not existing:
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
+        if is_loan_payment_expense(existing):
+            raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be deleted from Loans"))
         record_expense_tombstone(app.state.db, existing, user["uid"])
         result = app.state.db.expenses.delete_one({"id": expense_id, "uid": user["uid"]})
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
         return Response(status_code=204)
+
+    @app.get("/api/v1/loans")
+    def list_loans(
+        includeArchived: bool = False,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        filters: dict[str, Any] = {"uid": user["uid"]}
+        if not includeArchived:
+            filters["archivedAt"] = {"$exists": False}
+        docs = list(app.state.db.loans.find(filters).sort("updatedAt", DESCENDING))
+        return {"loans": [loan_out(app.state.db, doc) for doc in docs]}
+
+    @app.post("/api/v1/loans", status_code=201)
+    def create_loan(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        loan = build_loan(body, user["uid"])
+        app.state.db.loans.insert_one(loan)
+        return loan_out(app.state.db, loan)
+
+    @app.put("/api/v1/loans/{loan_id}")
+    def update_loan(loan_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        existing = app.state.db.loans.find_one({"id": loan_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "loan not found"))
+        updated = build_loan(
+            {**existing, **body},
+            user["uid"],
+            loan_id=loan_id,
+            created_at=existing.get("createdAt"),
+            archived_at=existing.get("archivedAt"),
+        )
+        if existing.get("lastPaymentAt"):
+            updated["lastPaymentAt"] = existing.get("lastPaymentAt")
+        app.state.db.loans.replace_one({"id": loan_id, "uid": user["uid"]}, updated)
+        return loan_out(app.state.db, updated)
+
+    @app.delete("/api/v1/loans/{loan_id}", status_code=204)
+    def archive_loan(loan_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        existing = app.state.db.loans.find_one({"id": loan_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "loan not found"))
+        current = now()
+        app.state.db.loans.update_one(
+            {"id": loan_id, "uid": user["uid"]},
+            {"$set": {"archivedAt": current, "updatedAt": current}},
+        )
+        return Response(status_code=204)
+
+    @app.get("/api/v1/loans/{loan_id}/payments")
+    def list_loan_payments(loan_id: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        loan = app.state.db.loans.find_one({"id": loan_id, "uid": user["uid"]})
+        if not loan:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "loan not found"))
+        docs = app.state.db.loan_payments.find({"loanId": loan_id, "uid": user["uid"]}).sort("date", DESCENDING)
+        return {"payments": [loan_payment_out(doc) for doc in docs]}
+
+    @app.post("/api/v1/loans/{loan_id}/payments", status_code=201)
+    def log_loan_payment(loan_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        loan = app.state.db.loans.find_one({
+            "id": loan_id,
+            "uid": user["uid"],
+            "archivedAt": {"$exists": False},
+        })
+        if not loan:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "active loan not found"))
+        payment_type = str(body.get("paymentType") or "emi").strip().lower()
+        if payment_type not in {"emi", "prepayment"}:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "paymentType must be emi or prepayment"))
+        amount = (
+            positive_number(body.get("amount"), "amount")
+            if "amount" in body
+            else positive_number(loan.get("emiAmount"), "emiAmount")
+        )
+        payment_date = parse_dt(str(body.get("date") or iso(loan_next_due_date(app.state.db, loan) or now())))
+        period = f"{payment_date.year:04d}-{payment_date.month:02d}"
+        current = now()
+        existing_payment = None
+        emi_key = ""
+        if payment_type == "emi":
+            emi_key = loan_emi_key(user["uid"], loan_id, period)
+            existing_payment = app.state.db.loan_payments.find_one({
+                "uid": user["uid"],
+                "loanId": loan_id,
+                "paymentType": "emi",
+                "period": period,
+            }) or app.state.db.loan_payments.find_one({
+                "uid": user["uid"],
+                "loanId": loan_id,
+                "emiKey": emi_key,
+            })
+        payment_id = (
+            (existing_payment or {}).get("id")
+            or (stable_loan_hex(user["uid"], loan_id, period, "emi", "payment") if payment_type == "emi" else uuid.uuid4().hex)
+        )
+        expense_id = (
+            (existing_payment or {}).get("expenseId")
+            or (stable_loan_hex(user["uid"], loan_id, period, "emi", "expense") if payment_type == "emi" else uuid.uuid4().hex)
+        )
+        description_prefix = "Loan EMI" if payment_type == "emi" else "Loan prepayment"
+        expense = build_expense(
+            {
+                "amount": amount,
+                "currency": loan.get("currency") or "INR",
+                "category": loan.get("category") or "Loans / EMI",
+                "description": str(body.get("description") or f"{description_prefix}: {loan.get('name') or 'Loan'}").strip(),
+                "date": iso(payment_date),
+                "paymentMethod": "loan",
+                "sourceType": "loan_payment",
+                "sourceLoanId": loan_id,
+                "sourceLoanPaymentId": payment_id,
+                "sourcePaymentType": payment_type,
+                "sourcePeriod": period,
+            },
+            user["uid"],
+            expense_id=expense_id,
+            created_at=(existing_payment or {}).get("createdAt"),
+        )
+        app.state.db.expenses.replace_one({"id": expense["id"], "uid": user["uid"]}, expense, upsert=True)
+        payment = {
+            "id": payment_id,
+            "uid": user["uid"],
+            "loanId": loan_id,
+            "paymentType": payment_type,
+            "period": period,
+            **({"emiKey": emi_key} if emi_key else {}),
+            "amount": amount,
+            "currency": loan.get("currency") or "INR",
+            "date": payment_date,
+            "expenseId": expense["id"],
+            "notes": str(body.get("notes") or "").strip(),
+            "createdAt": (existing_payment or {}).get("createdAt") or current,
+            "updatedAt": current,
+        }
+        if payment_type == "emi":
+            payment_filter = (
+                {"id": existing_payment["id"], "uid": user["uid"]}
+                if existing_payment
+                else {"uid": user["uid"], "loanId": loan_id, "emiKey": emi_key}
+            )
+            app.state.db.loan_payments.update_one(
+                payment_filter,
+                {
+                    "$set": {
+                        "paymentType": payment_type,
+                        "period": period,
+                        "emiKey": emi_key,
+                        "amount": amount,
+                        "currency": loan.get("currency") or "INR",
+                        "date": payment_date,
+                        "expenseId": expense["id"],
+                        "notes": payment["notes"],
+                        "updatedAt": current,
+                    },
+                    "$setOnInsert": {
+                        "id": payment_id,
+                        "uid": user["uid"],
+                        "loanId": loan_id,
+                        "createdAt": current,
+                    },
+                },
+                upsert=True,
+            )
+            payment = app.state.db.loan_payments.find_one(
+                {"id": payment_id, "uid": user["uid"]}
+            ) or payment
+        else:
+            app.state.db.loan_payments.replace_one({"id": payment["id"], "uid": user["uid"]}, payment, upsert=True)
+        recompute_loan_payment_summary(app.state.db, user["uid"], loan_id, current)
+        updated_loan = app.state.db.loans.find_one({"id": loan_id, "uid": user["uid"]}) or loan
+        return {
+            "loan": loan_out(app.state.db, updated_loan),
+            "payment": loan_payment_out(payment),
+            "expense": expense_out(expense),
+        }
 
     @app.get("/api/v1/expenses-export.csv")
     def export_expenses(
@@ -1108,6 +1338,10 @@ def ensure_indexes(db: Any) -> None:
     db.group_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.group_expense_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
+    db.loans.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
+    db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("date", ASCENDING)])
+    db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("period", ASCENDING), ("paymentType", ASCENDING)])
+    db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("emiKey", ASCENDING)], unique=True, sparse=True)
     db.recurring_templates.create_index([("uid", ASCENDING), ("active", ASCENDING)])
     db.recurring_templates.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.recurring_occurrences.create_index([("uid", ASCENDING), ("period", ASCENDING)])
@@ -1150,6 +1384,7 @@ FRESHNESS_SECTIONS = {
     "dashboard",
     "groups",
     "friends",
+    "loans",
     "recurring",
     "activity",
     "plans",
@@ -1171,7 +1406,7 @@ def parse_freshness_sections(raw: str) -> list[str]:
         if section.strip()
     ]
     if not requested:
-        return ["dashboard", "groups", "friends", "recurring", "activity"]
+        return ["dashboard", "groups", "friends", "loans", "recurring", "activity"]
     sections = [section for section in requested if section in FRESHNESS_SECTIONS]
     if not sections:
         raise HTTPException(
@@ -1279,6 +1514,13 @@ def recurring_freshness(db: Any, uid: str) -> datetime | None:
     )
 
 
+def loan_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(
+        latest_collection_time(db, "loans", {"uid": uid}, "updatedAt"),
+        latest_collection_time(db, "loan_payments", {"uid": uid}, "updatedAt"),
+    )
+
+
 def monthly_plan_freshness(db: Any, uid: str) -> datetime | None:
     owner_keys = [uid]
     owner_keys.extend(
@@ -1316,6 +1558,7 @@ def dashboard_freshness(db: Any, uid: str) -> datetime | None:
         personal_expense_freshness(db, uid),
         group_freshness(db, uid),
         friends_freshness(db, uid),
+        loan_freshness(db, uid),
         recurring_freshness(db, uid),
         monthly_plan_freshness(db, uid),
     )
@@ -1328,6 +1571,8 @@ def section_latest_time(db: Any, uid: str, section: str) -> datetime | None:
         return group_freshness(db, uid)
     if section == "friends":
         return friends_freshness(db, uid)
+    if section == "loans":
+        return loan_freshness(db, uid)
     if section == "recurring":
         return recurring_freshness(db, uid)
     if section == "activity":
@@ -1674,16 +1919,21 @@ def record_friendship_tombstone(db: Any, friendship: dict[str, Any], deleted_by:
     )
 
 
+def is_loan_payment_expense(expense: dict[str, Any]) -> bool:
+    return (
+        expense.get("sourceType") == "loan_payment"
+        or bool(expense.get("sourceLoanPaymentId"))
+    )
+
+
 def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None, created_at: datetime | None = None) -> dict[str, Any]:
-    amount = float(body.get("amount") or 0)
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "amount must be positive"))
+    amount = positive_number(body.get("amount"), "amount")
     current = now()
-    return {
+    expense = {
         "id": expense_id or uuid.uuid4().hex,
         "uid": uid,
         "amount": amount,
-        "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
+        "currency": normalize_currency(body.get("currency"), "INR"),
         "category": str(body.get("category") or "Personal").strip() or "Personal",
         "description": str(body.get("description") or "").strip(),
         "paymentMethod": str(body.get("paymentMethod") or "cash").strip() or "cash",
@@ -1691,6 +1941,17 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "createdAt": created_at or current,
         "updatedAt": current,
     }
+    for key in [
+        "sourceType",
+        "sourceLoanId",
+        "sourceLoanPaymentId",
+        "sourcePaymentType",
+        "sourcePeriod",
+    ]:
+        value = str(body.get(key) or "").strip()
+        if value:
+            expense[key] = value
+    return expense
 
 
 def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
@@ -1704,9 +1965,170 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "description",
             "paymentMethod",
             "date",
+            "sourceType",
+            "sourceLoanId",
+            "sourceLoanPaymentId",
+            "sourcePaymentType",
+            "sourcePeriod",
             "createdAt",
             "updatedAt",
         ]
+    })
+
+
+def build_loan(
+    body: dict[str, Any],
+    uid: str,
+    loan_id: str | None = None,
+    created_at: datetime | None = None,
+    archived_at: datetime | None = None,
+) -> dict[str, Any]:
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "name is required"))
+    principal = positive_number(body_first(body, ("principalAmount", "principal"), 0), "principalAmount")
+    emi_amount = positive_number(body_first(body, ("emiAmount",), 0), "emiAmount")
+    total_emis = non_negative_int(body_first(body, ("totalEmis",), 0), "totalEmis")
+    due_day = bounded_int(body_first(body, ("dueDay", "dayOfMonth"), 1), "dueDay", 1, 31)
+    current = now()
+    doc = {
+        "id": loan_id or uuid.uuid4().hex,
+        "uid": uid,
+        "name": name,
+        "lender": str(body.get("lender") or "").strip(),
+        "loanType": str(body.get("loanType") or "Personal").strip() or "Personal",
+        "principalAmount": principal,
+        "emiAmount": emi_amount,
+        "currency": normalize_currency(body.get("currency"), "INR"),
+        "interestRate": non_negative_number(body_first(body, ("interestRate",), 0), "interestRate"),
+        "totalEmis": total_emis,
+        "dueDay": due_day,
+        "startDate": parse_dt(str(body.get("startDate") or iso(current))),
+        "category": str(body.get("category") or "Loans / EMI").strip() or "Loans / EMI",
+        "notes": str(body.get("notes") or "").strip(),
+        "createdAt": created_at or current,
+        "updatedAt": current,
+    }
+    if archived_at:
+        doc["archivedAt"] = archived_at
+    return doc
+
+
+def loan_month_for_date(value: datetime) -> str:
+    value = aware(value)
+    return f"{value.year:04d}-{value.month:02d}"
+
+
+def stable_loan_hex(*parts: str) -> str:
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def loan_emi_key(uid: str, loan_id: str, period: str) -> str:
+    return stable_loan_hex(uid, loan_id, period, "emi")
+
+
+def recompute_loan_payment_summary(db: Any, uid: str, loan_id: str, updated_at: datetime | None = None) -> None:
+    latest = db.loan_payments.find_one(
+        {"uid": uid, "loanId": loan_id},
+        sort=[("date", DESCENDING)],
+    )
+    db.loans.update_one(
+        {"id": loan_id, "uid": uid},
+        {
+            "$set": {
+                "lastPaymentAt": latest.get("date") if latest else None,
+                "updatedAt": updated_at or now(),
+            }
+        },
+    )
+
+
+def loan_due_date_for_month(month: str, due_day: int) -> datetime:
+    year, month_number = [int(part) for part in normalize_month(month).split("-")]
+    day = min(max(due_day, 1), calendar.monthrange(year, month_number)[1])
+    return datetime(year, month_number, day, tzinfo=UTC)
+
+
+def loan_next_due_date(db: Any, loan: dict[str, Any]) -> datetime | None:
+    payments = list(db.loan_payments.find({
+        "uid": loan.get("uid"),
+        "loanId": loan.get("id"),
+        "paymentType": "emi",
+    }))
+    paid_emi_count = len(payments)
+    total_emis = int(loan.get("totalEmis") or 0)
+    if total_emis > 0 and paid_emi_count >= total_emis:
+        return None
+    due_day = int(loan.get("dueDay") or 1)
+    start = aware(loan.get("startDate") or now())
+    candidate_month = loan_month_for_date(start)
+    candidate = loan_due_date_for_month(candidate_month, due_day)
+    if candidate < start:
+        candidate_month = add_months(candidate_month, 1)
+        candidate = loan_due_date_for_month(candidate_month, due_day)
+    paid_periods = {str(payment.get("period") or "") for payment in payments}
+    checked_periods = 0
+    while candidate_month in paid_periods:
+        checked_periods += 1
+        if total_emis > 0 and checked_periods >= total_emis:
+            return None
+        candidate_month = add_months(candidate_month, 1)
+        candidate = loan_due_date_for_month(candidate_month, due_day)
+    return candidate
+
+
+def loan_out(db: Any, doc: dict[str, Any]) -> dict[str, Any]:
+    payments = list(db.loan_payments.find({"uid": doc.get("uid"), "loanId": doc.get("id")}))
+    emi_payments = [payment for payment in payments if payment.get("paymentType") == "emi"]
+    prepayments = [payment for payment in payments if payment.get("paymentType") == "prepayment"]
+    total_paid = round(sum(float(payment.get("amount") or 0) for payment in payments), 2)
+    prepayment_total = round(sum(float(payment.get("amount") or 0) for payment in prepayments), 2)
+    total_emis = int(doc.get("totalEmis") or 0)
+    paid_emi_count = len(emi_payments)
+    remaining_emis = max(total_emis - paid_emi_count, 0) if total_emis > 0 else None
+    principal = float(doc.get("principalAmount") or 0)
+    next_due_date = loan_next_due_date(db, doc)
+    return json_ready({
+        "id": doc.get("id"),
+        "name": doc.get("name") or "",
+        "lender": doc.get("lender") or "",
+        "loanType": doc.get("loanType") or "Personal",
+        "principalAmount": principal,
+        "emiAmount": float(doc.get("emiAmount") or 0),
+        "currency": doc.get("currency") or "INR",
+        "interestRate": float(doc.get("interestRate") or 0),
+        "totalEmis": total_emis,
+        "paidEmiCount": paid_emi_count,
+        "remainingEmis": remaining_emis,
+        "totalPaidAmount": total_paid,
+        "prepaymentAmount": prepayment_total,
+        "estimatedOutstanding": round(max(principal - total_paid, 0), 2),
+        "dueDay": int(doc.get("dueDay") or 1),
+        "startDate": doc.get("startDate"),
+        "nextDueDate": next_due_date,
+        "lastPaymentAt": doc.get("lastPaymentAt"),
+        "category": doc.get("category") or "Loans / EMI",
+        "notes": doc.get("notes") or "",
+        "archived": bool(doc.get("archivedAt")),
+        "archivedAt": doc.get("archivedAt"),
+        "createdAt": doc.get("createdAt"),
+        "updatedAt": doc.get("updatedAt"),
+    })
+
+
+def loan_payment_out(doc: dict[str, Any]) -> dict[str, Any]:
+    return json_ready({
+        "id": doc.get("id"),
+        "loanId": doc.get("loanId"),
+        "paymentType": doc.get("paymentType") or "emi",
+        "period": doc.get("period") or "",
+        "amount": float(doc.get("amount") or 0),
+        "currency": doc.get("currency") or "INR",
+        "date": doc.get("date"),
+        "expenseId": doc.get("expenseId"),
+        "notes": doc.get("notes") or "",
+        "createdAt": doc.get("createdAt"),
+        "updatedAt": doc.get("updatedAt"),
     })
 
 

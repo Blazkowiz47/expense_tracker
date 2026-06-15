@@ -20,6 +20,7 @@ import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
+import 'package:expense_tracker/features/loans/view/loans_page.dart';
 import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -267,6 +268,12 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
+  void _openLoansPage() {
+    Navigator.of(context).push<void>(
+      platformPageRoute(builder: (_) => const LoansPage(autoRefresh: true)),
+    );
+  }
+
   void _openGroupExpenseAction(DailyActionItem item) {
     final groupId = item.groupId.trim();
     final expenseId = item.expenseId.trim();
@@ -355,6 +362,9 @@ class _HomeShellPageState extends State<HomeShellPage>
         return;
       case 'recurring':
         _openRecurringPage();
+        return;
+      case 'loans':
+        _openLoansPage();
         return;
       default:
         _onDestinationSelected(2);
@@ -653,6 +663,11 @@ class _HomeShellPageState extends State<HomeShellPage>
         label: 'Recurring',
         icon: Icons.event_repeat,
         onTap: () => _runAction(_openRecurringPage),
+      ),
+      _QuickAction(
+        label: 'Loans',
+        icon: Icons.account_balance_outlined,
+        onTap: () => _runAction(_openLoansPage),
       ),
       _QuickAction(
         label: 'Settle up',

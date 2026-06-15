@@ -849,6 +849,150 @@ def test_recurring_payment_confirmation_creates_or_updates_expense(tmp_path):
     assert expenses[0]["amount"] == 12400
 
 
+def test_loan_emi_logging_creates_or_updates_expense(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    baseline = client.get("/api/v1/sync/freshness?sections=loans", headers=headers)
+    assert baseline.status_code == 200, baseline.text
+    cursor = baseline.json()["serverTime"]
+
+    created = client.post(
+        "/api/v1/loans",
+        headers=headers,
+        json={
+            "name": "Home loan",
+            "lender": "HDFC",
+            "loanType": "Home",
+            "principalAmount": 100000,
+            "emiAmount": 5000,
+            "currency": "INR",
+            "totalEmis": 20,
+            "dueDay": 5,
+            "startDate": "2026-01-05T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    loan = created.json()
+    loan_id = loan["id"]
+    assert loan["paidEmiCount"] == 0
+    assert loan["remainingEmis"] == 20
+    assert loan["nextDueDate"] == "2026-01-05T00:00:00Z"
+
+    changed = client.get(
+        f"/api/v1/sync/freshness?since={cursor}&sections=loans",
+        headers=headers,
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["sections"]["loans"]["changed"] is True
+
+    logged = client.post(
+        f"/api/v1/loans/{loan_id}/payments",
+        headers=headers,
+        json={"amount": 5000, "date": "2026-06-05T10:00:00Z"},
+    )
+    assert logged.status_code == 201, logged.text
+    payload = logged.json()
+    assert payload["payment"]["paymentType"] == "emi"
+    assert payload["payment"]["period"] == "2026-06"
+    assert payload["loan"]["paidEmiCount"] == 1
+    assert payload["loan"]["remainingEmis"] == 19
+    assert payload["loan"]["totalPaidAmount"] == 5000
+    assert payload["expense"]["category"] == "Loans / EMI"
+    assert payload["expense"]["description"] == "Loan EMI: Home loan"
+    assert payload["expense"]["sourceType"] == "loan_payment"
+    assert payload["expense"]["sourceLoanId"] == loan_id
+    assert payload["expense"]["sourceLoanPaymentId"] == payload["payment"]["id"]
+    expense_id = payload["expense"]["id"]
+
+    updated = client.post(
+        f"/api/v1/loans/{loan_id}/payments",
+        headers=headers,
+        json={"amount": 5500, "date": "2026-06-20T10:00:00Z"},
+    )
+    assert updated.status_code == 201, updated.text
+    updated_payload = updated.json()
+    assert updated_payload["payment"]["id"] == payload["payment"]["id"]
+    assert updated_payload["expense"]["id"] == expense_id
+    assert updated_payload["expense"]["amount"] == 5500
+    assert updated_payload["loan"]["paidEmiCount"] == 1
+    assert updated_payload["loan"]["totalPaidAmount"] == 5500
+
+    expenses = client.get("/api/v1/expenses?category=Loans%20/%20EMI", headers=headers)
+    assert expenses.status_code == 200, expenses.text
+    loan_expenses = expenses.json()["expenses"]
+    assert len(loan_expenses) == 1
+    assert loan_expenses[0]["id"] == expense_id
+    assert loan_expenses[0]["amount"] == 5500
+
+    direct_edit = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        headers=headers,
+        json={
+            "amount": 1,
+            "currency": "INR",
+            "category": "Other",
+            "description": "manual edit",
+            "date": "2026-06-20T10:00:00Z",
+        },
+    )
+    assert direct_edit.status_code == 409, direct_edit.text
+    assert direct_edit.json()["error"]["code"] == "LINKED_RECORD"
+
+    direct_delete = client.delete(f"/api/v1/expenses/{expense_id}", headers=headers)
+    assert direct_delete.status_code == 409, direct_delete.text
+    assert direct_delete.json()["error"]["code"] == "LINKED_RECORD"
+
+    edited_loan = client.put(
+        f"/api/v1/loans/{loan_id}",
+        headers=headers,
+        json={"name": "Home loan revised"},
+    )
+    assert edited_loan.status_code == 200, edited_loan.text
+    assert edited_loan.json()["lastPaymentAt"] == updated_payload["payment"]["date"]
+
+
+def test_loan_inputs_return_api_errors(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    invalid_loan = client.post(
+        "/api/v1/loans",
+        headers=headers,
+        json={
+            "name": "Bad loan",
+            "principalAmount": "not-a-number",
+            "emiAmount": 5000,
+        },
+    )
+    assert invalid_loan.status_code == 400, invalid_loan.text
+    assert invalid_loan.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+    created = client.post(
+        "/api/v1/loans",
+        headers=headers,
+        json={
+            "name": "Car loan",
+            "principalAmount": 100000,
+            "emiAmount": 5000,
+            "currency": "INR",
+            "totalEmis": 20,
+            "dueDay": 5,
+            "startDate": "2026-06-05T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    loan_id = created.json()["id"]
+
+    zero_payment = client.post(
+        f"/api/v1/loans/{loan_id}/payments",
+        headers=headers,
+        json={"amount": 0, "date": "2026-06-05T10:00:00Z"},
+    )
+    assert zero_payment.status_code == 400, zero_payment.text
+    assert zero_payment.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+
 def test_recurring_template_lifecycle_updates_generated_occurrences(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
