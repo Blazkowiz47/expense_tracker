@@ -35,7 +35,6 @@ void main() {
     final indicator = tester.widget<RefreshIndicator>(
       find.byType(RefreshIndicator),
     );
-    expect(indicator.onRefresh, same(handleRefresh));
     await indicator.onRefresh();
 
     expect(refreshCount, 1);
@@ -96,5 +95,122 @@ void main() {
 
     completer.complete();
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('shows sync status after background refresh succeeds', (
+    tester,
+  ) async {
+    var refreshCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppPageContainer(
+            autoRefresh: true,
+            refreshInterval: const Duration(milliseconds: 100),
+            onAutoRefresh: () async {
+              refreshCount += 1;
+            },
+            children: const [SizedBox(height: 24, child: Text('Live data'))],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Checked'), findsNothing);
+    expect(find.byType(AnimatedOpacity), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+
+    expect(refreshCount, 1);
+    expect(find.textContaining('Checked'), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+  });
+
+  testWidgets('shows retry status after background refresh fails', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppPageContainer(
+            autoRefresh: true,
+            refreshInterval: const Duration(milliseconds: 100),
+            onAutoRefresh: () async {
+              throw Exception('network down');
+            },
+            children: const [SizedBox(height: 24, child: Text('Live data'))],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+
+    expect(find.text('Could not refresh. Pull down to retry.'), findsOneWidget);
+    expect(find.byIcon(Icons.sync_problem), findsOneWidget);
+  });
+
+  testWidgets('shows syncing status during manual refresh', (tester) async {
+    final completer = Completer<void>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: Scaffold(
+          body: AppPageContainer(
+            autoRefresh: true,
+            refreshInterval: const Duration(minutes: 5),
+            onRefresh: () => completer.future,
+            children: const [SizedBox(height: 24, child: Text('Live data'))],
+          ),
+        ),
+      ),
+    );
+
+    final indicator = tester.widget<RefreshIndicator>(
+      find.byType(RefreshIndicator),
+    );
+    final refreshFuture = indicator.onRefresh();
+    await tester.pump();
+
+    expect(find.text('Syncing...'), findsOneWidget);
+    expect(find.byIcon(Icons.sync), findsOneWidget);
+
+    completer.complete();
+    await refreshFuture;
+    await tester.pump();
+
+    expect(find.text('Syncing...'), findsNothing);
+    expect(find.textContaining('Checked'), findsOneWidget);
+  });
+
+  testWidgets('can suppress the sync status row', (tester) async {
+    var refreshCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppPageContainer(
+            autoRefresh: true,
+            showSyncStatus: false,
+            refreshInterval: const Duration(milliseconds: 100),
+            onAutoRefresh: () async {
+              refreshCount += 1;
+            },
+            children: const [SizedBox(height: 24, child: Text('Live data'))],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
+
+    expect(refreshCount, 1);
+    expect(find.textContaining('Checked'), findsNothing);
+    expect(find.byType(AnimatedOpacity), findsNothing);
   });
 }
