@@ -9,6 +9,13 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 const _savingsCurrencyOptions = <String>['NOK', 'INR', 'USD', 'EUR', 'GBP'];
+const _savingsGoalTypeOptions = <String>[
+  'savings_goal',
+  'sip',
+  'fixed_deposit',
+  'emergency_fund',
+  'other',
+];
 
 class SavingsPage extends StatefulWidget {
   const SavingsPage({
@@ -133,22 +140,34 @@ class _SavingsPageState extends State<SavingsPage> {
         if (goal == null) {
           await _repository.createGoal(
             name: draft.name,
+            goalType: draft.goalType,
+            familyVisibility: draft.familyVisibility,
             targetAmount: draft.targetAmount,
             targetCurrency: draft.targetCurrency,
             sourceCurrency: draft.sourceCurrency,
             monthlyTargetAmount: draft.monthlyTargetAmount,
             startMonth: draft.startMonth,
+            provider: draft.provider,
+            accountName: draft.accountName,
+            expectedReturnRate: draft.expectedReturnRate,
+            maturityDate: draft.maturityDate,
             notes: draft.notes,
           );
         } else {
           await _repository.updateGoal(
             id: goal.id,
             name: draft.name,
+            goalType: draft.goalType,
+            familyVisibility: draft.familyVisibility,
             targetAmount: draft.targetAmount,
             targetCurrency: draft.targetCurrency,
             sourceCurrency: draft.sourceCurrency,
             monthlyTargetAmount: draft.monthlyTargetAmount,
             startMonth: draft.startMonth,
+            provider: draft.provider,
+            accountName: draft.accountName,
+            expectedReturnRate: draft.expectedReturnRate,
+            maturityDate: draft.maturityDate,
             notes: draft.notes,
           );
         }
@@ -478,7 +497,7 @@ class _SavingsGoalCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${goal.sourceCurrency} -> ${goal.targetCurrency}',
+                      _goalSubtitle(goal),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -548,12 +567,30 @@ class _SavingsGoalCard extends StatelessWidget {
               ),
               if (goal.monthlyTargetAmount > 0)
                 _SavingsInfoChip(
-                  label: 'This month',
+                  label: goal.goalType == 'sip' ? 'Monthly SIP' : 'This month',
                   value:
                       '${AppMoney.formatCurrency(goal.currentMonthSavedAmount, goal.targetCurrency)} / ${AppMoney.formatCurrency(goal.monthlyTargetAmount, goal.targetCurrency)}',
                 ),
+              if (goal.expectedReturnRate > 0)
+                _SavingsInfoChip(
+                  label: 'Return',
+                  value: '${goal.expectedReturnRate.toStringAsFixed(2)}%',
+                ),
+              _SavingsInfoChip(
+                label: 'Visibility',
+                value: goal.familyVisibility == 'family' ? 'Family' : 'Private',
+              ),
             ],
           ),
+          if (goal.provider.trim().isNotEmpty ||
+              goal.accountName.trim().isNotEmpty ||
+              goal.maturityDate != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _goalDetailLine(goal),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           if (goal.lastContributionAt != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -628,9 +665,15 @@ class _SavingsGoalDialogState extends State<_SavingsGoalDialog> {
   late final TextEditingController _targetController;
   late final TextEditingController _monthlyController;
   late final TextEditingController _startMonthController;
+  late final TextEditingController _providerController;
+  late final TextEditingController _accountController;
+  late final TextEditingController _returnController;
   late final TextEditingController _notesController;
   var _sourceCurrency = 'NOK';
   var _targetCurrency = 'INR';
+  var _goalType = 'savings_goal';
+  var _showInFamily = false;
+  DateTime? _maturityDate;
   String? _error;
 
   @override
@@ -639,6 +682,12 @@ class _SavingsGoalDialogState extends State<_SavingsGoalDialog> {
     final goal = widget.goal;
     _sourceCurrency = goal?.sourceCurrency ?? 'NOK';
     _targetCurrency = goal?.targetCurrency ?? 'INR';
+    _goalType = goal?.goalType ?? 'savings_goal';
+    if (!_savingsGoalTypeOptions.contains(_goalType)) {
+      _goalType = 'savings_goal';
+    }
+    _showInFamily = goal?.familyVisibility == 'family';
+    _maturityDate = goal?.maturityDate;
     _nameController = TextEditingController(
       text: goal?.name ?? 'India savings',
     );
@@ -653,6 +702,13 @@ class _SavingsGoalDialogState extends State<_SavingsGoalDialog> {
     _startMonthController = TextEditingController(
       text: goal?.startMonth ?? _monthKey(DateTime.now()),
     );
+    _providerController = TextEditingController(text: goal?.provider ?? '');
+    _accountController = TextEditingController(text: goal?.accountName ?? '');
+    _returnController = TextEditingController(
+      text: goal == null || goal.expectedReturnRate == 0
+          ? ''
+          : goal.expectedReturnRate.toString(),
+    );
     _notesController = TextEditingController(text: goal?.notes ?? '');
   }
 
@@ -662,18 +718,35 @@ class _SavingsGoalDialogState extends State<_SavingsGoalDialog> {
     _targetController.dispose();
     _monthlyController.dispose();
     _startMonthController.dispose();
+    _providerController.dispose();
+    _accountController.dispose();
+    _returnController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickMaturityDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _maturityDate ?? DateTime.now(),
+      firstDate: DateTime(1990),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      setState(() => _maturityDate = picked);
+    }
   }
 
   void _submit() {
     final name = _nameController.text.trim();
     final target = double.tryParse(_targetController.text.trim()) ?? 0;
     final monthly = double.tryParse(_monthlyController.text.trim()) ?? 0;
+    final expectedReturn = double.tryParse(_returnController.text.trim()) ?? 0;
     final startMonth = _startMonthController.text.trim();
     if (name.isEmpty ||
         target <= 0 ||
         monthly < 0 ||
+        expectedReturn < 0 ||
         !_isMonthKey(startMonth)) {
       setState(() {
         _error = 'Add a name, positive target, and month as YYYY-MM.';
@@ -683,11 +756,17 @@ class _SavingsGoalDialogState extends State<_SavingsGoalDialog> {
     Navigator.of(context).pop(
       _SavingsGoalDraft(
         name: name,
+        goalType: _goalType,
+        familyVisibility: _showInFamily ? 'family' : 'private',
         targetAmount: target,
         targetCurrency: _targetCurrency,
         sourceCurrency: _sourceCurrency,
         monthlyTargetAmount: monthly,
         startMonth: startMonth,
+        provider: _providerController.text.trim(),
+        accountName: _accountController.text.trim(),
+        expectedReturnRate: expectedReturn,
+        maturityDate: _maturityDate,
         notes: _notesController.text.trim(),
       ),
     );
@@ -707,6 +786,25 @@ class _SavingsGoalDialogState extends State<_SavingsGoalDialog> {
               controller: _nameController,
               decoration: const InputDecoration(labelText: 'Name'),
               textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _goalType,
+              decoration: const InputDecoration(
+                labelText: 'Type',
+                border: OutlineInputBorder(),
+              ),
+              items: _savingsGoalTypeOptions
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(_goalTypeLabel(item)),
+                    ),
+                  )
+                  .toList(growable: false),
+              onChanged: (value) {
+                if (value != null) setState(() => _goalType = value);
+              },
             ),
             const SizedBox(height: 12),
             Row(
@@ -783,6 +881,47 @@ class _SavingsGoalDialogState extends State<_SavingsGoalDialog> {
               controller: _startMonthController,
               decoration: const InputDecoration(labelText: 'Start month'),
               textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _providerController,
+              decoration: const InputDecoration(labelText: 'Provider'),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _accountController,
+              decoration: const InputDecoration(labelText: 'Account / folio'),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _returnController,
+              decoration: const InputDecoration(
+                labelText: 'Expected return',
+                suffixText: '%',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _pickMaturityDate,
+              icon: const Icon(Icons.event_outlined),
+              label: Text(
+                _maturityDate == null
+                    ? 'Set maturity date'
+                    : 'Matures ${DateFormatter.formatDate(_maturityDate!)}',
+              ),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Show in family'),
+              value: _showInFamily,
+              onChanged: (value) => setState(() => _showInFamily = value),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -969,20 +1108,32 @@ class _SavingsContributionDialogState
 class _SavingsGoalDraft {
   const _SavingsGoalDraft({
     required this.name,
+    required this.goalType,
+    required this.familyVisibility,
     required this.targetAmount,
     required this.targetCurrency,
     required this.sourceCurrency,
     required this.monthlyTargetAmount,
     required this.startMonth,
+    required this.provider,
+    required this.accountName,
+    required this.expectedReturnRate,
+    required this.maturityDate,
     required this.notes,
   });
 
   final String name;
+  final String goalType;
+  final String familyVisibility;
   final double targetAmount;
   final String targetCurrency;
   final String sourceCurrency;
   final double monthlyTargetAmount;
   final String startMonth;
+  final String provider;
+  final String accountName;
+  final double expectedReturnRate;
+  final DateTime? maturityDate;
   final String notes;
 }
 
@@ -1028,4 +1179,39 @@ bool _isMonthKey(String value) {
   if (match == null) return false;
   final month = int.tryParse(match.group(2) ?? '') ?? 0;
   return month >= 1 && month <= 12;
+}
+
+String _goalTypeLabel(String value) {
+  return switch (value) {
+    'sip' => 'Monthly SIP',
+    'fixed_deposit' => 'Fixed deposit',
+    'emergency_fund' => 'Emergency fund',
+    'other' => 'Other investment',
+    _ => 'Savings goal',
+  };
+}
+
+String _goalSubtitle(SavingsGoal goal) {
+  final parts = <String>[
+    _goalTypeLabel(goal.goalType),
+    '${goal.sourceCurrency} -> ${goal.targetCurrency}',
+  ];
+  if (goal.ownerLabel.trim().isNotEmpty) {
+    parts.add(goal.ownerLabel.trim());
+  }
+  return parts.join(' · ');
+}
+
+String _goalDetailLine(SavingsGoal goal) {
+  final parts = <String>[];
+  if (goal.provider.trim().isNotEmpty) {
+    parts.add(goal.provider.trim());
+  }
+  if (goal.accountName.trim().isNotEmpty) {
+    parts.add(goal.accountName.trim());
+  }
+  if (goal.maturityDate != null) {
+    parts.add('Matures ${DateFormatter.formatDate(goal.maturityDate!)}');
+  }
+  return parts.join(' · ');
 }

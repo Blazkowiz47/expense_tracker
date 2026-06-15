@@ -1308,6 +1308,26 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             users = list(app.state.db.users.find({"uid": {"$in": updated["memberUids"]}}))
             roles = updated.get("memberRoles") if isinstance(updated.get("memberRoles"), dict) else {}
             return member_out(member_uid, users, roles.get(member_uid, ""))
+        if parts == ["savings", "goals"] and request.method == "GET":
+            if group.get("groupType") != "family":
+                return {"goals": []}
+            member_uids = list(group.get("memberUids") or [])
+            docs = list(
+                app.state.db.savings_goals.find(
+                    {
+                        "uid": {"$in": member_uids},
+                        "familyVisibility": "family",
+                        "archivedAt": {"$exists": False},
+                    }
+                ).sort("updatedAt", DESCENDING)
+            )
+            users = {doc["uid"]: doc for doc in app.state.db.users.find({"uid": {"$in": member_uids}})}
+            return {
+                "goals": [
+                    savings_goal_out(app.state.db, doc, owner=users.get(doc.get("uid")))
+                    for doc in docs
+                ]
+            }
         if parts == ["expenses"] and request.method == "GET":
             return {"expenses": [group_expense_out(doc) for doc in app.state.db.group_expenses.find({"groupId": group_id}).sort("date", -1)]}
         if parts == ["expenses"] and request.method == "POST":
@@ -1945,9 +1965,23 @@ def loan_freshness(db: Any, uid: str) -> datetime | None:
 
 
 def savings_freshness(db: Any, uid: str) -> datetime | None:
+    family_member_uids: set[str] = set()
+    for group in db.groups.find({"memberUids": uid, "groupType": "family"}, {"memberUids": 1}):
+        family_member_uids.update(str(item) for item in group.get("memberUids") or [])
     return max_time(
         latest_collection_time(db, "savings_goals", {"uid": uid}, "updatedAt"),
         latest_collection_time(db, "savings_contributions", {"uid": uid}, "updatedAt"),
+        latest_collection_time(
+            db,
+            "savings_goals",
+            {
+                "uid": {"$in": list(family_member_uids)},
+                "familyVisibility": "family",
+            }
+            if family_member_uids
+            else {"uid": "__none__"},
+            "updatedAt",
+        ),
     )
 
 
@@ -2758,16 +2792,23 @@ def build_savings_goal(
     current = now()
     start_month = normalize_month(str(body.get("startMonth") or current_month()))
     raw_target_date = body.get("targetDate")
+    raw_maturity_date = body.get("maturityDate")
     doc = {
         "id": goal_id or uuid.uuid4().hex,
         "uid": uid,
         "name": name,
+        "goalType": normalize_savings_goal_type(body.get("goalType") or body.get("type")),
+        "familyVisibility": normalize_family_visibility(body.get("familyVisibility") or body.get("visibility")),
         "targetAmount": target_amount,
         "targetCurrency": normalize_currency(body.get("targetCurrency"), "INR"),
         "sourceCurrency": normalize_currency(body.get("sourceCurrency"), "NOK"),
         "monthlyTargetAmount": monthly_target,
         "startMonth": start_month,
         "targetDate": parse_dt(str(raw_target_date)) if raw_target_date else None,
+        "maturityDate": parse_dt(str(raw_maturity_date)) if raw_maturity_date else None,
+        "provider": str(body.get("provider") or "").strip(),
+        "accountName": str(body.get("accountName") or "").strip(),
+        "expectedReturnRate": non_negative_number(body_first(body, ("expectedReturnRate",), 0), "expectedReturnRate"),
         "notes": str(body.get("notes") or "").strip(),
         "createdAt": created_at or current,
         "updatedAt": current,
@@ -2775,6 +2816,33 @@ def build_savings_goal(
     if archived_at:
         doc["archivedAt"] = archived_at
     return doc
+
+
+def normalize_savings_goal_type(value: Any) -> str:
+    raw = str(value or "savings_goal").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "goal": "savings_goal",
+        "savings": "savings_goal",
+        "saving": "savings_goal",
+        "mutual_fund_sip": "sip",
+        "systematic_investment_plan": "sip",
+        "fd": "fixed_deposit",
+        "fixed": "fixed_deposit",
+        "fixed_investment": "fixed_deposit",
+        "deposit": "fixed_deposit",
+        "emergency": "emergency_fund",
+    }
+    normalized = aliases.get(raw, raw)
+    if normalized not in {"savings_goal", "sip", "fixed_deposit", "emergency_fund", "other"}:
+        return "savings_goal"
+    return normalized
+
+
+def normalize_family_visibility(value: Any) -> str:
+    raw = str(value or "private").strip().lower().replace("-", "_").replace(" ", "_")
+    if raw in {"family", "household", "shared", "visible", "show"}:
+        return "family"
+    return "private"
 
 
 async def build_savings_contribution(
@@ -2819,7 +2887,7 @@ async def build_savings_contribution(
     }
 
 
-def savings_goal_out(db: Any, doc: dict[str, Any]) -> dict[str, Any]:
+def savings_goal_out(db: Any, doc: dict[str, Any], owner: dict[str, Any] | None = None) -> dict[str, Any]:
     contributions = list(db.savings_contributions.find({"uid": doc.get("uid"), "goalId": doc.get("id")}))
     target_currency = normalize_currency(doc.get("targetCurrency"), "INR")
     source_currency = normalize_currency(doc.get("sourceCurrency"), "NOK")
@@ -2842,13 +2910,21 @@ def savings_goal_out(db: Any, doc: dict[str, Any]) -> dict[str, Any]:
             latest = aware(value)
     return json_ready({
         "id": doc.get("id"),
+        "ownerUid": doc.get("uid") or "",
+        "ownerLabel": (user_public(owner)["displayName"] if owner else ""),
         "name": doc.get("name") or "",
+        "goalType": normalize_savings_goal_type(doc.get("goalType")),
+        "familyVisibility": normalize_family_visibility(doc.get("familyVisibility")),
         "targetAmount": target_amount,
         "targetCurrency": target_currency,
         "sourceCurrency": source_currency,
         "monthlyTargetAmount": float(doc.get("monthlyTargetAmount") or 0),
         "startMonth": doc.get("startMonth") or current_month(),
         "targetDate": doc.get("targetDate"),
+        "maturityDate": doc.get("maturityDate"),
+        "provider": doc.get("provider") or "",
+        "accountName": doc.get("accountName") or "",
+        "expectedReturnRate": float(doc.get("expectedReturnRate") or 0),
         "totalSavedAmount": total_saved,
         "totalSourceAmount": total_source,
         "remainingAmount": round(max(target_amount - total_saved, 0), 2),

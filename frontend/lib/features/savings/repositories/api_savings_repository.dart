@@ -37,11 +37,17 @@ class ApiSavingsRepository {
 
   Future<SavingsGoal> createGoal({
     required String name,
+    String goalType = 'savings_goal',
+    String familyVisibility = 'private',
     required double targetAmount,
     required String targetCurrency,
     required String sourceCurrency,
     required double monthlyTargetAmount,
     required String startMonth,
+    String provider = '',
+    String accountName = '',
+    double expectedReturnRate = 0,
+    DateTime? maturityDate,
     required String notes,
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/savings/goals');
@@ -51,11 +57,17 @@ class ApiSavingsRepository {
       body: jsonEncode(
         _goalBody(
           name: name,
+          goalType: goalType,
+          familyVisibility: familyVisibility,
           targetAmount: targetAmount,
           targetCurrency: targetCurrency,
           sourceCurrency: sourceCurrency,
           monthlyTargetAmount: monthlyTargetAmount,
           startMonth: startMonth,
+          provider: provider,
+          accountName: accountName,
+          expectedReturnRate: expectedReturnRate,
+          maturityDate: maturityDate,
           notes: notes,
         ),
       ),
@@ -73,11 +85,17 @@ class ApiSavingsRepository {
   Future<SavingsGoal> updateGoal({
     required String id,
     required String name,
+    String goalType = 'savings_goal',
+    String familyVisibility = 'private',
     required double targetAmount,
     required String targetCurrency,
     required String sourceCurrency,
     required double monthlyTargetAmount,
     required String startMonth,
+    String provider = '',
+    String accountName = '',
+    double expectedReturnRate = 0,
+    DateTime? maturityDate,
     required String notes,
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/savings/goals/$id');
@@ -87,11 +105,17 @@ class ApiSavingsRepository {
       body: jsonEncode(
         _goalBody(
           name: name,
+          goalType: goalType,
+          familyVisibility: familyVisibility,
           targetAmount: targetAmount,
           targetCurrency: targetCurrency,
           sourceCurrency: sourceCurrency,
           monthlyTargetAmount: monthlyTargetAmount,
           startMonth: startMonth,
+          provider: provider,
+          accountName: accountName,
+          expectedReturnRate: expectedReturnRate,
+          maturityDate: maturityDate,
           notes: notes,
         ),
       ),
@@ -180,20 +204,33 @@ class ApiSavingsRepository {
 
   Map<String, dynamic> _goalBody({
     required String name,
+    required String goalType,
+    required String familyVisibility,
     required double targetAmount,
     required String targetCurrency,
     required String sourceCurrency,
     required double monthlyTargetAmount,
     required String startMonth,
+    required String provider,
+    required String accountName,
+    required double expectedReturnRate,
+    required DateTime? maturityDate,
     required String notes,
   }) {
     return <String, dynamic>{
       'name': name,
+      'goalType': goalType,
+      'familyVisibility': familyVisibility,
       'targetAmount': targetAmount,
       'targetCurrency': targetCurrency,
       'sourceCurrency': sourceCurrency,
       'monthlyTargetAmount': monthlyTargetAmount,
       'startMonth': startMonth,
+      'provider': provider,
+      'accountName': accountName,
+      'expectedReturnRate': expectedReturnRate,
+      if (maturityDate != null)
+        'maturityDate': maturityDate.toUtc().toIso8601String(),
       'notes': notes,
     };
   }

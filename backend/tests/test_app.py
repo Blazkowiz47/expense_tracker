@@ -1296,6 +1296,74 @@ def test_savings_goal_contribution_uses_fx_snapshot(tmp_path):
     assert len(contributions.json()["contributions"]) == 1
 
 
+def test_family_visible_savings_are_filtered_for_household_members(tmp_path):
+    client, _ = make_client(tmp_path)
+    owner_headers = register(client, "owner@example.com")
+    spouse_headers = register(client, "spouse@example.com")
+
+    family = client.post(
+        "/api/v1/groups",
+        headers=owner_headers,
+        json={
+            "name": "Household",
+            "groupType": "family",
+            "members": ["spouse@example.com"],
+        },
+    )
+    assert family.status_code == 201, family.text
+    group_id = family.json()["id"]
+
+    private_sip = client.post(
+        "/api/v1/savings/goals",
+        headers=spouse_headers,
+        json={
+            "name": "Private SIP",
+            "goalType": "sip",
+            "familyVisibility": "private",
+            "targetAmount": 500000,
+            "targetCurrency": "INR",
+            "sourceCurrency": "NOK",
+            "monthlyTargetAmount": 10000,
+            "startMonth": "2026-06",
+        },
+    )
+    assert private_sip.status_code == 201, private_sip.text
+
+    visible_fd = client.post(
+        "/api/v1/savings/goals",
+        headers=spouse_headers,
+        json={
+            "name": "Family FD",
+            "goalType": "fixed_deposit",
+            "familyVisibility": "family",
+            "targetAmount": 200000,
+            "targetCurrency": "INR",
+            "sourceCurrency": "INR",
+            "monthlyTargetAmount": 0,
+            "startMonth": "2026-06",
+            "provider": "HDFC",
+            "accountName": "FD 2026",
+            "expectedReturnRate": 7.1,
+            "maturityDate": "2027-06-15T00:00:00Z",
+        },
+    )
+    assert visible_fd.status_code == 201, visible_fd.text
+    assert visible_fd.json()["familyVisibility"] == "family"
+    assert visible_fd.json()["goalType"] == "fixed_deposit"
+
+    family_goals = client.get(
+        f"/api/v1/groups/{group_id}/savings/goals",
+        headers=owner_headers,
+    )
+    assert family_goals.status_code == 200, family_goals.text
+    goals = family_goals.json()["goals"]
+    assert [goal["name"] for goal in goals] == ["Family FD"]
+    assert goals[0]["ownerUid"]
+    assert goals[0]["ownerLabel"] == "User"
+    assert goals[0]["provider"] == "HDFC"
+    assert goals[0]["expectedReturnRate"] == 7.1
+
+
 def test_savings_inputs_return_api_errors(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)

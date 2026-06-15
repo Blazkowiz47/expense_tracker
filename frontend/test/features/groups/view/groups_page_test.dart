@@ -14,6 +14,7 @@ import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
+import 'package:expense_tracker/features/savings/models/savings_goal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -33,11 +34,13 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
       ),
     ],
     this.expenses,
+    this.familyVisibleSavingsGoals = const [],
   }) : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   final List<GroupSummary> groups;
   final List<GroupMember> members;
   final List<GroupExpense>? expenses;
+  final List<SavingsGoal> familyVisibleSavingsGoals;
   final List<GroupSettlement> settlements = [];
   int fetchGroupCount = 0;
   ({
@@ -205,6 +208,11 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
       settlements;
 
   @override
+  Future<List<SavingsGoal>> fetchFamilyVisibleSavingsGoals(
+    String groupId,
+  ) async => familyVisibleSavingsGoals;
+
+  @override
   Future<GroupSettlement> recordSettlement({
     required String groupId,
     required String memberUid,
@@ -337,6 +345,7 @@ FreshnessSnapshot _familyFreshness(DateTime serverTime) {
     sections: const {
       'groups': FreshnessSection(changed: false),
       'plans': FreshnessSection(changed: false),
+      'savings': FreshnessSection(changed: false),
     },
   );
 }
@@ -447,7 +456,11 @@ void main() {
 
     expect(repository.fetchGroupCount, 1);
     expect(freshnessRepository.requests, hasLength(2));
-    expect(freshnessRepository.requests.last.sections, ['groups', 'plans']);
+    expect(freshnessRepository.requests.last.sections, [
+      'groups',
+      'plans',
+      'savings',
+    ]);
     expect(
       freshnessRepository.requests.last.since,
       DateTime.parse('2026-06-07T10:00:00Z'),
@@ -471,6 +484,43 @@ void main() {
     expect(find.text('Trip to Goa'), findsNothing);
     expect(find.textContaining('Wife', skipOffstage: false), findsOneWidget);
     expect(find.text('Groceries'), findsWidgets);
+  });
+
+  testWidgets('family page shows family-visible investments', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FamilyPage(
+            repository: _FakeGroupsRepository(
+              [familyGroup],
+              familyVisibleSavingsGoals: [
+                _savingsGoal(
+                  name: 'India SIP',
+                  goalType: 'sip',
+                  familyVisibility: 'family',
+                  totalSavedAmount: 85000,
+                  monthlyTargetAmount: 25000,
+                  ownerLabel: 'Sushrut',
+                ),
+              ],
+            ),
+            monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Family visible investments'),
+      120,
+    );
+
+    expect(find.text('Family visible investments'), findsOneWidget);
+    expect(find.text('India SIP'), findsOneWidget);
+    expect(find.textContaining('Monthly SIP'), findsOneWidget);
+    expect(find.textContaining('Sushrut'), findsOneWidget);
+    expect(find.textContaining('₹85,000.00'), findsWidgets);
   });
 
   testWidgets('family create dialog sends roles for household invites', (
@@ -1257,5 +1307,49 @@ GroupExpense _groupExpense({
     date: date,
     createdAt: date,
     updatedAt: date,
+  );
+}
+
+SavingsGoal _savingsGoal({
+  String id = 'goal-1',
+  String name = 'India savings',
+  String goalType = 'savings_goal',
+  String familyVisibility = 'private',
+  String ownerLabel = '',
+  double targetAmount = 300000,
+  double monthlyTargetAmount = 25000,
+  double totalSavedAmount = 0,
+  String targetCurrency = 'INR',
+  String sourceCurrency = 'NOK',
+}) {
+  return SavingsGoal(
+    id: id,
+    ownerUid: 'member-1',
+    ownerLabel: ownerLabel,
+    name: name,
+    goalType: goalType,
+    familyVisibility: familyVisibility,
+    targetAmount: targetAmount,
+    targetCurrency: targetCurrency,
+    sourceCurrency: sourceCurrency,
+    monthlyTargetAmount: monthlyTargetAmount,
+    startMonth: '2026-06',
+    targetDate: null,
+    maturityDate: null,
+    provider: '',
+    accountName: '',
+    expectedReturnRate: 0,
+    totalSavedAmount: totalSavedAmount,
+    totalSourceAmount: 0,
+    remainingAmount: targetAmount - totalSavedAmount,
+    progress: targetAmount <= 0 ? 0 : totalSavedAmount / targetAmount,
+    currentMonthSavedAmount: 0,
+    contributionCount: 0,
+    lastContributionAt: null,
+    notes: '',
+    archived: false,
+    archivedAt: null,
+    createdAt: DateTime.utc(2026, 6, 1),
+    updatedAt: DateTime.utc(2026, 6, 1),
   );
 }

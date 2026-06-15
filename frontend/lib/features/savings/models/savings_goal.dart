@@ -1,13 +1,21 @@
 class SavingsGoal {
   const SavingsGoal({
     required this.id,
+    required this.ownerUid,
+    required this.ownerLabel,
     required this.name,
+    required this.goalType,
+    required this.familyVisibility,
     required this.targetAmount,
     required this.targetCurrency,
     required this.sourceCurrency,
     required this.monthlyTargetAmount,
     required this.startMonth,
     required this.targetDate,
+    required this.maturityDate,
+    required this.provider,
+    required this.accountName,
+    required this.expectedReturnRate,
     required this.totalSavedAmount,
     required this.totalSourceAmount,
     required this.remainingAmount,
@@ -23,13 +31,21 @@ class SavingsGoal {
   });
 
   final String id;
+  final String ownerUid;
+  final String ownerLabel;
   final String name;
+  final String goalType;
+  final String familyVisibility;
   final double targetAmount;
   final String targetCurrency;
   final String sourceCurrency;
   final double monthlyTargetAmount;
   final String startMonth;
   final DateTime? targetDate;
+  final DateTime? maturityDate;
+  final String provider;
+  final String accountName;
+  final double expectedReturnRate;
   final double totalSavedAmount;
   final double totalSourceAmount;
   final double remainingAmount;
@@ -46,7 +62,11 @@ class SavingsGoal {
   factory SavingsGoal.fromJson(Map<String, dynamic> json) {
     return SavingsGoal(
       id: (json['id'] as String?) ?? '',
+      ownerUid: (json['ownerUid'] as String?) ?? '',
+      ownerLabel: (json['ownerLabel'] as String?) ?? '',
       name: (json['name'] as String?) ?? '',
+      goalType: (json['goalType'] as String?) ?? 'savings_goal',
+      familyVisibility: (json['familyVisibility'] as String?) ?? 'private',
       targetAmount: _asDouble(json['targetAmount']),
       targetCurrency: ((json['targetCurrency'] as String?) ?? 'INR')
           .toUpperCase(),
@@ -55,6 +75,10 @@ class SavingsGoal {
       monthlyTargetAmount: _asDouble(json['monthlyTargetAmount']),
       startMonth: (json['startMonth'] as String?) ?? '',
       targetDate: _parseDate(json['targetDate']),
+      maturityDate: _parseDate(json['maturityDate']),
+      provider: (json['provider'] as String?) ?? '',
+      accountName: (json['accountName'] as String?) ?? '',
+      expectedReturnRate: _asDouble(json['expectedReturnRate']),
       totalSavedAmount: _asDouble(json['totalSavedAmount']),
       totalSourceAmount: _asDouble(json['totalSourceAmount']),
       remainingAmount: _asDouble(json['remainingAmount']),
@@ -72,13 +96,21 @@ class SavingsGoal {
 
   SavingsGoal copyWith({
     String? id,
+    String? ownerUid,
+    String? ownerLabel,
     String? name,
+    String? goalType,
+    String? familyVisibility,
     double? targetAmount,
     String? targetCurrency,
     String? sourceCurrency,
     double? monthlyTargetAmount,
     String? startMonth,
     DateTime? targetDate,
+    DateTime? maturityDate,
+    String? provider,
+    String? accountName,
+    double? expectedReturnRate,
     double? totalSavedAmount,
     double? totalSourceAmount,
     double? remainingAmount,
@@ -94,13 +126,21 @@ class SavingsGoal {
   }) {
     return SavingsGoal(
       id: id ?? this.id,
+      ownerUid: ownerUid ?? this.ownerUid,
+      ownerLabel: ownerLabel ?? this.ownerLabel,
       name: name ?? this.name,
+      goalType: goalType ?? this.goalType,
+      familyVisibility: familyVisibility ?? this.familyVisibility,
       targetAmount: targetAmount ?? this.targetAmount,
       targetCurrency: targetCurrency ?? this.targetCurrency,
       sourceCurrency: sourceCurrency ?? this.sourceCurrency,
       monthlyTargetAmount: monthlyTargetAmount ?? this.monthlyTargetAmount,
       startMonth: startMonth ?? this.startMonth,
       targetDate: targetDate ?? this.targetDate,
+      maturityDate: maturityDate ?? this.maturityDate,
+      provider: provider ?? this.provider,
+      accountName: accountName ?? this.accountName,
+      expectedReturnRate: expectedReturnRate ?? this.expectedReturnRate,
       totalSavedAmount: totalSavedAmount ?? this.totalSavedAmount,
       totalSourceAmount: totalSourceAmount ?? this.totalSourceAmount,
       remainingAmount: remainingAmount ?? this.remainingAmount,

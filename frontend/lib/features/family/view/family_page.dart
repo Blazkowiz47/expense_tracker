@@ -14,6 +14,7 @@ import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/view/monthly_planning_card.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
+import 'package:expense_tracker/features/savings/models/savings_goal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
@@ -59,6 +60,7 @@ class _FamilyPageState extends State<FamilyPage> {
   List<GroupMember> _members = const [];
   List<GroupExpense> _expenses = const [];
   List<GroupSettlement> _settlements = const [];
+  List<SavingsGoal> _familyVisibleSavingsGoals = const [];
   GroupSummary? _selectedFamily;
   MonthlyPlan? _selectedFamilyPlan;
   bool _loading = true;
@@ -154,20 +156,25 @@ class _FamilyPageState extends State<FamilyPage> {
   Future<void> _autoRefreshFamily() async {
     final freshness = await _freshnessRepository.fetchFreshness(
       since: _familyFreshnessCursor,
-      sections: const ['groups', 'plans'],
+      sections: const ['groups', 'plans', 'savings'],
     );
     final groups = freshness.sections['groups'];
     final plans = freshness.sections['plans'];
+    final savings = freshness.sections['savings'];
     final groupsChanged = groups?.changed ?? !_loadedFamilyData;
     final plansChanged = plans?.changed ?? false;
-    if (!groupsChanged && !plansChanged && _loadedFamilyData) {
+    final savingsChanged = savings?.changed ?? false;
+    if (!groupsChanged &&
+        !plansChanged &&
+        !savingsChanged &&
+        _loadedFamilyData) {
       _familyFreshnessCursor = freshness.serverTime;
       return;
     }
     if (plansChanged && mounted) {
       setState(() => _monthlyPlanRefreshToken += 1);
     }
-    if (groupsChanged || !_loadedFamilyData) {
+    if (groupsChanged || savingsChanged || !_loadedFamilyData) {
       await _loadFamilies(showLoading: false, markFreshness: false);
     }
     _familyFreshnessCursor = freshness.serverTime;
@@ -176,7 +183,7 @@ class _FamilyPageState extends State<FamilyPage> {
   Future<void> _markFamilyFreshnessSeen() async {
     try {
       final freshness = await _freshnessRepository.fetchFreshness(
-        sections: const ['groups', 'plans'],
+        sections: const ['groups', 'plans', 'savings'],
       );
       _familyFreshnessCursor = freshness.serverTime;
     } catch (_) {}
@@ -202,6 +209,7 @@ class _FamilyPageState extends State<FamilyPage> {
         _members = const [];
         _expenses = const [];
         _settlements = const [];
+        _familyVisibleSavingsGoals = const [];
         _selectedFamilyPlan = null;
       }
     });
@@ -219,16 +227,24 @@ class _FamilyPageState extends State<FamilyPage> {
       final members = await _repository.fetchMembers(family.id);
       final expenses = await _repository.fetchExpenses(family.id);
       var settlements = const <GroupSettlement>[];
+      var familyVisibleSavingsGoals = const <SavingsGoal>[];
       try {
         settlements = await _repository.fetchSettlements(family.id);
       } catch (_) {
         settlements = _settlements;
+      }
+      try {
+        familyVisibleSavingsGoals = await _repository
+            .fetchFamilyVisibleSavingsGoals(family.id);
+      } catch (_) {
+        familyVisibleSavingsGoals = _familyVisibleSavingsGoals;
       }
       if (!mounted) return;
       setState(() {
         _members = members;
         _expenses = expenses;
         _settlements = settlements;
+        _familyVisibleSavingsGoals = familyVisibleSavingsGoals;
       });
     } catch (error) {
       if (!mounted) return;
@@ -840,6 +856,10 @@ class _FamilyPageState extends State<FamilyPage> {
           memberLabelByUid: _memberLabelByUid,
           onSettleUp: _openHouseholdSettleUp,
         ),
+        if (_familyVisibleSavingsGoals.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _FamilyVisibleInvestmentsCard(goals: _familyVisibleSavingsGoals),
+        ],
         if (_hasPendingInitialExpenseIntent) ...[
           const SizedBox(height: 12),
           AppBalanceTile(
@@ -977,6 +997,62 @@ class _FamilyPageState extends State<FamilyPage> {
   }
 }
 
+class _FamilyVisibleInvestmentsCard extends StatelessWidget {
+  const _FamilyVisibleInvestmentsCard({required this.goals});
+
+  final List<SavingsGoal> goals;
+
+  @override
+  Widget build(BuildContext context) {
+    final totals = <String, num>{};
+    for (final goal in goals) {
+      totals[goal.targetCurrency] =
+          (totals[goal.targetCurrency] ?? 0) + goal.totalSavedAmount;
+    }
+    return AppCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.account_balance_outlined),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Family visible investments',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              Text(
+                AppMoney.formatCurrencyAmounts(totals),
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...goals.map(
+            (goal) => ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(_familyInvestmentIcon(goal.goalType)),
+              title: Text(goal.name),
+              subtitle: Text(_familyInvestmentSubtitle(goal)),
+              trailing: Text(
+                AppMoney.formatCurrency(
+                  goal.totalSavedAmount,
+                  goal.targetCurrency,
+                ),
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FamilySettlementSuggestion {
   const _FamilySettlementSuggestion({
     required this.fromUid,
@@ -989,6 +1065,42 @@ class _FamilySettlementSuggestion {
   final String toUid;
   final double amount;
   final String currency;
+}
+
+IconData _familyInvestmentIcon(String goalType) {
+  return switch (goalType) {
+    'sip' => Icons.trending_up_outlined,
+    'fixed_deposit' => Icons.account_balance_outlined,
+    'emergency_fund' => Icons.health_and_safety_outlined,
+    _ => Icons.savings_outlined,
+  };
+}
+
+String _familyInvestmentSubtitle(SavingsGoal goal) {
+  final parts = <String>[];
+  if (goal.ownerLabel.trim().isNotEmpty) {
+    parts.add(goal.ownerLabel.trim());
+  }
+  parts.add(_familyInvestmentTypeLabel(goal.goalType));
+  if (goal.monthlyTargetAmount > 0) {
+    parts.add(
+      'monthly ${AppMoney.formatCurrency(goal.monthlyTargetAmount, goal.targetCurrency)}',
+    );
+  }
+  if (goal.expectedReturnRate > 0) {
+    parts.add('${goal.expectedReturnRate.toStringAsFixed(2)}%');
+  }
+  return parts.join(' · ');
+}
+
+String _familyInvestmentTypeLabel(String goalType) {
+  return switch (goalType) {
+    'sip' => 'Monthly SIP',
+    'fixed_deposit' => 'Fixed deposit',
+    'emergency_fund' => 'Emergency fund',
+    'other' => 'Other investment',
+    _ => 'Savings goal',
+  };
 }
 
 class _FamilyAuditCounts {

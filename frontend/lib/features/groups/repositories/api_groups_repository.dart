@@ -7,6 +7,7 @@ import 'package:expense_tracker/features/groups/models/group_expense.dart';
 import 'package:expense_tracker/features/groups/models/group_member.dart';
 import 'package:expense_tracker/features/groups/models/group_settlement.dart';
 import 'package:expense_tracker/features/groups/models/group_summary.dart';
+import 'package:expense_tracker/features/savings/models/savings_goal.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -357,6 +358,19 @@ class ApiGroupsRepository {
         (payload['settlements'] as List<dynamic>? ?? const [])
             .whereType<Map<String, dynamic>>();
     return rawSettlements.map(GroupSettlement.fromJson).toList(growable: false);
+  }
+
+  Future<List<SavingsGoal>> fetchFamilyVisibleSavingsGoals(
+    String groupId,
+  ) async {
+    final response = await _request(
+      method: 'GET',
+      path: '/api/v1/groups/$groupId/savings/goals',
+    );
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawGoals = (payload['goals'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    return rawGoals.map(SavingsGoal.fromJson).toList(growable: false);
   }
 
   Future<GroupSettlement> recordSettlement({

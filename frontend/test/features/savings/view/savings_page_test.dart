@@ -25,29 +25,45 @@ class _FakeSavingsRepository extends ApiSavingsRepository {
   @override
   Future<SavingsGoal> createGoal({
     required String name,
+    String goalType = 'savings_goal',
+    String familyVisibility = 'private',
     required double targetAmount,
     required String targetCurrency,
     required String sourceCurrency,
     required double monthlyTargetAmount,
     required String startMonth,
+    String provider = '',
+    String accountName = '',
+    double expectedReturnRate = 0,
+    DateTime? maturityDate,
     required String notes,
   }) async {
     createdGoal = _CreatedGoal(
       name: name,
+      goalType: goalType,
+      familyVisibility: familyVisibility,
       targetAmount: targetAmount,
       targetCurrency: targetCurrency,
       sourceCurrency: sourceCurrency,
       monthlyTargetAmount: monthlyTargetAmount,
       startMonth: startMonth,
+      provider: provider,
+      accountName: accountName,
+      expectedReturnRate: expectedReturnRate,
     );
     final goal = _goal(
       id: 'created-goal',
       name: name,
+      goalType: goalType,
+      familyVisibility: familyVisibility,
       targetAmount: targetAmount,
       targetCurrency: targetCurrency,
       sourceCurrency: sourceCurrency,
       monthlyTargetAmount: monthlyTargetAmount,
       startMonth: startMonth,
+      provider: provider,
+      accountName: accountName,
+      expectedReturnRate: expectedReturnRate,
       notes: notes,
     );
     _goals = [goal, ..._goals];
@@ -115,41 +131,65 @@ class _FakeSavingsRepository extends ApiSavingsRepository {
 class _CreatedGoal {
   const _CreatedGoal({
     required this.name,
+    required this.goalType,
+    required this.familyVisibility,
     required this.targetAmount,
     required this.targetCurrency,
     required this.sourceCurrency,
     required this.monthlyTargetAmount,
     required this.startMonth,
+    required this.provider,
+    required this.accountName,
+    required this.expectedReturnRate,
   });
 
   final String name;
+  final String goalType;
+  final String familyVisibility;
   final double targetAmount;
   final String targetCurrency;
   final String sourceCurrency;
   final double monthlyTargetAmount;
   final String startMonth;
+  final String provider;
+  final String accountName;
+  final double expectedReturnRate;
 }
 
 SavingsGoal _goal({
   String id = 'goal-1',
   String name = 'India savings',
+  String goalType = 'savings_goal',
+  String familyVisibility = 'private',
+  String ownerLabel = '',
   double targetAmount = 300000,
   String targetCurrency = 'INR',
   String sourceCurrency = 'NOK',
   double monthlyTargetAmount = 25000,
   String startMonth = '2026-06',
   double totalSavedAmount = 0,
+  String provider = '',
+  String accountName = '',
+  double expectedReturnRate = 0,
   String notes = '',
 }) {
   return SavingsGoal(
     id: id,
+    ownerUid: 'member-1',
+    ownerLabel: ownerLabel,
     name: name,
+    goalType: goalType,
+    familyVisibility: familyVisibility,
     targetAmount: targetAmount,
     targetCurrency: targetCurrency,
     sourceCurrency: sourceCurrency,
     monthlyTargetAmount: monthlyTargetAmount,
     startMonth: startMonth,
     targetDate: null,
+    maturityDate: null,
+    provider: provider,
+    accountName: accountName,
+    expectedReturnRate: expectedReturnRate,
     totalSavedAmount: totalSavedAmount,
     totalSourceAmount: 0,
     remainingAmount: targetAmount - totalSavedAmount,
@@ -166,7 +206,7 @@ SavingsGoal _goal({
 }
 
 void main() {
-  testWidgets('adds a savings goal from the empty state', (tester) async {
+  testWidgets('adds a family-visible SIP from the empty state', (tester) async {
     final repository = _FakeSavingsRepository();
     await tester.pumpWidget(
       MaterialApp(home: SavingsPage(repository: repository)),
@@ -178,21 +218,38 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Add goal'));
     await tester.pumpAndSettle();
 
+    await tester.tap(_dropdownWithLabel('Type'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Monthly SIP').last);
+    await tester.pumpAndSettle();
+
     final fields = find.byType(TextField);
-    await tester.enterText(fields.at(0), 'India savings');
+    await tester.enterText(fields.at(0), 'India SIP');
     await tester.enterText(fields.at(1), '300000');
     await tester.enterText(fields.at(2), '25000');
     await tester.enterText(fields.at(3), '2026-06');
+    await tester.enterText(fields.at(4), 'Kuvera');
+    await tester.enterText(fields.at(5), 'Nifty 50');
+    await tester.enterText(fields.at(6), '12');
+
+    await tester.ensureVisible(find.text('Show in family'));
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
 
-    expect(repository.createdGoal?.name, 'India savings');
+    expect(repository.createdGoal?.name, 'India SIP');
+    expect(repository.createdGoal?.goalType, 'sip');
+    expect(repository.createdGoal?.familyVisibility, 'family');
     expect(repository.createdGoal?.targetAmount, 300000);
     expect(repository.createdGoal?.targetCurrency, 'INR');
     expect(repository.createdGoal?.sourceCurrency, 'NOK');
     expect(repository.createdGoal?.monthlyTargetAmount, 25000);
-    expect(find.text('India savings'), findsOneWidget);
+    expect(repository.createdGoal?.provider, 'Kuvera');
+    expect(repository.createdGoal?.accountName, 'Nifty 50');
+    expect(repository.createdGoal?.expectedReturnRate, 12);
+    expect(find.text('India SIP'), findsOneWidget);
   });
 
   testWidgets('logs a cross-currency saving contribution', (tester) async {
@@ -225,4 +282,12 @@ void main() {
     expect(find.textContaining('Saved: ₹8,500.00'), findsOneWidget);
     expect(find.text('Saving logged.'), findsOneWidget);
   });
+}
+
+Finder _dropdownWithLabel(String label) {
+  return find.byWidgetPredicate(
+    (widget) =>
+        widget is DropdownButtonFormField<String> &&
+        widget.decoration.labelText == label,
+  );
 }
