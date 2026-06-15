@@ -7,9 +7,17 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
-  _FakeMonthlyPlanRepository()
-    : super(client: MockClient((_) async => http.Response('{}', 200)));
+  _FakeMonthlyPlanRepository({
+    this.excludedExpenseCount = 0,
+    this.excludedActualsByCurrency = const {},
+    this.categoryExcludedExpenseCount = 0,
+    this.categoryExcludedActualsByCurrency = const {},
+  }) : super(client: MockClient((_) async => http.Response('{}', 200)));
 
+  final int excludedExpenseCount;
+  final Map<String, double> excludedActualsByCurrency;
+  final int categoryExcludedExpenseCount;
+  final Map<String, double> categoryExcludedActualsByCurrency;
   Map<String, double>? savedBudgets;
   String? savedCurrency;
   int fetchCount = 0;
@@ -31,6 +39,8 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
       totalBudget: 5000,
       totalActual: actual,
       totalRemaining: 5000 - actual,
+      excludedExpenseCount: excludedExpenseCount,
+      excludedActualsByCurrency: excludedActualsByCurrency,
       categories: [
         MonthlyPlanCategory(
           category: 'Groceries',
@@ -39,6 +49,8 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
           remaining: 5000 - actual,
           progress: actual / 5000,
           overBudget: false,
+          excludedExpenseCount: categoryExcludedExpenseCount,
+          excludedActualsByCurrency: categoryExcludedActualsByCurrency,
         ),
         const MonthlyPlanCategory(
           category: 'Pet care',
@@ -249,5 +261,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.fetchedGroupIds, ['family-1', 'family-2']);
+  });
+
+  testWidgets('shows expenses excluded from selected plan currency', (
+    tester,
+  ) async {
+    final repository = _FakeMonthlyPlanRepository(
+      excludedExpenseCount: 2,
+      excludedActualsByCurrency: const {'USD': 30, 'EUR': 12},
+      categoryExcludedExpenseCount: 1,
+      categoryExcludedActualsByCurrency: const {'USD': 30},
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MonthlyPlanningCard(repository: repository)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 expenses not counted in INR actuals'), findsOneWidget);
+    expect(
+      find.text('Outside plan currency: EUR 12.00 / USD 30.00'),
+      findsOneWidget,
+    );
+    expect(find.text('Not counted: USD 30.00'), findsOneWidget);
   });
 }

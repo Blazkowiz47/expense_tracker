@@ -210,6 +210,11 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
           Text(
             '${plan.currency} ${plan.totalActual.toStringAsFixed(2)} spent of ${plan.currency} ${plan.totalBudget.toStringAsFixed(2)}',
           ),
+          if (plan.excludedExpenseCount > 0 ||
+              plan.excludedActualsByCurrency.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _PlanCoverageNotice(plan: plan),
+          ],
           const SizedBox(height: 12),
           ...plan.categories
               .take(5)
@@ -227,6 +232,66 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
                 ),
               ),
         ],
+      ),
+    );
+  }
+}
+
+class _PlanCoverageNotice extends StatelessWidget {
+  const _PlanCoverageNotice({required this.plan});
+
+  final MonthlyPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final count = plan.excludedExpenseCount;
+    final expenseLabel = count == 1 ? 'expense' : 'expenses';
+    final title = count > 0
+        ? '$count $expenseLabel not counted in ${plan.currency} actuals'
+        : 'Some expenses are not counted in ${plan.currency} actuals';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.errorContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.error.withValues(alpha: 0.28)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              size: 18,
+              color: colors.onErrorContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onErrorContainer,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (plan.excludedActualsByCurrency.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Outside plan currency: ${AppMoney.formatCurrencyAmounts(plan.excludedActualsByCurrency)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onErrorContainer,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -293,6 +358,16 @@ class _BudgetRow extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           LinearProgressIndicator(value: progress, color: color),
+          if (category.excludedExpenseCount > 0 ||
+              category.excludedActualsByCurrency.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Not counted: ${_excludedActualsText(category)}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -305,6 +380,14 @@ class _BudgetRow extends StatelessWidget {
       child: content,
     );
   }
+}
+
+String _excludedActualsText(MonthlyPlanCategory category) {
+  if (category.excludedActualsByCurrency.isNotEmpty) {
+    return AppMoney.formatCurrencyAmounts(category.excludedActualsByCurrency);
+  }
+  final count = category.excludedExpenseCount;
+  return '$count ${count == 1 ? 'expense' : 'expenses'}';
 }
 
 class _BudgetDialog extends StatefulWidget {

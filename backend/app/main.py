@@ -1996,6 +1996,15 @@ def expense_amount_for_currency(expense: dict[str, Any], currency: str) -> float
     return amounts.get(currency)
 
 
+def original_expense_amount_by_currency(expense: dict[str, Any]) -> tuple[str, float] | None:
+    currency = safe_currency(expense.get("currency"), "INR") or "INR"
+    try:
+        amount = float(expense.get("amount") or 0)
+    except (TypeError, ValueError):
+        return None
+    return currency, amount
+
+
 def group_currency_codes(group: dict[str, Any], expenses: list[dict[str, Any]] | None = None, extra: list[str] | None = None) -> list[str]:
     codes: list[str] = []
 
@@ -2081,25 +2090,41 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
     budgets = {str(key): float(value or 0) for key, value in raw_budgets.items()}
     start, end = month_range(month)
     actuals: dict[str, float] = {}
+    converted_counts: dict[str, int] = {}
+    excluded_counts: dict[str, int] = {}
+    excluded_actuals: dict[str, dict[str, float]] = {}
+
+    def add_expense(expense: dict[str, Any]) -> None:
+        category = str(expense.get("category") or "Personal").strip() or "Personal"
+        amount = expense_amount_for_currency(expense, plan_currency)
+        if amount is not None:
+            actuals[category] = actuals.get(category, 0.0) + amount
+            original = original_expense_amount_by_currency(expense)
+            if original and original[0] != plan_currency:
+                converted_counts[category] = converted_counts.get(category, 0) + 1
+            return
+
+        original = original_expense_amount_by_currency(expense)
+        if original is None:
+            return
+        currency, original_amount = original
+        if currency == plan_currency or abs(original_amount) <= 0.005:
+            return
+        excluded_counts[category] = excluded_counts.get(category, 0) + 1
+        category_excluded = excluded_actuals.setdefault(category, {})
+        category_excluded[currency] = category_excluded.get(currency, 0.0) + original_amount
+
     if group_id:
         family_expenses = db.group_expenses.find({
             "groupId": group_id,
             "date": {"$gte": start, "$lt": end},
         })
         for expense in family_expenses:
-            amount = expense_amount_for_currency(expense, plan_currency)
-            if amount is None:
-                continue
-            category = str(expense.get("category") or "Personal").strip() or "Personal"
-            actuals[category] = actuals.get(category, 0.0) + amount
+            add_expense(expense)
     else:
         expenses = db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}})
         for expense in expenses:
-            amount = expense_amount_for_currency(expense, plan_currency)
-            if amount is None:
-                continue
-            category = str(expense.get("category") or "Personal").strip() or "Personal"
-            actuals[category] = actuals.get(category, 0.0) + amount
+            add_expense(expense)
         family_groups = list(db.groups.find({"memberUids": uid, "groupType": "family"}))
         family_group_ids = [group.get("id") for group in family_groups if group.get("id")]
         if family_group_ids:
@@ -2108,11 +2133,7 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
                 "date": {"$gte": start, "$lt": end},
             })
             for expense in family_expenses:
-                amount = expense_amount_for_currency(expense, plan_currency)
-                if amount is None:
-                    continue
-                category = str(expense.get("category") or "Personal").strip() or "Personal"
-                actuals[category] = actuals.get(category, 0.0) + amount
+                add_expense(expense)
     rows = []
     for category in sorted(set(budgets.keys()) | set(actuals.keys())):
         budget = budgets.get(category, 0.0)
@@ -2124,9 +2145,17 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
             "remaining": budget - actual,
             "progress": 0 if budget <= 0 else min(actual / budget, 1.5),
             "overBudget": budget > 0 and actual > budget,
+            "convertedExpenseCount": converted_counts.get(category, 0),
+            "excludedExpenseCount": excluded_counts.get(category, 0),
+            "skippedActualExpenseCount": excluded_counts.get(category, 0),
+            "excludedActualsByCurrency": excluded_actuals.get(category, {}),
         })
     total_budget = sum(budgets.values())
     total_actual = sum(actuals.values())
+    total_excluded: dict[str, float] = {}
+    for amounts in excluded_actuals.values():
+        for currency, amount in amounts.items():
+            total_excluded[currency] = total_excluded.get(currency, 0.0) + amount
     return json_ready({
         "month": month,
         "groupId": group_id,
@@ -2134,6 +2163,16 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
         "totalBudget": total_budget,
         "totalActual": total_actual,
         "totalRemaining": total_budget - total_actual,
+        "convertedExpenseCount": sum(converted_counts.values()),
+        "excludedExpenseCount": sum(excluded_counts.values()),
+        "skippedActualExpenseCount": sum(excluded_counts.values()),
+        "excludedActualsByCurrency": total_excluded,
+        "actualsMetadata": {
+            "convertedExpenseCount": sum(converted_counts.values()),
+            "uncountedExpenseCount": sum(excluded_counts.values()),
+            "uncountedSpendByCurrency": total_excluded,
+            "uncountedSpendByCategoryByCurrency": excluded_actuals,
+        },
         "categories": rows,
         "updatedAt": plan.get("updatedAt"),
     })

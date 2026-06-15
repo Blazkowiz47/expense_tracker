@@ -6,6 +6,9 @@ class MonthlyPlan {
     required this.totalBudget,
     required this.totalActual,
     required this.totalRemaining,
+    this.convertedExpenseCount = 0,
+    this.excludedExpenseCount = 0,
+    this.excludedActualsByCurrency = const {},
     required this.categories,
   });
 
@@ -15,9 +18,15 @@ class MonthlyPlan {
   final double totalBudget;
   final double totalActual;
   final double totalRemaining;
+  final int convertedExpenseCount;
+  final int excludedExpenseCount;
+  final Map<String, double> excludedActualsByCurrency;
   final List<MonthlyPlanCategory> categories;
 
   factory MonthlyPlan.fromJson(Map<String, dynamic> json) {
+    final metadata = json['actualsMetadata'] is Map
+        ? json['actualsMetadata'] as Map
+        : const {};
     return MonthlyPlan(
       month: (json['month'] ?? '').toString(),
       groupId: (json['groupId'] as String?)?.trim().isNotEmpty == true
@@ -27,6 +36,19 @@ class MonthlyPlan {
       totalBudget: (json['totalBudget'] as num?)?.toDouble() ?? 0,
       totalActual: (json['totalActual'] as num?)?.toDouble() ?? 0,
       totalRemaining: (json['totalRemaining'] as num?)?.toDouble() ?? 0,
+      convertedExpenseCount:
+          _parseInt(json['convertedExpenseCount']) ??
+          _parseInt(metadata['convertedExpenseCount']) ??
+          0,
+      excludedExpenseCount:
+          _parseInt(json['excludedExpenseCount']) ??
+          _parseInt(json['skippedActualExpenseCount']) ??
+          _parseInt(metadata['uncountedExpenseCount']) ??
+          0,
+      excludedActualsByCurrency:
+          _parseAmountMap(json['excludedActualsByCurrency']) ??
+          _parseAmountMap(metadata['uncountedSpendByCurrency']) ??
+          const {},
       categories: (json['categories'] as List<dynamic>? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(MonthlyPlanCategory.fromJson)
@@ -47,6 +69,9 @@ class MonthlyPlanCategory {
     required this.remaining,
     required this.progress,
     required this.overBudget,
+    this.convertedExpenseCount = 0,
+    this.excludedExpenseCount = 0,
+    this.excludedActualsByCurrency = const {},
   });
 
   final String category;
@@ -55,6 +80,9 @@ class MonthlyPlanCategory {
   final double remaining;
   final double progress;
   final bool overBudget;
+  final int convertedExpenseCount;
+  final int excludedExpenseCount;
+  final Map<String, double> excludedActualsByCurrency;
 
   factory MonthlyPlanCategory.fromJson(Map<String, dynamic> json) {
     return MonthlyPlanCategory(
@@ -64,6 +92,35 @@ class MonthlyPlanCategory {
       remaining: (json['remaining'] as num?)?.toDouble() ?? 0,
       progress: (json['progress'] as num?)?.toDouble() ?? 0,
       overBudget: json['overBudget'] as bool? ?? false,
+      convertedExpenseCount: _parseInt(json['convertedExpenseCount']) ?? 0,
+      excludedExpenseCount:
+          _parseInt(json['excludedExpenseCount']) ??
+          _parseInt(json['skippedActualExpenseCount']) ??
+          0,
+      excludedActualsByCurrency:
+          _parseAmountMap(json['excludedActualsByCurrency']) ?? const {},
     );
   }
+}
+
+int? _parseInt(Object? value) {
+  return value is num ? value.toInt() : null;
+}
+
+Map<String, double>? _parseAmountMap(Object? value) {
+  if (value is! Map) {
+    return null;
+  }
+  final amounts = <String, double>{};
+  for (final entry in value.entries) {
+    final currency = entry.key.toString().trim().toUpperCase();
+    if (currency.isEmpty) {
+      continue;
+    }
+    final amount = entry.value;
+    if (amount is num) {
+      amounts[currency] = amount.toDouble();
+    }
+  }
+  return Map.unmodifiable(amounts);
 }

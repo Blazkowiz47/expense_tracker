@@ -550,6 +550,19 @@ def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
     )
     assert created.status_code == 201, created.text
 
+    foreign = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 30,
+            "currency": "USD",
+            "category": "Food",
+            "description": "Imported snacks",
+            "date": "2026-05-11T12:00:00Z",
+        },
+    )
+    assert foreign.status_code == 201, foreign.text
+
     saved = client.put(
         "/api/v1/planning/monthly",
         headers=headers,
@@ -559,11 +572,22 @@ def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
     payload = saved.json()
     assert payload["totalBudget"] == 800
     assert payload["totalActual"] == 200
+    assert payload["excludedExpenseCount"] == 1
+    assert payload["skippedActualExpenseCount"] == 1
+    assert payload["excludedActualsByCurrency"] == {"USD": 30}
+    assert payload["actualsMetadata"]["uncountedExpenseCount"] == 1
+    assert payload["actualsMetadata"]["uncountedSpendByCurrency"] == {"USD": 30}
+    assert payload["actualsMetadata"]["uncountedSpendByCategoryByCurrency"] == {
+        "Food": {"USD": 30}
+    }
 
     food = next(item for item in payload["categories"] if item["category"] == "Food")
     assert food["budget"] == 500
     assert food["actual"] == 200
     assert food["remaining"] == 300
+    assert food["excludedExpenseCount"] == 1
+    assert food["skippedActualExpenseCount"] == 1
+    assert food["excludedActualsByCurrency"] == {"USD": 30}
 
 
 def test_family_roles_and_expenses_feed_monthly_plan(tmp_path):
@@ -1628,6 +1652,29 @@ def test_group_expense_saves_currency_snapshots_for_group_currencies(tmp_path):
     groceries = next(item for item in saved.json()["categories"] if item["category"] == "Groceries")
     assert groceries["actual"] == 835
     assert groceries["remaining"] == 165
+    assert groceries["convertedExpenseCount"] == 1
+
+    eur_plan = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers_a,
+        json={"month": "2026-05", "currency": "EUR", "budgets": {"Groceries": 1000}},
+    )
+    assert eur_plan.status_code == 200, eur_plan.text
+    eur_payload = eur_plan.json()
+    eur_groceries = next(item for item in eur_payload["categories"] if item["category"] == "Groceries")
+    assert eur_payload["totalActual"] == 0
+    assert eur_payload["excludedExpenseCount"] == 1
+    assert eur_payload["skippedActualExpenseCount"] == 1
+    assert eur_payload["excludedActualsByCurrency"] == {"USD": 10}
+    assert eur_payload["actualsMetadata"]["uncountedExpenseCount"] == 1
+    assert eur_payload["actualsMetadata"]["uncountedSpendByCurrency"] == {"USD": 10}
+    assert eur_payload["actualsMetadata"]["uncountedSpendByCategoryByCurrency"] == {
+        "Groceries": {"USD": 10}
+    }
+    assert eur_groceries["actual"] == 0
+    assert eur_groceries["excludedExpenseCount"] == 1
+    assert eur_groceries["skippedActualExpenseCount"] == 1
+    assert eur_groceries["excludedActualsByCurrency"] == {"USD": 10}
 
 
 def test_group_attachment_upload_accepts_multipart_file(tmp_path):

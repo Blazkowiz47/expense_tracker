@@ -22,7 +22,7 @@ void main() {
         expect(request.url.queryParameters['month'], '2026-06');
         expect(request.url.queryParameters['groupId'], 'family-1');
         return http.Response(
-          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"categories":[]}',
+          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"actualsMetadata":{"uncountedExpenseCount":2,"uncountedSpendByCurrency":{"EUR":12}},"categories":[]}',
           200,
         );
       }
@@ -31,7 +31,7 @@ void main() {
         expect(request.body, contains('"currency":"USD"'));
         expect(request.body, contains('"Groceries":500'));
         return http.Response(
-          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"categories":[]}',
+          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"skippedActualExpenseCount":1,"excludedActualsByCurrency":{"NOK":45},"categories":[]}',
           200,
         );
       }
@@ -54,8 +54,12 @@ void main() {
     );
 
     expect(fetched.groupId, 'family-1');
+    expect(fetched.excludedExpenseCount, 2);
+    expect(fetched.excludedActualsByCurrency, {'EUR': 12});
     expect(saved.groupId, 'family-1');
     expect(saved.currency, 'USD');
+    expect(saved.excludedExpenseCount, 1);
+    expect(saved.excludedActualsByCurrency, {'NOK': 45});
     expect(requests, hasLength(2));
   });
 }
