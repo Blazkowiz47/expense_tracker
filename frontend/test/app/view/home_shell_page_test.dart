@@ -90,6 +90,26 @@ void main() {
   });
 
   testWidgets(
+    'wide web shell shows top navigation and visible actions',
+    (tester) async {
+      await pumpShell(tester, size: const Size(1400, 900));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.byType(FloatingActionButton), findsNothing);
+      expect(find.text('Expense Tracker'), findsOneWidget);
+      expect(find.text('Family and personal finance'), findsOneWidget);
+      expect(find.text('Scan bill'), findsOneWidget);
+      expect(find.text('Price book'), findsWidgets);
+      expect(find.text('Recurring'), findsWidgets);
+      expect(find.text('Add expense'), findsOneWidget);
+    },
+    variant: const TargetPlatformVariant(<TargetPlatform>{
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'ios mobile shell uses Cupertino tab scaffold',
     (tester) async {
       await pumpShell(tester, size: const Size(430, 900));

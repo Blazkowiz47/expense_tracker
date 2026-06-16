@@ -453,7 +453,7 @@ class _HomeShellPageState extends State<HomeShellPage>
               accountPhotoUrl: accountPhotoUrl,
             ),
             tablet: _buildDesktopScaffold(accountPhotoUrl),
-            desktop: _buildDesktopScaffold(accountPhotoUrl),
+            desktop: _buildWideWebScaffold(accountPhotoUrl),
           ),
         ),
       ),
@@ -585,6 +585,212 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
+  Widget _buildWideWebScaffold(String? accountPhotoUrl) {
+    final colors = Theme.of(context).colorScheme;
+    final headerActions = <_QuickAction>[
+      _QuickAction(
+        label: 'Price book',
+        icon: Icons.price_check_outlined,
+        onTap: _openPriceBookPage,
+      ),
+      _QuickAction(
+        label: 'Recurring',
+        icon: Icons.event_repeat,
+        onTap: _openRecurringPage,
+      ),
+    ];
+    final shortcuts = _quickActions();
+
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: colors.surface,
+                border: Border(
+                  bottom: BorderSide(color: colors.outlineVariant),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colors.primaryContainer,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.account_balance_wallet_outlined,
+                            color: colors.onPrimaryContainer,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Expense Tracker',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              Text(
+                                'Family and personal finance',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: colors.outline),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 24),
+                  Expanded(
+                    flex: 2,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: _destinations
+                            .asMap()
+                            .entries
+                            .map(
+                              (entry) => _WideNavChip(
+                                label: entry.value.label,
+                                icon: _buildDestinationIcon(
+                                  index: entry.key,
+                                  selected: _selectedIndex == entry.key,
+                                  accountPhotoUrl: accountPhotoUrl,
+                                ),
+                                selected: _selectedIndex == entry.key,
+                                onTap: () => _onDestinationSelected(entry.key),
+                              ),
+                            )
+                            .toList(growable: false),
+                      ),
+                    ),
+                  ),
+                  if (_showAddExpenseButton) ...[
+                    const SizedBox(width: 24),
+                    FilledButton.icon(
+                      onPressed: _openAddExpense,
+                      icon: const Icon(Icons.receipt_long),
+                      label: const Text('Add expense'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Expanded(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1480),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _destinations[_selectedIndex].label,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.headlineMedium,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _widePageSubtitle,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: colors.outline),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              alignment: WrapAlignment.end,
+                              children: headerActions
+                                  .map(
+                                    (action) => OutlinedButton.icon(
+                                      onPressed: () => _runAction(action.onTap),
+                                      icon: Icon(action.icon, size: 18),
+                                      label: Text(action.label),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                            ),
+                          ],
+                        ),
+                        if (_selectedIndex != 3) ...[
+                          const SizedBox(height: 18),
+                          Text(
+                            'Quick access',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 10),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: shortcuts
+                                  .map(
+                                    (action) => Padding(
+                                      padding: const EdgeInsets.only(right: 12),
+                                      child: _WideShortcutTile(action: action),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        Expanded(
+                          child: IndexedStack(
+                            index: _selectedIndex,
+                            children: _destinations
+                                .asMap()
+                                .entries
+                                .map(
+                                  (entry) => _pageForDestination(
+                                    entry.value,
+                                    entry.key,
+                                  ),
+                                )
+                                .toList(growable: false),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCupertinoMobileShell(String? accountPhotoUrl) {
     final tabItems = _destinations
         .asMap()
@@ -663,45 +869,7 @@ class _HomeShellPageState extends State<HomeShellPage>
   }
 
   Widget _buildActionFab({bool compact = false}) {
-    final actions = [
-      _QuickAction(
-        label: 'Groceries',
-        icon: Icons.shopping_basket_outlined,
-        onTap: () => _runAction(_openHouseholdGroceries),
-      ),
-      _QuickAction(
-        label: 'Scan bill',
-        icon: Icons.document_scanner_outlined,
-        onTap: () => _runAction(() {
-          _openScanBill();
-        }),
-      ),
-      _QuickAction(
-        label: 'Price book',
-        icon: Icons.price_check_outlined,
-        onTap: () => _runAction(_openPriceBookPage),
-      ),
-      _QuickAction(
-        label: 'Recurring',
-        icon: Icons.event_repeat,
-        onTap: () => _runAction(_openRecurringPage),
-      ),
-      _QuickAction(
-        label: 'Loans',
-        icon: Icons.account_balance_outlined,
-        onTap: () => _runAction(_openLoansPage),
-      ),
-      _QuickAction(
-        label: 'Savings',
-        icon: Icons.savings_outlined,
-        onTap: () => _runAction(_openSavingsPage),
-      ),
-      _QuickAction(
-        label: 'Settle up',
-        icon: Icons.payments_outlined,
-        onTap: () => _runAction(_openFriendsPage),
-      ),
-    ];
+    final actions = _quickActions();
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -837,6 +1005,61 @@ class _HomeShellPageState extends State<HomeShellPage>
       size: 22,
     );
   }
+
+  List<_QuickAction> _quickActions() {
+    return [
+      _QuickAction(
+        label: 'Groceries',
+        icon: Icons.shopping_basket_outlined,
+        onTap: () => _runAction(_openHouseholdGroceries),
+      ),
+      _QuickAction(
+        label: 'Scan bill',
+        icon: Icons.document_scanner_outlined,
+        onTap: () => _runAction(_openScanBill),
+      ),
+      _QuickAction(
+        label: 'Price book',
+        icon: Icons.price_check_outlined,
+        onTap: () => _runAction(_openPriceBookPage),
+      ),
+      _QuickAction(
+        label: 'Recurring',
+        icon: Icons.event_repeat,
+        onTap: () => _runAction(_openRecurringPage),
+      ),
+      _QuickAction(
+        label: 'Loans',
+        icon: Icons.account_balance_outlined,
+        onTap: () => _runAction(_openLoansPage),
+      ),
+      _QuickAction(
+        label: 'Savings',
+        icon: Icons.savings_outlined,
+        onTap: () => _runAction(_openSavingsPage),
+      ),
+      _QuickAction(
+        label: 'Settle up',
+        icon: Icons.payments_outlined,
+        onTap: () => _runAction(_openFriendsPage),
+      ),
+    ];
+  }
+
+  String get _widePageSubtitle {
+    switch (_destinations[_selectedIndex].label) {
+      case 'Home':
+        return 'Track budgets, shared routines, and what needs attention this month.';
+      case 'Family':
+        return 'Manage household members, roles, and shared spending in one place.';
+      case 'Activity':
+        return 'Review recent expenses, receipts, and month-to-date changes.';
+      case 'Account':
+        return 'Adjust your profile, sign-in details, and personal preferences.';
+      default:
+        return '';
+    }
+  }
 }
 
 class _ShellDestination {
@@ -900,6 +1123,115 @@ class _QuickActionButton extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 Icon(action.icon, size: 20, color: colorScheme.primary),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WideNavChip extends StatelessWidget {
+  const _WideNavChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final Widget icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? colors.primaryContainer : colors.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconTheme(
+                data: IconThemeData(
+                  size: 20,
+                  color: selected
+                      ? colors.onPrimaryContainer
+                      : colors.onSurfaceVariant,
+                ),
+                child: icon,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: selected
+                      ? colors.onPrimaryContainer
+                      : colors.onSurfaceVariant,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WideShortcutTile extends StatelessWidget {
+  const _WideShortcutTile({required this.action});
+
+  final _QuickAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 172,
+      child: Material(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: action.onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: colors.outlineVariant),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: colors.secondaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    action.icon,
+                    size: 18,
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    action.label,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
