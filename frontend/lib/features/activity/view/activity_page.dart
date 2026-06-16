@@ -25,6 +25,7 @@ class ActivityPage extends StatefulWidget {
     this.groupsClient,
     this.freshnessRepository,
     this.activityFeedRepository,
+    this.initialCategoryFilter = '',
     this.autoRefresh = false,
     super.key,
   });
@@ -33,6 +34,7 @@ class ActivityPage extends StatefulWidget {
   final http.Client? groupsClient;
   final FreshnessRepository? freshnessRepository;
   final ActivityFeedRepository? activityFeedRepository;
+  final String initialCategoryFilter;
   final bool autoRefresh;
 
   @override
@@ -72,6 +74,11 @@ class _ActivityPageState extends State<ActivityPage> {
   @override
   void initState() {
     super.initState();
+    final initialCategoryFilter = widget.initialCategoryFilter.trim();
+    if (initialCategoryFilter.isNotEmpty) {
+      _historyCategoryFilter = initialCategoryFilter;
+      _range = _ActivityRange.month;
+    }
     final client = widget.groupsClient ?? http.Client();
     if (widget.groupsRepository == null && widget.groupsClient == null) {
       _ownedGroupsClient = client;

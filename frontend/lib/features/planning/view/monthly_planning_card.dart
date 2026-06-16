@@ -244,6 +244,18 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
             const SizedBox(height: 8),
             _PlanCoverageNotice(plan: plan),
           ],
+          if (widget.onAddExpenseForCategory != null ||
+              widget.onReviewCategory != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              widget.onReviewCategory != null
+                  ? 'Tap a category to review it. Use + to log a matching expense.'
+                  : 'Use + next to a category to log a matching expense.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           ...plan.categories
               .take(5)

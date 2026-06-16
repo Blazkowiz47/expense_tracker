@@ -316,6 +316,8 @@ def test_personal_summaries_keep_expense_currencies_separate(tmp_path):
 
     dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
     assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["overallLabel"] == "Shared balances"
+    assert dashboard.json()["overallAmountText"] == "All settled"
     amount_labels = {item["amountText"] for item in dashboard.json()["activityItems"]}
     assert "You spent USD 20.00" in amount_labels
     assert "You spent NOK 30.00" in amount_labels
@@ -2079,6 +2081,8 @@ def test_friend_settlement_is_visible_to_both_users(tmp_path):
 
     dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
     assert dashboard.status_code == 200
+    assert dashboard.json()["overallLabel"] == "Shared balances"
+    assert dashboard.json()["overallAmountText"] == "You are owed NOK 50.00, USD 120.00"
     assert dashboard.json()["friendItems"][0]["title"] == "User"
     assert dashboard.json()["friendItems"][0]["subtitle"] == "owes you"
     assert dashboard.json()["friendItems"][0]["amountText"] == "NOK 50.00, USD 120.00"
@@ -2516,5 +2520,7 @@ def test_dashboard_includes_split_group_balance_items(tmp_path):
 
     dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers_a)
     assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["overallLabel"] == "Shared balances"
+    assert dashboard.json()["overallAmountText"] == "You are owed INR 50.00"
     assert dashboard.json()["groupItems"][0]["title"] == "Weekend Trip"
     assert dashboard.json()["groupItems"][0]["subtitle"] == "you are owed"

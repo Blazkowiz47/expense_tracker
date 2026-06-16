@@ -18,11 +18,15 @@ class AddExpensePage extends StatefulWidget {
   const AddExpensePage({
     this.expense,
     this.initialBillUpload = false,
+    this.initialCategory,
+    this.initialDescription,
     super.key,
   });
 
   final Expense? expense;
   final bool initialBillUpload;
+  final String? initialCategory;
+  final String? initialDescription;
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
@@ -91,6 +95,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
         _paymentMethods,
         'cash',
       );
+    } else {
+      final initialCategory = widget.initialCategory?.trim();
+      final initialDescription = widget.initialDescription?.trim();
+      if (initialDescription != null && initialDescription.isNotEmpty) {
+        _descriptionController.text = initialDescription;
+      }
+      if (initialCategory != null && initialCategory.isNotEmpty) {
+        _category = _normalizedChoice(initialCategory, _categories, 'Personal');
+      }
     }
     if (widget.initialBillUpload && expense == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

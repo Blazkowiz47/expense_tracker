@@ -6,6 +6,7 @@ class AppSummaryCard extends StatelessWidget {
   const AppSummaryCard({
     required this.title,
     required this.amount,
+    this.supportingText,
     this.positive = true,
     this.neutral = false,
     super.key,
@@ -13,6 +14,7 @@ class AppSummaryCard extends StatelessWidget {
 
   final String title;
   final String amount;
+  final String? supportingText;
   final bool positive;
   final bool neutral;
 
@@ -24,7 +26,17 @@ class AppSummaryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
+          if (supportingText?.trim().isNotEmpty == true) ...[
+            const SizedBox(height: 4),
+            Text(
+              supportingText!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ] else
+            const SizedBox(height: 6),
           Text(
             AppMoney.normalizeDisplayText(amount),
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(

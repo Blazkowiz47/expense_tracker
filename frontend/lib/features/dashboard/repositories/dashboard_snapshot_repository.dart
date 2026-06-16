@@ -10,14 +10,14 @@ class MockDashboardSnapshotRepository implements DashboardSnapshotRepository {
   @override
   Future<DashboardSnapshot> fetchSnapshot() async {
     return const DashboardSnapshot(
-      overallLabel: 'Overall, you are owed',
-      overallAmountText: '₹113.33',
+      overallLabel: 'Shared balances',
+      overallAmountText: 'You are owed NOK 113.33',
       overallPositive: true,
       friendItems: [
         BalanceItem(
           title: 'Shikhar Uttam',
           subtitle: 'owes you',
-          amountText: '₹113.33',
+          amountText: 'NOK 113.33',
           positive: true,
         ),
       ],
@@ -25,13 +25,13 @@ class MockDashboardSnapshotRepository implements DashboardSnapshotRepository {
         BalanceItem(
           title: 'This Group',
           subtitle: 'Shikhar U. owes you',
-          amountText: '₹113.33',
+          amountText: 'NOK 113.33',
           positive: true,
         ),
         BalanceItem(
           title: 'Non-group expenses',
           subtitle: 'settled up',
-          amountText: '₹0.00',
+          amountText: 'NOK 0.00',
           positive: false,
         ),
       ],

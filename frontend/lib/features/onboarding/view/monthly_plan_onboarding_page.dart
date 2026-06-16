@@ -73,7 +73,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   final _salaryDayController = TextEditingController(text: '25');
   final _rentAmountController = TextEditingController();
   final _rentDayController = TextEditingController(text: '1');
-  final _loanNameController = TextEditingController(text: 'Car loan');
+  final _loanNameController = TextEditingController();
   final _loanLenderController = TextEditingController();
   final _loanPrincipalController = TextEditingController();
   final _loanEmiController = TextEditingController();
@@ -82,7 +82,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   final _loanDueDayController = TextEditingController(text: '18');
   final _groceriesController = TextEditingController();
   final _transportController = TextEditingController();
-  final _savingsNameController = TextEditingController(text: 'India savings');
+  final _savingsNameController = TextEditingController();
   final _savingsMonthlyController = TextEditingController();
   final _savingsTargetController = TextEditingController();
 
@@ -90,9 +90,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   var _currency = 'NOK';
   var _loanRateType = 'floating';
   var _loanType = 'Car';
-  var _savingsTargetCurrency = 'INR';
+  var _savingsTargetCurrency = 'NOK';
   var _savingsAccountName = '';
   var _showSavingsInFamily = false;
+  var _savingsTargetCurrencyTouched = false;
   var _saving = false;
   String? _message;
 
@@ -502,10 +503,34 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       _SetupStep.housing => 'Rent and housing',
       _SetupStep.loans => 'Loans',
       _SetupStep.groceries => 'Groceries',
-      _SetupStep.commitments => 'Bills',
+      _SetupStep.commitments => 'Bills and subscriptions',
       _SetupStep.transport => 'Transport',
       _SetupStep.savings => 'Savings',
       _SetupStep.review => 'Review',
+    };
+  }
+
+  String get _stepDescription {
+    return switch (_step) {
+      _SetupStep.currency =>
+        'Choose the main currency for your monthly plan. You can still log expenses in other currencies later.',
+      _SetupStep.accounts =>
+        'Add the accounts you already use. Skip anything you do not want to enter right now.',
+      _SetupStep.salary =>
+        'Optional. Add your usual payday and monthly income so the month starts from real cash flow.',
+      _SetupStep.housing =>
+        'Add rent, mortgage, or any regular housing payment for this month.',
+      _SetupStep.loans =>
+        'Use the remaining principal, EMI, and current rate from your lender. You can edit the details later.',
+      _SetupStep.groceries => 'Set a simple grocery budget for the month.',
+      _SetupStep.commitments =>
+        'Add each utility, subscription, and membership separately so you can track them one by one.',
+      _SetupStep.transport =>
+        'Set a transport budget for fuel, tickets, tolls, or parking.',
+      _SetupStep.savings =>
+        'Add a savings goal now, or skip and set it up once you are inside the app.',
+      _SetupStep.review =>
+        'Check the basics, then finish setup. You can return and change any of this later.',
     };
   }
 
@@ -560,7 +585,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Skip setup',
+                        tooltip: 'Set up later',
                         onPressed: _saving ? null : _skipAll,
                         icon: const Icon(Icons.close),
                       ),
@@ -573,6 +598,14 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
                     _stepTitle,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    _stepDescription,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   Expanded(
@@ -699,7 +732,12 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
               : (value) {
                   if (value == null) return;
                   setState(() {
+                    final previousCurrency = _currency;
                     _currency = value;
+                    if (!_savingsTargetCurrencyTouched ||
+                        _savingsTargetCurrency == previousCurrency) {
+                      _savingsTargetCurrency = value;
+                    }
                     for (final account in _accounts) {
                       if (account.currency.isEmpty) {
                         account.currency = value;
@@ -1017,7 +1055,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
               ? null
               : (value) {
                   if (value != null) {
-                    setState(() => _savingsTargetCurrency = value);
+                    setState(() {
+                      _savingsTargetCurrency = value;
+                      _savingsTargetCurrencyTouched = true;
+                    });
                   }
                 },
         ),
@@ -1059,7 +1100,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           onChanged: _saving
               ? null
               : (value) => setState(() => _showSavingsInFamily = value),
-          title: const Text('Show in family'),
+          title: const Text('Visible to household'),
+          subtitle: const Text('Show this savings goal in the family space.'),
         ),
       ],
     );
@@ -1573,7 +1615,7 @@ class _ReviewEmpty extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
       child: Text(
-        'Nothing selected.',
+        'Nothing selected yet. Finish setup now and add the rest later.',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodyLarge,
       ),

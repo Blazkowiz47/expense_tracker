@@ -55,18 +55,10 @@ class AccountPage extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 16),
-                _SettingsTile(
-                  title: 'Notifications',
-                  subtitle: 'Reminders are not configured yet.',
-                  onTap: () => _showUnavailable(context, 'Notifications'),
-                ),
-                _SettingsTile(
-                  title: 'Security',
-                  subtitle: 'Password and sessions are managed by the backend.',
-                  onTap: () => _showUnavailable(context, 'Security'),
-                ),
+                const _SectionLabel('Preferences'),
                 _SettingsTile(
                   title: 'Theme',
+                  subtitle: 'Adjust colors and contrast for this device.',
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -75,13 +67,12 @@ class AccountPage extends StatelessWidget {
                     );
                   },
                 ),
+                const SizedBox(height: 16),
+                const _SectionLabel('Account'),
                 _SettingsTile(
-                  title: 'Help and feedback',
-                  subtitle: 'Local support options will land later.',
-                  onTap: () => _showUnavailable(context, 'Help and feedback'),
-                ),
-                _SettingsTile(
-                  title: 'Logout',
+                  title: 'Sign out',
+                  subtitle:
+                      'Use a different account or finish on another device.',
                   onTap: context.read<AuthCubit?>() == null
                       ? null
                       : () => context.read<AuthCubit>().signOut(),
@@ -92,12 +83,6 @@ class AccountPage extends StatelessWidget {
         );
       },
     );
-  }
-
-  void _showUnavailable(BuildContext context, String title) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('$title is not available yet.')));
   }
 }
 
@@ -164,6 +149,25 @@ class _SettingsTile extends StatelessWidget {
         subtitle: subtitle == null ? null : Text(subtitle!),
         trailing: onTap == null ? null : const Icon(Icons.chevron_right),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        label,
+        style: Theme.of(
+          context,
+        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }

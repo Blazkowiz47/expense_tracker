@@ -17,6 +17,8 @@ class HomePage extends StatefulWidget {
     this.onOpenFamily,
     this.onOpenRecurring,
     this.onOpenAction,
+    this.onAddExpenseForCategory,
+    this.onOpenActivityCategory,
     this.freshnessRepository,
     this.monthlyPlanRepository,
     this.autoRefresh = false,
@@ -28,6 +30,8 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onOpenFamily;
   final VoidCallback? onOpenRecurring;
   final void Function(DailyActionItem item)? onOpenAction;
+  final ValueChanged<String>? onAddExpenseForCategory;
+  final ValueChanged<String>? onOpenActivityCategory;
   final FreshnessRepository? freshnessRepository;
   final MonthlyPlanRepository? monthlyPlanRepository;
   final bool autoRefresh;
@@ -130,8 +134,11 @@ class _HomePageState extends State<HomePage> {
         const DashboardOverallSummaryCard(),
         const SizedBox(height: 16),
         MonthlyPlanningCard(
+          title: 'This month',
           repository: widget.monthlyPlanRepository,
           refreshToken: _planRefreshToken,
+          onAddExpenseForCategory: widget.onAddExpenseForCategory,
+          onReviewCategory: widget.onOpenActivityCategory,
         ),
         const SizedBox(height: 16),
         _DailyActionCenterCard(
@@ -149,16 +156,16 @@ class _HomePageState extends State<HomePage> {
               child: _MiniSummaryCard(
                 title: 'Friends',
                 items: snapshot.friendItems,
-                emptyText: 'No friend balances yet',
+                emptyText: 'No balances with friends yet',
                 onTap: widget.onOpenFriends,
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _MiniSummaryCard(
-                title: 'Groups',
+                title: 'Split groups',
                 items: snapshot.groupItems,
-                emptyText: 'No group balances yet',
+                emptyText: 'No split-group balances yet',
                 onTap: widget.onOpenGroups,
               ),
             ),
@@ -168,8 +175,9 @@ class _HomePageState extends State<HomePage> {
         const AppSectionHeader(title: 'Recent activity'),
         if (snapshot.activityItems.isEmpty)
           const AppEmptyState(
-            title: 'Nothing to show yet',
-            subtitle: 'Add an expense or upload a bill to start your timeline.',
+            title: 'No activity yet',
+            subtitle:
+                'Add an expense or scan a receipt to start this month\'s timeline.',
           )
         else
           ...snapshot.activityItems.take(5).map(_RecentActivityTile.new),
@@ -220,10 +228,20 @@ class _DailyActionCenterCard extends StatelessWidget {
           const SizedBox(height: 8),
           if (items.isEmpty)
             Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                'All clear today',
-                style: Theme.of(context).textTheme.bodyMedium,
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No follow-ups today',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Recurring reminders, receipt reviews, and shared-balance nudges will show up here.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
               ),
             )
           else

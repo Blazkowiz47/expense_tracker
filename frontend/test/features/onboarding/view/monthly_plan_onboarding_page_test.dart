@@ -378,7 +378,7 @@ void main() {
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bills'), findsOneWidget);
+    expect(find.text('Bills and subscriptions'), findsOneWidget);
     await tester.enterText(
       find.byKey(const ValueKey('subscriptions-0-name')),
       'YouTube Premium',

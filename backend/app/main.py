@@ -1237,10 +1237,9 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     @app.get("/api/v1/dashboard/snapshot")
     def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         docs = [expense_out(doc) for doc in app.state.db.expenses.find({"uid": user["uid"]}).sort("date", -1).limit(20)]
+        overall_summary = dashboard_overall_summary(app.state.db, user["uid"])
         return {
-            "overallLabel": "You are all settled up",
-            "overallAmountText": "INR 0.00",
-            "overallPositive": True,
+            **overall_summary,
             "friendItems": friend_balance_items(app.state.db, user["uid"]),
             "groupItems": group_balance_items(app.state.db, user["uid"]),
             "actionItems": dashboard_action_items(app.state.db, user["uid"]),
@@ -3658,6 +3657,15 @@ def format_currency_amounts(amounts: dict[str, float]) -> str:
     return ", ".join(format_currency_amount(currency, abs(amount)) for currency, amount in sorted(non_zero))
 
 
+def merge_currency_amounts(target: dict[str, float], amounts: dict[str, float]) -> None:
+    for currency, raw_amount in amounts.items():
+        normalized_currency = safe_currency(currency, "INR") or "INR"
+        amount = float(raw_amount or 0)
+        if abs(amount) <= 0.005:
+            continue
+        target[normalized_currency] = target.get(normalized_currency, 0.0) + amount
+
+
 def monthly_plan_group_owner(group_id: str) -> str:
     return f"group:{group_id}"
 
@@ -3976,6 +3984,63 @@ def friend_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:
             "friendUid": friend_uid,
         })
     return items
+
+
+def split_group_balance_totals_by_currency(db: Any, uid: str) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    groups = db.groups.find({"memberUids": uid, "groupType": {"$ne": "family"}}).sort("updatedAt", -1)
+    for group in groups:
+        expenses = list(db.group_expenses.find({"groupId": group["id"]}))
+        settlements = list(db.group_settlements.find({"groupId": group["id"]}))
+        if not expenses and not settlements:
+            continue
+        member_uids = group.get("memberUids", [])
+        users = list(db.users.find({"uid": {"$in": member_uids}}))
+        settlement_currencies = [settlement.get("currency") for settlement in settlements]
+        currency_codes = group_currency_codes(group, expenses, settlement_currencies)
+        display_data = compute_display_data(member_uids, expenses, group_member_aliases(member_uids, users), currency_codes, settlements)
+        member_balances_by_currency = display_data.get("memberBalancesByCurrency", {})
+        net_by_currency: dict[str, float] = {}
+        for currency, balances in member_balances_by_currency.items():
+            if not isinstance(balances, dict):
+                continue
+            member_balance = balances.get(uid, {})
+            if isinstance(member_balance, dict):
+                net_by_currency[str(currency)] = float(member_balance.get("net") or 0)
+        merge_currency_amounts(totals, net_by_currency)
+    return totals
+
+
+def dashboard_overall_summary(db: Any, uid: str) -> dict[str, Any]:
+    totals: dict[str, float] = {}
+    for friend_amounts in friend_balance_map_by_currency(db, uid).values():
+        merge_currency_amounts(totals, friend_amounts)
+    merge_currency_amounts(totals, split_group_balance_totals_by_currency(db, uid))
+
+    if not totals:
+        return {
+            "overallLabel": "Shared balances",
+            "overallAmountText": "All settled",
+            "overallPositive": True,
+        }
+
+    if all(amount > 0 for amount in totals.values()):
+        return {
+            "overallLabel": "Shared balances",
+            "overallAmountText": f"You are owed {format_currency_amounts(totals)}",
+            "overallPositive": True,
+        }
+    if all(amount < 0 for amount in totals.values()):
+        return {
+            "overallLabel": "Shared balances",
+            "overallAmountText": f"You owe {format_currency_amounts(totals)}",
+            "overallPositive": False,
+        }
+    return {
+        "overallLabel": "Shared balances",
+        "overallAmountText": f"Mixed balances · {format_currency_amounts(totals)}",
+        "overallPositive": True,
+    }
 
 
 def group_balance_items(db: Any, uid: str) -> list[dict[str, Any]]:

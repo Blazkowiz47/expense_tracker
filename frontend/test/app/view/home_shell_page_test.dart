@@ -41,7 +41,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Friends'), findsWidgets);
     expect(find.text('Family'), findsWidgets);
-    expect(find.text('Groups'), findsWidgets);
+    expect(find.text('Split groups'), findsWidgets);
     expect(find.text('Activity'), findsWidgets);
     expect(find.text('Account'), findsWidgets);
 
@@ -61,7 +61,7 @@ void main() {
     expect(find.byTooltip('Close quick actions'), findsOneWidget);
     expect(find.text('Groceries'), findsOneWidget);
     expect(find.text('Scan bill'), findsOneWidget);
-    expect(find.text('Settle up'), findsOneWidget);
+    expect(find.text('Friend balances'), findsOneWidget);
     expect(find.text('Friend'), findsNothing);
     expect(find.text('Group'), findsNothing);
   });

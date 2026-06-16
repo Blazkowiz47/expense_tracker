@@ -152,15 +152,25 @@ class _HomeShellPageState extends State<HomeShellPage>
   void _openAddExpense({
     bool initialBillUpload = false,
     bool forcePersonal = false,
+    String? initialCategory,
+    String? initialDescription,
   }) {
     if (!forcePersonal && _destinations[_selectedIndex].label == 'Family') {
+      final category = (initialCategory?.trim().isNotEmpty == true)
+          ? initialCategory!.trim()
+          : 'Groceries';
+      final description = initialBillUpload
+          ? null
+          : (initialDescription?.trim().isNotEmpty == true
+                ? initialDescription!.trim()
+                : category);
       Navigator.of(context).push<void>(
         platformPageRoute(
           builder: (_) => FamilyPage(
             autoRefresh: true,
             openAddExpenseOnLaunch: true,
-            initialExpenseCategory: 'Groceries',
-            initialExpenseDescription: initialBillUpload ? null : 'Groceries',
+            initialExpenseCategory: category,
+            initialExpenseDescription: description,
             initialBillUpload: initialBillUpload,
           ),
         ),
@@ -172,7 +182,11 @@ class _HomeShellPageState extends State<HomeShellPage>
       platformPageRoute(
         builder: (context) => BlocProvider.value(
           value: expensesBloc,
-          child: AddExpensePage(initialBillUpload: initialBillUpload),
+          child: AddExpensePage(
+            initialBillUpload: initialBillUpload,
+            initialCategory: initialCategory,
+            initialDescription: initialDescription,
+          ),
         ),
       ),
     );
@@ -288,6 +302,25 @@ class _HomeShellPageState extends State<HomeShellPage>
     ).push<void>(platformPageRoute(builder: (_) => const PriceBookPage()));
   }
 
+  void _openPersonalPlannedExpense(String category) {
+    final label = category.trim().isEmpty ? 'Personal' : category.trim();
+    _openAddExpense(
+      forcePersonal: true,
+      initialCategory: label,
+      initialDescription: label,
+    );
+  }
+
+  void _openActivityCategory(String category) {
+    final label = category.trim();
+    Navigator.of(context).push<void>(
+      platformPageRoute(
+        builder: (_) =>
+            ActivityPage(autoRefresh: true, initialCategoryFilter: label),
+      ),
+    );
+  }
+
   void _openGroupExpenseAction(DailyActionItem item) {
     final groupId = item.groupId.trim();
     final expenseId = item.expenseId.trim();
@@ -398,6 +431,8 @@ class _HomeShellPageState extends State<HomeShellPage>
         onOpenFamily: () => _onDestinationSelected(1),
         onOpenRecurring: _openRecurringPage,
         onOpenAction: _openDashboardAction,
+        onAddExpenseForCategory: _openPersonalPlannedExpense,
+        onOpenActivityCategory: _openActivityCategory,
       );
     }
     if (destination.label == 'Family') {
@@ -1039,7 +1074,7 @@ class _HomeShellPageState extends State<HomeShellPage>
         onTap: () => _runAction(_openSavingsPage),
       ),
       _QuickAction(
-        label: 'Settle up',
+        label: 'Friend balances',
         icon: Icons.payments_outlined,
         onTap: () => _runAction(_openFriendsPage),
       ),
