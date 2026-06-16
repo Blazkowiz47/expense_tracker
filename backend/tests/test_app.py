@@ -262,6 +262,85 @@ def test_financial_account_inputs_return_api_errors(tmp_path):
     assert bad_currency.json()["error"]["code"] == "INVALID_ARGUMENT"
 
 
+def test_credit_cards_track_cycle_spend_and_expenses(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/credit-cards",
+        headers=headers,
+        json={
+            "name": "DNB Mastercard",
+            "issuer": "DNB",
+            "network": "Mastercard",
+            "last4": "1234",
+            "currency": "NOK",
+            "creditLimit": "50,000.00",
+            "currentBalance": "1,200.50",
+            "statementDay": 20,
+            "dueDay": 5,
+            "familyVisibility": "private",
+        },
+    )
+    assert created.status_code == 201, created.text
+    card = created.json()
+    card_id = card["id"]
+    assert card["creditLimit"] == 50000
+    assert card["currentBalance"] == 1200.5
+    assert card["availableCredit"] == 48799.5
+    assert card["paymentDueDate"] == "2026-07-05T00:00:00Z"
+
+    logged = client.post(
+        f"/api/v1/credit-cards/{card_id}/spend",
+        headers=headers,
+        json={
+            "amount": "299.90",
+            "category": "Groceries",
+            "description": "Kiwi",
+            "date": "2026-06-16T12:00:00Z",
+        },
+    )
+    assert logged.status_code == 201, logged.text
+    payload = logged.json()
+    assert payload["card"]["currentBalance"] == 1500.4
+    assert payload["card"]["currentCycleSpend"] == 299.9
+    assert payload["expense"]["paymentMethod"] == "card"
+    assert payload["expense"]["sourceType"] == "credit_card_spend"
+    assert payload["expense"]["sourceCreditCardId"] == card_id
+    expense_id = payload["expense"]["id"]
+
+    expenses = client.get("/api/v1/expenses?category=Groceries", headers=headers)
+    assert expenses.status_code == 200, expenses.text
+    assert expenses.json()["expenses"][0]["id"] == expense_id
+
+    edited = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        headers=headers,
+        json={
+            "amount": 399.9,
+            "currency": "NOK",
+            "category": "Groceries",
+            "description": "Kiwi corrected",
+            "paymentMethod": "card",
+            "date": "2026-06-17T12:00:00Z",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["sourceCreditCardId"] == card_id
+
+    listed = client.get("/api/v1/credit-cards", headers=headers)
+    assert listed.status_code == 200, listed.text
+    listed_card = listed.json()["cards"][0]
+    assert listed_card["currentBalance"] == 1600.4
+    assert listed_card["currentCycleSpend"] == 399.9
+
+    deleted = client.delete(f"/api/v1/expenses/{expense_id}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+    after_delete = client.get("/api/v1/credit-cards", headers=headers).json()["cards"][0]
+    assert after_delete["currentBalance"] == 1200.5
+    assert after_delete["currentCycleSpend"] == 0
+
+
 def test_expenses_persist_in_mongo(tmp_path):
     client, app = make_client(tmp_path)
     headers = register(client)

@@ -8,6 +8,7 @@ import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/account/view/account_page.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
+import 'package:expense_tracker/features/credit_cards/view/credit_cards_page.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_snapshot_repository.dart';
@@ -290,6 +291,12 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
+  void _openCreditCardsPage() {
+    Navigator.of(
+      context,
+    ).push<void>(platformPageRoute(builder: (_) => const CreditCardsPage()));
+  }
+
   void _openSavingsPage() {
     Navigator.of(context).push<void>(
       platformPageRoute(builder: (_) => const SavingsPage(autoRefresh: true)),
@@ -412,6 +419,9 @@ class _HomeShellPageState extends State<HomeShellPage>
         return;
       case 'loans':
         _openLoansPage();
+        return;
+      case 'credit_cards':
+        _openCreditCardsPage();
         return;
       case 'savings':
         _openSavingsPage();
@@ -1067,6 +1077,11 @@ class _HomeShellPageState extends State<HomeShellPage>
         label: 'Loans',
         icon: Icons.account_balance_outlined,
         onTap: () => _runAction(_openLoansPage),
+      ),
+      _QuickAction(
+        label: 'Credit cards',
+        icon: Icons.credit_card,
+        onTap: () => _runAction(_openCreditCardsPage),
       ),
       _QuickAction(
         label: 'Savings',

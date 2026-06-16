@@ -101,6 +101,8 @@ def body_first(body: dict[str, Any], names: tuple[str, ...], default: Any = _MIS
 def finite_number(value: Any, field: str) -> float:
     if isinstance(value, bool):
         raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", f"{field} must be a number"))
+    if isinstance(value, str):
+        value = value.strip().replace(",", "").replace(" ", "")
     try:
         parsed = float(value)
     except (TypeError, ValueError) as exc:
@@ -698,6 +700,89 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         )
         return Response(status_code=204)
 
+    @app.get("/api/v1/credit-cards")
+    def list_credit_cards(
+        includeArchived: bool = False,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        filters: dict[str, Any] = {"uid": user["uid"]}
+        if not includeArchived:
+            filters["archivedAt"] = {"$exists": False}
+        docs = list(app.state.db.credit_cards.find(filters).sort("updatedAt", DESCENDING))
+        return {"cards": [credit_card_out(app.state.db, doc) for doc in docs]}
+
+    @app.post("/api/v1/credit-cards", status_code=201)
+    def create_credit_card(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        card = build_credit_card(body, user["uid"])
+        app.state.db.credit_cards.insert_one(card)
+        return credit_card_out(app.state.db, card)
+
+    @app.put("/api/v1/credit-cards/{card_id}")
+    def update_credit_card(card_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        existing = app.state.db.credit_cards.find_one({"id": card_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "credit card not found"))
+        updated = build_credit_card(
+            {**existing, **body},
+            user["uid"],
+            card_id=card_id,
+            created_at=existing.get("createdAt"),
+            archived_at=existing.get("archivedAt"),
+        )
+        app.state.db.credit_cards.replace_one({"id": card_id, "uid": user["uid"]}, updated)
+        return credit_card_out(app.state.db, updated)
+
+    @app.delete("/api/v1/credit-cards/{card_id}", status_code=204)
+    def archive_credit_card(card_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        existing = app.state.db.credit_cards.find_one({"id": card_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "credit card not found"))
+        current = now()
+        app.state.db.credit_cards.update_one(
+            {"id": card_id, "uid": user["uid"]},
+            {"$set": {"archivedAt": current, "updatedAt": current}},
+        )
+        return Response(status_code=204)
+
+    @app.post("/api/v1/credit-cards/{card_id}/spend", status_code=201)
+    def log_credit_card_spend(card_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        card = app.state.db.credit_cards.find_one({
+            "id": card_id,
+            "uid": user["uid"],
+            "archivedAt": {"$exists": False},
+        })
+        if not card:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "active credit card not found"))
+        amount = positive_number(body.get("amount"), "amount")
+        card_currency = normalize_currency(card.get("currency"), "NOK")
+        expense = build_expense(
+            {
+                "amount": amount,
+                "currency": card_currency,
+                "category": str(body.get("category") or "Personal").strip() or "Personal",
+                "description": str(body.get("description") or card.get("name") or "Credit card spend").strip(),
+                "date": str(body.get("date") or iso(now())),
+                "paymentMethod": "card",
+                "sourceType": "credit_card_spend",
+                "sourceCreditCardId": card_id,
+            },
+            user["uid"],
+        )
+        current = now()
+        app.state.db.expenses.insert_one(expense)
+        app.state.db.credit_cards.update_one(
+            {"id": card_id, "uid": user["uid"]},
+            {
+                "$inc": {"currentBalance": amount},
+                "$set": {"balanceAsOf": expense["date"], "updatedAt": current},
+            },
+        )
+        updated_card = app.state.db.credit_cards.find_one({"id": card_id, "uid": user["uid"]}) or card
+        return {
+            "card": credit_card_out(app.state.db, updated_card),
+            "expense": expense_out(expense),
+        }
+
     @app.get("/api/v1/theme-packs")
     def theme_packs() -> list[dict[str, Any]]:
         return [
@@ -744,7 +829,8 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
         if is_loan_payment_expense(existing):
             raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be updated from Loans"))
-        updated = build_expense(body, user["uid"], expense_id=expense_id, created_at=existing["createdAt"])
+        updated = build_expense({**existing, **body}, user["uid"], expense_id=expense_id, created_at=existing["createdAt"])
+        reconcile_credit_card_expense_update(app.state.db, user["uid"], existing, updated)
         app.state.db.expenses.replace_one({"id": expense_id, "uid": user["uid"]}, updated)
         if receipt_items_in_body(body):
             save_receipt_items_for_source(
@@ -764,6 +850,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
         if is_loan_payment_expense(existing):
             raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be deleted from Loans"))
+        reconcile_credit_card_expense_delete(app.state.db, user["uid"], existing)
         record_expense_tombstone(app.state.db, existing, user["uid"])
         result = app.state.db.expenses.delete_one({"id": expense_id, "uid": user["uid"]})
         if result.deleted_count == 0:
@@ -1871,6 +1958,7 @@ def ensure_indexes(db: Any) -> None:
     db.receipt_items.create_index([("normalizedName", ASCENDING), ("currency", ASCENDING), ("unitPriceNormalized", ASCENDING)])
     db.receipt_items.create_index([("sourceType", ASCENDING), ("expenseId", ASCENDING)])
     db.financial_accounts.create_index([("uid", ASCENDING), ("updatedAt", DESCENDING)])
+    db.credit_cards.create_index([("uid", ASCENDING), ("updatedAt", DESCENDING)])
     db.loans.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("date", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("period", ASCENDING), ("paymentType", ASCENDING)])
@@ -2018,6 +2106,7 @@ FRESHNESS_SECTIONS = {
     "groups",
     "friends",
     "loans",
+    "credit_cards",
     "savings",
     "recurring",
     "activity",
@@ -2040,7 +2129,7 @@ def parse_freshness_sections(raw: str) -> list[str]:
         if section.strip()
     ]
     if not requested:
-        return ["dashboard", "groups", "friends", "loans", "savings", "recurring", "activity"]
+        return ["dashboard", "groups", "friends", "loans", "credit_cards", "savings", "recurring", "activity"]
     sections = [section for section in requested if section in FRESHNESS_SECTIONS]
     if not sections:
         raise HTTPException(
@@ -2169,6 +2258,13 @@ def loan_freshness(db: Any, uid: str) -> datetime | None:
     )
 
 
+def credit_card_freshness(db: Any, uid: str) -> datetime | None:
+    return max_time(
+        latest_collection_time(db, "credit_cards", {"uid": uid}, "updatedAt"),
+        latest_collection_time(db, "expenses", {"uid": uid, "sourceType": "credit_card_spend"}, "updatedAt"),
+    )
+
+
 def savings_freshness(db: Any, uid: str) -> datetime | None:
     family_member_uids: set[str] = set()
     for group in db.groups.find({"memberUids": uid, "groupType": "family"}, {"memberUids": 1}):
@@ -2228,6 +2324,7 @@ def dashboard_freshness(db: Any, uid: str) -> datetime | None:
         group_freshness(db, uid),
         friends_freshness(db, uid),
         loan_freshness(db, uid),
+        credit_card_freshness(db, uid),
         savings_freshness(db, uid),
         recurring_freshness(db, uid),
         monthly_plan_freshness(db, uid),
@@ -2243,6 +2340,8 @@ def section_latest_time(db: Any, uid: str, section: str) -> datetime | None:
         return friends_freshness(db, uid)
     if section == "loans":
         return loan_freshness(db, uid)
+    if section == "credit_cards":
+        return credit_card_freshness(db, uid)
     if section == "savings":
         return savings_freshness(db, uid)
     if section == "recurring":
@@ -2628,6 +2727,7 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "sourceType",
         "sourceLoanId",
         "sourceLoanPaymentId",
+        "sourceCreditCardId",
         "sourcePaymentType",
         "sourcePeriod",
     ]:
@@ -2651,6 +2751,7 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "sourceType",
             "sourceLoanId",
             "sourceLoanPaymentId",
+            "sourceCreditCardId",
             "sourcePaymentType",
             "sourcePeriod",
             "createdAt",
@@ -2888,6 +2989,177 @@ def financial_account_out(doc: dict[str, Any]) -> dict[str, Any]:
         "createdAt": doc.get("createdAt"),
         "updatedAt": doc.get("updatedAt"),
     })
+
+
+def build_credit_card(
+    body: dict[str, Any],
+    uid: str,
+    card_id: str | None = None,
+    created_at: datetime | None = None,
+    archived_at: datetime | None = None,
+) -> dict[str, Any]:
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "name is required"))
+    current = now()
+    raw_balance_as_of = body.get("balanceAsOf")
+    statement_day = bounded_int(body_first(body, ("statementDay", "statementCloseDay"), 1), "statementDay", 1, 31)
+    due_day = bounded_int(body_first(body, ("dueDay", "paymentDueDay"), statement_day), "dueDay", 1, 31)
+    doc = {
+        "id": card_id or uuid.uuid4().hex,
+        "uid": uid,
+        "name": name,
+        "issuer": str(body.get("issuer") or "").strip(),
+        "network": str(body.get("network") or "").strip(),
+        "last4": str(body.get("last4") or "").strip()[-4:],
+        "currency": normalize_currency(body.get("currency"), "NOK"),
+        "creditLimit": non_negative_number(body_first(body, ("creditLimit", "limit"), 0), "creditLimit"),
+        "currentBalance": non_negative_number(body_first(body, ("currentBalance", "balance"), 0), "currentBalance"),
+        "balanceAsOf": parse_dt(str(raw_balance_as_of)) if raw_balance_as_of else current,
+        "statementDay": statement_day,
+        "dueDay": due_day,
+        "familyVisibility": normalize_family_visibility(body.get("familyVisibility") or body.get("visibility")),
+        "notes": str(body.get("notes") or "").strip(),
+        "createdAt": created_at or current,
+        "updatedAt": current,
+    }
+    if archived_at:
+        doc["archivedAt"] = archived_at
+    return doc
+
+
+def month_day_date(year: int, month_number: int, day: int) -> datetime:
+    clamped = min(max(day, 1), calendar.monthrange(year, month_number)[1])
+    return datetime(year, month_number, clamped, tzinfo=UTC)
+
+
+def shift_year_month(year: int, month_number: int, delta: int) -> tuple[int, int]:
+    zero_based = year * 12 + (month_number - 1) + delta
+    shifted_year, shifted_month_zero = divmod(zero_based, 12)
+    return shifted_year, shifted_month_zero + 1
+
+
+def credit_card_cycle_bounds(
+    statement_day: int,
+    as_of: datetime | None = None,
+) -> tuple[datetime, datetime, datetime]:
+    current = aware(as_of or now())
+    current_statement = month_day_date(current.year, current.month, statement_day)
+    if current < current_statement + timedelta(days=1):
+        previous_year, previous_month = shift_year_month(current.year, current.month, -1)
+        previous_statement = month_day_date(previous_year, previous_month, statement_day)
+        cycle_start = previous_statement + timedelta(days=1)
+        statement_date = current_statement
+    else:
+        next_year, next_month = shift_year_month(current.year, current.month, 1)
+        cycle_start = current_statement + timedelta(days=1)
+        statement_date = month_day_date(next_year, next_month, statement_day)
+    cycle_start = datetime(cycle_start.year, cycle_start.month, cycle_start.day, tzinfo=UTC)
+    statement_date = datetime(statement_date.year, statement_date.month, statement_date.day, tzinfo=UTC)
+    return cycle_start, statement_date, statement_date + timedelta(days=1)
+
+
+def credit_card_due_date(statement_date: datetime, due_day: int) -> datetime:
+    due = month_day_date(statement_date.year, statement_date.month, due_day)
+    if due <= statement_date:
+        next_year, next_month = shift_year_month(statement_date.year, statement_date.month, 1)
+        due = month_day_date(next_year, next_month, due_day)
+    return due
+
+
+def credit_card_cycle_spend(db: Any, uid: str, card_id: str, start: datetime, end_exclusive: datetime) -> float:
+    docs = db.expenses.find(
+        {
+            "uid": uid,
+            "sourceCreditCardId": card_id,
+            "date": {"$gte": start, "$lt": end_exclusive},
+        }
+    )
+    return round(sum(float(doc.get("amount") or 0) for doc in docs), 2)
+
+
+def credit_card_out(db: Any, doc: dict[str, Any]) -> dict[str, Any]:
+    statement_day = int(doc.get("statementDay") or 1)
+    due_day = int(doc.get("dueDay") or statement_day)
+    cycle_start, statement_date, cycle_end_exclusive = credit_card_cycle_bounds(statement_day)
+    current_balance = float(doc.get("currentBalance") or 0)
+    credit_limit = float(doc.get("creditLimit") or 0)
+    return json_ready({
+        "id": doc.get("id") or "",
+        "name": doc.get("name") or "",
+        "issuer": doc.get("issuer") or "",
+        "network": doc.get("network") or "",
+        "last4": doc.get("last4") or "",
+        "currency": normalize_currency(doc.get("currency"), "NOK"),
+        "creditLimit": credit_limit,
+        "currentBalance": current_balance,
+        "availableCredit": round(credit_limit - current_balance, 2),
+        "balanceAsOf": doc.get("balanceAsOf"),
+        "statementDay": statement_day,
+        "dueDay": due_day,
+        "cycleStart": cycle_start,
+        "statementDate": statement_date,
+        "cycleEnd": statement_date,
+        "paymentDueDate": credit_card_due_date(statement_date, due_day),
+        "currentCycleSpend": credit_card_cycle_spend(
+            db,
+            str(doc.get("uid") or ""),
+            str(doc.get("id") or ""),
+            cycle_start,
+            cycle_end_exclusive,
+        ),
+        "familyVisibility": normalize_family_visibility(doc.get("familyVisibility")),
+        "notes": doc.get("notes") or "",
+        "archived": bool(doc.get("archivedAt")),
+        "archivedAt": doc.get("archivedAt"),
+        "createdAt": doc.get("createdAt"),
+        "updatedAt": doc.get("updatedAt"),
+    })
+
+
+def reconcile_credit_card_expense_update(
+    db: Any,
+    uid: str,
+    existing: dict[str, Any],
+    updated: dict[str, Any],
+) -> None:
+    card_id = str(existing.get("sourceCreditCardId") or updated.get("sourceCreditCardId") or "").strip()
+    if not card_id:
+        return
+    card = db.credit_cards.find_one({"id": card_id, "uid": uid})
+    if not card:
+        return
+    card_currency = normalize_currency(card.get("currency"), "NOK")
+    updated_currency = normalize_currency(updated.get("currency"), card_currency)
+    if updated_currency != card_currency:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "card expenses must stay in the card currency"))
+    updated["sourceType"] = "credit_card_spend"
+    updated["sourceCreditCardId"] = card_id
+    old_amount = float(existing.get("amount") or 0)
+    new_amount = float(updated.get("amount") or 0)
+    delta = round(new_amount - old_amount, 2)
+    if abs(delta) > 0.005:
+        db.credit_cards.update_one(
+            {"id": card_id, "uid": uid},
+            {
+                "$inc": {"currentBalance": delta},
+                "$set": {"balanceAsOf": updated.get("date") or now(), "updatedAt": now()},
+            },
+        )
+
+
+def reconcile_credit_card_expense_delete(db: Any, uid: str, expense: dict[str, Any]) -> None:
+    card_id = str(expense.get("sourceCreditCardId") or "").strip()
+    if not card_id:
+        return
+    amount = float(expense.get("amount") or 0)
+    db.credit_cards.update_one(
+        {"id": card_id, "uid": uid},
+        {
+            "$inc": {"currentBalance": -amount},
+            "$set": {"balanceAsOf": expense.get("date") or now(), "updatedAt": now()},
+        },
+    )
 
 
 def build_loan(
