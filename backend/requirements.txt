@@ -4,4 +4,5 @@ google-auth==2.43.0
 httpx==0.28.1
 pymongo==4.10.1
 python-multipart==0.0.20
+requests==2.32.3
 uvicorn[standard]==0.34.0
