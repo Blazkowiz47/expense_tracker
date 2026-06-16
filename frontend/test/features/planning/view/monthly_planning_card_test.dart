@@ -12,12 +12,14 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
     this.excludedActualsByCurrency = const {},
     this.categoryExcludedExpenseCount = 0,
     this.categoryExcludedActualsByCurrency = const {},
+    this.totalBudget = 5000,
   }) : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   final int excludedExpenseCount;
   final Map<String, double> excludedActualsByCurrency;
   final int categoryExcludedExpenseCount;
   final Map<String, double> categoryExcludedActualsByCurrency;
+  final double totalBudget;
   Map<String, double>? savedBudgets;
   String? savedCurrency;
   int fetchCount = 0;
@@ -36,18 +38,18 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
       month: '2026-06',
       groupId: groupId,
       currency: 'INR',
-      totalBudget: 5000,
+      totalBudget: totalBudget,
       totalActual: actual,
-      totalRemaining: 5000 - actual,
+      totalRemaining: totalBudget - actual,
       excludedExpenseCount: excludedExpenseCount,
       excludedActualsByCurrency: excludedActualsByCurrency,
       categories: [
         MonthlyPlanCategory(
           category: 'Groceries',
-          budget: 5000,
+          budget: totalBudget,
           actual: actual,
-          remaining: 5000 - actual,
-          progress: actual / 5000,
+          remaining: totalBudget - actual,
+          progress: totalBudget <= 0 ? 0 : actual / totalBudget,
           overBudget: false,
           excludedExpenseCount: categoryExcludedExpenseCount,
           excludedActualsByCurrency: categoryExcludedActualsByCurrency,
@@ -109,6 +111,24 @@ Finder _textFieldWithLabel(String label) {
 }
 
 void main() {
+  testWidgets('set monthly plan opens guided setup wizard', (tester) async {
+    final repository = _FakeMonthlyPlanRepository(totalBudget: 0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MonthlyPlanningCard(repository: repository)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Set monthly plan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Currency'), findsOneWidget);
+    expect(find.text('Next'), findsOneWidget);
+    expect(find.text('Monthly plan'), findsNothing);
+  });
+
   testWidgets('budget editor keeps household and actual categories', (
     tester,
   ) async {

@@ -200,6 +200,12 @@ void main() {
         find.widgetWithText(TextField, 'Balance now'),
         '10000',
       );
+      await tester.tap(find.text('Savings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Current'), findsOneWidget);
+      expect(find.text('Checking'), findsNothing);
+      await tester.tap(find.text('Current'));
+      await tester.pumpAndSettle();
       await _next(tester);
 
       await tester.enterText(
@@ -271,6 +277,7 @@ void main() {
 
       expect(authCubit.state.user?.onboardingCompleted, isTrue);
       expect(setupWriter.accounts.single.name, 'DNB savings');
+      expect(setupWriter.accounts.single.accountType, 'checking');
       expect(setupWriter.accounts.single.openingBalance, 10000);
       expect(
         setupWriter.recurringTemplates.map((item) => item.title),

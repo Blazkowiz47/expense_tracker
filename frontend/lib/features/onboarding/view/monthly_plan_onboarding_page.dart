@@ -14,6 +14,14 @@ const _accountTypeOptions = <String>[
   'cash',
   'other',
 ];
+const _accountTypeLabels = <String, String>{
+  'checking': 'Current',
+  'savings': 'Savings',
+  'investment': 'Investment',
+  'fixed_deposit': 'Fixed deposit',
+  'cash': 'Cash',
+  'other': 'Other',
+};
 const _setupSteps = <_SetupStep>[
   _SetupStep.currency,
   _SetupStep.accounts,
@@ -41,9 +49,14 @@ enum _SetupStep {
 }
 
 class MonthlyPlanOnboardingPage extends StatefulWidget {
-  const MonthlyPlanOnboardingPage({this.setupWriter, super.key});
+  const MonthlyPlanOnboardingPage({
+    this.setupWriter,
+    this.completeOnFinish = true,
+    super.key,
+  });
 
   final OnboardingSetupWriter? setupWriter;
+  final bool completeOnFinish;
 
   @override
   State<MonthlyPlanOnboardingPage> createState() =>
@@ -249,7 +262,11 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         );
       }
       if (!mounted) return;
-      await context.read<AuthCubit>().completeOnboarding();
+      if (widget.completeOnFinish) {
+        await context.read<AuthCubit>().completeOnboarding();
+      } else {
+        Navigator.of(context).pop(true);
+      }
     });
   }
 
@@ -285,7 +302,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   }
 
   Future<void> _skipAll() {
-    return _run(() => context.read<AuthCubit>().completeOnboarding());
+    return _run(() async {
+      if (widget.completeOnFinish) {
+        await context.read<AuthCubit>().completeOnboarding();
+      } else if (mounted) {
+        Navigator.of(context).pop(false);
+      }
+    });
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -1079,7 +1102,7 @@ class _AccountEditor extends StatelessWidget {
                     .map(
                       (item) => DropdownMenuItem(
                         value: item,
-                        child: Text(_titleCase(item.replaceAll('_', ' '))),
+                        child: Text(_accountTypeLabels[item] ?? item),
                       ),
                     )
                     .toList(growable: false),

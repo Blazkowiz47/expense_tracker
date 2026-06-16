@@ -1,4 +1,5 @@
 import 'package:expense_tracker/core/ui/app_ui.dart';
+import 'package:expense_tracker/features/onboarding/view/monthly_plan_onboarding_page.dart';
 import 'package:expense_tracker/features/planning/models/monthly_category_catalog.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
@@ -135,6 +136,19 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
     }
   }
 
+  Future<void> _openGuidedSetup() async {
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        fullscreenDialog: true,
+        builder: (context) =>
+            const MonthlyPlanOnboardingPage(completeOnFinish: false),
+      ),
+    );
+    if (completed == true && mounted) {
+      await _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -172,7 +186,7 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
             ? 'Set category budgets for this household and compare them with shared spend.'
             : 'Set category budgets and compare them with actual spend.',
         actionLabel: scoped ? 'Set household plan' : 'Set monthly plan',
-        onAction: _editPlan,
+        onAction: scoped ? _editPlan : _openGuidedSetup,
       );
     }
 
