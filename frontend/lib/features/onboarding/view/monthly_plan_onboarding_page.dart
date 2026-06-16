@@ -1,5 +1,4 @@
 import 'package:expense_tracker/core/constants/app_spacing.dart';
-import 'package:expense_tracker/core/ui/app_page_container.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/onboarding/repositories/onboarding_setup_writer.dart';
 import 'package:flutter/material.dart';
@@ -67,6 +66,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   late final OnboardingSetupWriter _setupWriter;
   late final bool _ownsSetupWriter;
   final _accounts = <_AccountDraftController>[];
+  final _utilities = <_CommitmentDraftController>[];
+  final _subscriptions = <_CommitmentDraftController>[];
+  final _memberships = <_CommitmentDraftController>[];
   final _salaryAmountController = TextEditingController();
   final _salaryDayController = TextEditingController(text: '25');
   final _rentAmountController = TextEditingController();
@@ -79,12 +81,6 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   final _loanMonthsController = TextEditingController();
   final _loanDueDayController = TextEditingController(text: '18');
   final _groceriesController = TextEditingController();
-  final _utilitiesController = TextEditingController();
-  final _utilitiesDayController = TextEditingController(text: '5');
-  final _subscriptionsController = TextEditingController();
-  final _subscriptionsDayController = TextEditingController(text: '5');
-  final _membershipsController = TextEditingController();
-  final _membershipsDayController = TextEditingController(text: '5');
   final _transportController = TextEditingController();
   final _savingsNameController = TextEditingController(text: 'India savings');
   final _savingsMonthlyController = TextEditingController();
@@ -108,6 +104,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _setupWriter = widget.setupWriter ?? ApiOnboardingSetupWriter();
     _ownsSetupWriter = widget.setupWriter == null;
     _accounts.add(_AccountDraftController(currency: _currency));
+    _resetCommitmentDrafts(_utilities);
+    _resetCommitmentDrafts(_subscriptions);
+    _resetCommitmentDrafts(_memberships);
   }
 
   @override
@@ -127,12 +126,15 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _loanMonthsController.dispose();
     _loanDueDayController.dispose();
     _groceriesController.dispose();
-    _utilitiesController.dispose();
-    _utilitiesDayController.dispose();
-    _subscriptionsController.dispose();
-    _subscriptionsDayController.dispose();
-    _membershipsController.dispose();
-    _membershipsDayController.dispose();
+    for (final draft in _utilities) {
+      draft.dispose();
+    }
+    for (final draft in _subscriptions) {
+      draft.dispose();
+    }
+    for (final draft in _memberships) {
+      draft.dispose();
+    }
     _transportController.dispose();
     _savingsNameController.dispose();
     _savingsMonthlyController.dispose();
@@ -211,26 +213,23 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       }
 
       _addBudget(budgets, 'Groceries', _groceriesController);
-      await _addCommitment(
+      await _addCommitments(
         budgets,
-        title: 'Utilities',
         category: 'Utilities',
-        amountController: _utilitiesController,
-        dayController: _utilitiesDayController,
+        drafts: _utilities,
+        fallbackTitle: 'Utility bill',
       );
-      await _addCommitment(
+      await _addCommitments(
         budgets,
-        title: 'Subscriptions',
         category: 'Subscriptions',
-        amountController: _subscriptionsController,
-        dayController: _subscriptionsDayController,
+        drafts: _subscriptions,
+        fallbackTitle: 'Subscription',
       );
-      await _addCommitment(
+      await _addCommitments(
         budgets,
-        title: 'Memberships',
         category: 'Memberships',
-        amountController: _membershipsController,
-        dayController: _membershipsDayController,
+        drafts: _memberships,
+        fallbackTitle: 'Membership',
       );
       _addBudget(budgets, 'Transport', _transportController);
 
@@ -270,24 +269,30 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     });
   }
 
-  Future<void> _addCommitment(
+  Future<void> _addCommitments(
     Map<String, double> budgets, {
-    required String title,
     required String category,
-    required TextEditingController amountController,
-    required TextEditingController dayController,
+    required List<_CommitmentDraftController> drafts,
+    required String fallbackTitle,
   }) async {
-    final amount = _amountValue(amountController);
-    if (amount <= 0) return;
-    budgets[category] = amount;
-    await _setupWriter.createRecurringTemplate(
-      title: title,
-      kind: 'expense',
-      amount: amount,
-      category: category,
-      currency: _currency,
-      dayOfMonth: _dayValue(dayController, '$title due day'),
-    );
+    for (final draft in drafts) {
+      final amount = _amountValue(draft.amountController);
+      if (amount <= 0) {
+        continue;
+      }
+      _addBudgetAmount(budgets, category, amount);
+      final title = draft.nameController.text.trim().isEmpty
+          ? fallbackTitle
+          : draft.nameController.text.trim();
+      await _setupWriter.createRecurringTemplate(
+        title: title,
+        kind: 'expense',
+        amount: amount,
+        category: category,
+        currency: _currency,
+        dayOfMonth: _dayValue(draft.dayController, '$title due day'),
+      );
+    }
   }
 
   void _addBudget(
@@ -297,8 +302,17 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   ) {
     final amount = _amountValue(controller);
     if (amount > 0) {
-      budgets[category] = amount;
+      _addBudgetAmount(budgets, category, amount);
     }
+  }
+
+  void _addBudgetAmount(
+    Map<String, double> budgets,
+    String category,
+    double amount,
+  ) {
+    if (amount <= 0) return;
+    budgets[category] = (budgets[category] ?? 0) + amount;
   }
 
   Future<void> _skipAll() {
@@ -386,9 +400,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         _groceriesController.clear();
         break;
       case _SetupStep.commitments:
-        _utilitiesController.clear();
-        _subscriptionsController.clear();
-        _membershipsController.clear();
+        _resetCommitmentDrafts(_utilities);
+        _resetCommitmentDrafts(_subscriptions);
+        _resetCommitmentDrafts(_memberships);
         break;
       case _SetupStep.transport:
         _transportController.clear();
@@ -422,7 +436,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   }
 
   double _amountValue(TextEditingController controller) {
-    return double.tryParse(controller.text.trim().replaceAll(',', '.')) ?? 0;
+    return _parseAmount(controller.text) ?? 0;
   }
 
   int _intValue(TextEditingController controller) {
@@ -440,6 +454,44 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
   String _monthKey(DateTime date) {
     return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}';
+  }
+
+  void _resetCommitmentDrafts(List<_CommitmentDraftController> drafts) {
+    for (final draft in drafts) {
+      draft.dispose();
+    }
+    drafts
+      ..clear()
+      ..add(_CommitmentDraftController());
+  }
+
+  void _addCommitmentDraft(List<_CommitmentDraftController> drafts) {
+    setState(() => drafts.add(_CommitmentDraftController()));
+  }
+
+  void _removeCommitmentDraft(
+    List<_CommitmentDraftController> drafts,
+    int index,
+  ) {
+    setState(() {
+      drafts.removeAt(index).dispose();
+      if (drafts.isEmpty) {
+        drafts.add(_CommitmentDraftController());
+      }
+    });
+  }
+
+  double _commitmentTotal(List<_CommitmentDraftController> drafts) {
+    return drafts.fold<double>(
+      0,
+      (sum, draft) => sum + _amountValue(draft.amountController),
+    );
+  }
+
+  int _filledCommitmentCount(List<_CommitmentDraftController> drafts) {
+    return drafts
+        .where((draft) => _amountValue(draft.amountController) > 0)
+        .length;
   }
 
   String get _stepTitle {
@@ -478,93 +530,138 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     final progress = (_stepIndex + 1) / _setupSteps.length;
     return Scaffold(
       body: SafeArea(
-        child: AppPageContainer(
-          maxWidth: 640,
-          children: [
-            const SizedBox(height: AppSpacing.sm),
-            LinearProgressIndicator(value: progress),
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Back',
-                  onPressed: _saving || _stepIndex == 0 ? null : _previousStep,
-                  icon: const Icon(Icons.arrow_back),
-                ),
-                Expanded(
-                  child: Text(
-                    '${_stepIndex + 1} of ${_setupSteps.length}',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Skip setup',
-                  onPressed: _saving ? null : _skipAll,
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Icon(_stepIcon, size: 42, color: theme.colorScheme.primary),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              _stepTitle,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.headlineMedium,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              child: KeyedSubtree(key: ValueKey(_step), child: _buildStep()),
-            ),
-            if (_message != null) ...[
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                _message!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.lg),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _saving || _step == _SetupStep.review
-                        ? null
-                        : _skipStep,
-                    icon: const Icon(Icons.skip_next_outlined),
-                    label: const Text('Skip this step'),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _saving ? null : _nextStep,
-                    icon: _saving
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            _step == _SetupStep.review
-                                ? Icons.check
-                                : Icons.arrow_forward,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                children: [
+                  const SizedBox(height: AppSpacing.sm),
+                  LinearProgressIndicator(value: progress),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Back',
+                        onPressed: _saving || _stepIndex == 0
+                            ? null
+                            : _previousStep,
+                        icon: const Icon(Icons.arrow_back),
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${_stepIndex + 1} of ${_setupSteps.length}',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: theme.colorScheme.outline,
                           ),
-                    label: Text(
-                      _step == _SetupStep.review ? 'Finish setup' : 'Next',
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Skip setup',
+                        onPressed: _saving ? null : _skipAll,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Icon(_stepIcon, size: 42, color: theme.colorScheme.primary),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    _stepTitle,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            child: KeyedSubtree(
+                              key: ValueKey(_step),
+                              child: _buildStep(),
+                            ),
+                          ),
+                          if (_message != null) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              _message!,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.error,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: AppSpacing.md),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  if (_step == _SetupStep.review)
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        key: const ValueKey('onboarding-complete-setup'),
+                        onPressed: _saving ? null : _finish,
+                        icon: _saving
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.check),
+                        label: const Text('Complete setup'),
+                      ),
+                    )
+                  else ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            key: const ValueKey('onboarding-complete-setup'),
+                            onPressed: _saving ? null : _finish,
+                            icon: const Icon(Icons.check_circle_outline),
+                            label: const Text('Complete setup'),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _saving ? null : _nextStep,
+                            icon: _saving
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.arrow_forward),
+                            label: Text(
+                              _stepIndex == _setupSteps.length - 2
+                                  ? 'Review'
+                                  : 'Next',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    TextButton.icon(
+                      onPressed: _saving ? null : _skipStep,
+                      icon: const Icon(Icons.skip_next_outlined),
+                      label: const Text('Skip this step'),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+              ),
             ),
-            const SizedBox(height: AppSpacing.lg),
-          ],
+          ),
         ),
       ),
     );
@@ -825,29 +922,54 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
   Widget _commitmentsStep() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _CommitmentRow(
-          label: 'Utilities',
+        _CommitmentSection(
+          title: 'Utilities',
+          description:
+              'Add electricity, internet, mobile, and other fixed bills.',
+          icon: Icons.flash_on_outlined,
+          itemLabel: 'Bill name',
+          itemHint: 'Electricity',
+          addLabel: 'Add utility',
           currency: _currency,
-          amountController: _utilitiesController,
-          dayController: _utilitiesDayController,
+          drafts: _utilities,
           enabled: !_saving,
+          sectionKeyPrefix: 'utilities',
+          onAdd: () => _addCommitmentDraft(_utilities),
+          onRemove: (index) => _removeCommitmentDraft(_utilities, index),
         ),
         const SizedBox(height: AppSpacing.md),
-        _CommitmentRow(
-          label: 'Subscriptions',
+        _CommitmentSection(
+          title: 'Subscriptions',
+          description:
+              'Track streaming, software, and other monthly services one by one.',
+          icon: Icons.subscriptions_outlined,
+          itemLabel: 'Subscription name',
+          itemHint: 'Netflix',
+          addLabel: 'Add subscription',
           currency: _currency,
-          amountController: _subscriptionsController,
-          dayController: _subscriptionsDayController,
+          drafts: _subscriptions,
           enabled: !_saving,
+          sectionKeyPrefix: 'subscriptions',
+          onAdd: () => _addCommitmentDraft(_subscriptions),
+          onRemove: (index) => _removeCommitmentDraft(_subscriptions, index),
         ),
         const SizedBox(height: AppSpacing.md),
-        _CommitmentRow(
-          label: 'Memberships',
+        _CommitmentSection(
+          title: 'Memberships',
+          description:
+              'Add gym, clubs, childcare, or any recurring membership fees.',
+          icon: Icons.card_membership_outlined,
+          itemLabel: 'Membership name',
+          itemHint: 'Gym',
+          addLabel: 'Add membership',
           currency: _currency,
-          amountController: _membershipsController,
-          dayController: _membershipsDayController,
+          drafts: _memberships,
           enabled: !_saving,
+          sectionKeyPrefix: 'memberships',
+          onAdd: () => _addCommitmentDraft(_memberships),
+          onRemove: (index) => _removeCommitmentDraft(_memberships, index),
         ),
       ],
     );
@@ -1002,24 +1124,50 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         ),
       );
     }
+    final groceries = _amountValue(_groceriesController);
+    if (groceries > 0) {
+      rows.add(
+        _ReviewItem(
+          Icons.shopping_basket_outlined,
+          'Groceries',
+          '$_currency ${groceries.toStringAsFixed(0)}',
+        ),
+      );
+    }
     for (final item in [
-      (Icons.shopping_basket_outlined, 'Groceries', _groceriesController),
-      (Icons.receipt_long_outlined, 'Utilities', _utilitiesController),
-      (Icons.subscriptions_outlined, 'Subscriptions', _subscriptionsController),
-      (Icons.card_membership_outlined, 'Memberships', _membershipsController),
-      (Icons.directions_car_outlined, 'Transport', _transportController),
-      (Icons.savings_outlined, 'Savings', _savingsMonthlyController),
+      (Icons.receipt_long_outlined, 'Utilities', _utilities),
+      (Icons.subscriptions_outlined, 'Subscriptions', _subscriptions),
+      (Icons.card_membership_outlined, 'Memberships', _memberships),
     ]) {
-      final amount = _amountValue(item.$3);
-      if (amount > 0) {
-        rows.add(
-          _ReviewItem(
-            item.$1,
-            item.$2,
-            '$_currency ${amount.toStringAsFixed(0)}',
-          ),
-        );
+      final total = _commitmentTotal(item.$3);
+      if (total <= 0) {
+        continue;
       }
+      final count = _filledCommitmentCount(item.$3);
+      final label = count > 1 ? '${item.$2} ($count)' : item.$2;
+      rows.add(
+        _ReviewItem(item.$1, label, '$_currency ${total.toStringAsFixed(0)}'),
+      );
+    }
+    final transport = _amountValue(_transportController);
+    if (transport > 0) {
+      rows.add(
+        _ReviewItem(
+          Icons.directions_car_outlined,
+          'Transport',
+          '$_currency ${transport.toStringAsFixed(0)}',
+        ),
+      );
+    }
+    final savings = _amountValue(_savingsMonthlyController);
+    if (savings > 0) {
+      rows.add(
+        _ReviewItem(
+          Icons.savings_outlined,
+          'Savings',
+          '$_currency ${savings.toStringAsFixed(0)}',
+        ),
+      );
     }
     return rows;
   }
@@ -1162,16 +1310,19 @@ class _MoneyField extends StatelessWidget {
     required this.currency,
     required this.label,
     required this.enabled,
+    this.fieldKey,
   });
 
   final TextEditingController controller;
   final String currency;
   final String label;
   final bool enabled;
+  final Key? fieldKey;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
+      key: fieldKey,
       controller: controller,
       enabled: enabled,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1189,15 +1340,18 @@ class _DayField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.enabled,
+    this.fieldKey,
   });
 
   final TextEditingController controller;
   final String label;
   final bool enabled;
+  final Key? fieldKey;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
+      key: fieldKey,
       controller: controller,
       enabled: enabled,
       keyboardType: TextInputType.number,
@@ -1209,44 +1363,179 @@ class _DayField extends StatelessWidget {
   }
 }
 
-class _CommitmentRow extends StatelessWidget {
-  const _CommitmentRow({
-    required this.label,
-    required this.currency,
-    required this.amountController,
-    required this.dayController,
-    required this.enabled,
-  });
+class _CommitmentDraftController {
+  _CommitmentDraftController()
+    : nameController = TextEditingController(),
+      amountController = TextEditingController(),
+      dayController = TextEditingController(text: '5');
 
-  final String label;
-  final String currency;
+  final TextEditingController nameController;
   final TextEditingController amountController;
   final TextEditingController dayController;
+
+  void dispose() {
+    nameController.dispose();
+    amountController.dispose();
+    dayController.dispose();
+  }
+}
+
+class _CommitmentSection extends StatelessWidget {
+  const _CommitmentSection({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.itemLabel,
+    required this.itemHint,
+    required this.addLabel,
+    required this.currency,
+    required this.drafts,
+    required this.enabled,
+    required this.sectionKeyPrefix,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final String itemLabel;
+  final String itemHint;
+  final String addLabel;
+  final String currency;
+  final List<_CommitmentDraftController> drafts;
   final bool enabled;
+  final String sectionKeyPrefix;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          flex: 3,
-          child: _MoneyField(
-            controller: amountController,
+        Row(
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+            TextButton.icon(
+              key: ValueKey('$sectionKeyPrefix-add'),
+              onPressed: enabled ? onAdd : null,
+              icon: const Icon(Icons.add),
+              label: Text(addLabel),
+            ),
+          ],
+        ),
+        Text(
+          description,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (var index = 0; index < drafts.length; index++) ...[
+          _CommitmentDraftEditor(
+            controller: drafts[index],
             currency: currency,
-            label: label,
+            itemLabel: itemLabel,
+            itemHint: itemHint,
             enabled: enabled,
+            canRemove: drafts.length > 1,
+            fieldKeyPrefix: '$sectionKeyPrefix-$index',
+            onRemove: () => onRemove(index),
           ),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          flex: 2,
-          child: _DayField(
-            controller: dayController,
-            label: 'Day',
-            enabled: enabled,
-          ),
-        ),
+          if (index < drafts.length - 1) const SizedBox(height: AppSpacing.sm),
+        ],
       ],
+    );
+  }
+}
+
+class _CommitmentDraftEditor extends StatelessWidget {
+  const _CommitmentDraftEditor({
+    required this.controller,
+    required this.currency,
+    required this.itemLabel,
+    required this.itemHint,
+    required this.enabled,
+    required this.canRemove,
+    required this.fieldKeyPrefix,
+    required this.onRemove,
+  });
+
+  final _CommitmentDraftController controller;
+  final String currency;
+  final String itemLabel;
+  final String itemHint;
+  final bool enabled;
+  final bool canRemove;
+  final String fieldKeyPrefix;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: ValueKey('$fieldKeyPrefix-name'),
+                    controller: controller.nameController,
+                    enabled: enabled,
+                    decoration: InputDecoration(
+                      labelText: itemLabel,
+                      hintText: itemHint,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                IconButton(
+                  tooltip: 'Remove item',
+                  onPressed: enabled && canRemove ? onRemove : null,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _MoneyField(
+                    fieldKey: ValueKey('$fieldKeyPrefix-amount'),
+                    controller: controller.amountController,
+                    currency: currency,
+                    label: 'Amount',
+                    enabled: enabled,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  flex: 2,
+                  child: _DayField(
+                    fieldKey: ValueKey('$fieldKeyPrefix-day'),
+                    controller: controller.dayController,
+                    label: 'Day',
+                    enabled: enabled,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1312,4 +1601,47 @@ String _titleCase(String value) {
       .where((part) => part.isNotEmpty)
       .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
       .join(' ');
+}
+
+double? _parseAmount(String value) {
+  var normalized = value.trim().replaceAll(' ', '');
+  if (normalized.isEmpty) {
+    return null;
+  }
+  normalized = normalized.replaceAll(RegExp(r'[^0-9,.\-]'), '');
+  if (normalized.isEmpty ||
+      normalized == '-' ||
+      normalized == ',' ||
+      normalized == '.') {
+    return null;
+  }
+
+  final lastComma = normalized.lastIndexOf(',');
+  final lastDot = normalized.lastIndexOf('.');
+  final commaCount = ','.allMatches(normalized).length;
+  final dotCount = '.'.allMatches(normalized).length;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastComma > lastDot) {
+      normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
+    } else {
+      normalized = normalized.replaceAll(',', '');
+    }
+  } else if (lastComma >= 0) {
+    final fractionalDigits = normalized.length - lastComma - 1;
+    if (commaCount > 1 ||
+        (fractionalDigits == 3 && normalized.indexOf(',') == lastComma)) {
+      normalized = normalized.replaceAll(',', '');
+    } else {
+      normalized = normalized.replaceAll(',', '.');
+    }
+  } else if (lastDot >= 0) {
+    final fractionalDigits = normalized.length - lastDot - 1;
+    if (dotCount > 1 ||
+        (fractionalDigits == 3 && normalized.indexOf('.') == lastDot)) {
+      normalized = normalized.replaceAll('.', '');
+    }
+  }
+
+  return double.tryParse(normalized);
 }

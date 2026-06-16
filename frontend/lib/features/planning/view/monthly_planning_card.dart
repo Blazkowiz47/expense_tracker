@@ -191,6 +191,7 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
     }
 
     final remainingPositive = plan.totalRemaining >= 0;
+    final outstandingLoanAmount = _outstandingLoanAmount(plan);
     final progress = plan.totalBudget <= 0
         ? 0.0
         : (plan.totalActual / plan.totalBudget).clamp(0.0, 1.0);
@@ -222,6 +223,16 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (outstandingLoanAmount > 0) ...[
+            const SizedBox(height: 4),
+            Text(
+              '${plan.currency} ${outstandingLoanAmount.toStringAsFixed(2)} due in loans',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           LinearProgressIndicator(value: progress),
           const SizedBox(height: 8),
@@ -330,14 +341,29 @@ class _BudgetRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = AppMoney.statusColor(
-      context,
-      positive: !category.overBudget,
-      neutral: category.budget <= 0,
-    );
+    final obligation = _isLoanCategory(category.category);
+    final outstandingAmount = obligation
+        ? (category.budget - category.actual).clamp(0.0, double.infinity)
+        : 0.0;
+    final color = obligation
+        ? AppMoney.statusColor(
+            context,
+            positive: outstandingAmount <= 0.005,
+            neutral: category.budget <= 0,
+          )
+        : AppMoney.statusColor(
+            context,
+            positive: !category.overBudget,
+            neutral: category.budget <= 0,
+          );
     final progress = category.budget <= 0
         ? 0.0
         : category.progress.clamp(0.0, 1.0);
+    final summaryText = obligation
+        ? outstandingAmount > 0.005
+              ? '$currency ${outstandingAmount.toStringAsFixed(0)} due'
+              : '$currency ${category.actual.toStringAsFixed(0)} paid'
+        : '$currency ${category.actual.toStringAsFixed(0)} / ${category.budget.toStringAsFixed(0)}';
     final content = Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
@@ -347,7 +373,7 @@ class _BudgetRow extends StatelessWidget {
             children: [
               Expanded(child: Text(category.category)),
               Text(
-                '$currency ${category.actual.toStringAsFixed(0)} / ${category.budget.toStringAsFixed(0)}',
+                summaryText,
                 style: TextStyle(color: color, fontWeight: FontWeight.w600),
               ),
               if (onAddExpense != null) ...[
@@ -376,6 +402,15 @@ class _BudgetRow extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           LinearProgressIndicator(value: progress, color: color),
+          if (obligation) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Paid $currency ${category.actual.toStringAsFixed(0)} of ${category.budget.toStringAsFixed(0)}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ],
           if (category.excludedExpenseCount > 0 ||
               category.excludedActualsByCurrency.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -406,6 +441,21 @@ String _excludedActualsText(MonthlyPlanCategory category) {
   }
   final count = category.excludedExpenseCount;
   return '$count ${count == 1 ? 'expense' : 'expenses'}';
+}
+
+double _outstandingLoanAmount(MonthlyPlan plan) {
+  return plan.categories.fold<double>(0, (sum, category) {
+    if (!_isLoanCategory(category.category)) {
+      return sum;
+    }
+    return sum +
+        (category.budget - category.actual).clamp(0.0, double.infinity);
+  });
+}
+
+bool _isLoanCategory(String category) {
+  final normalized = category.trim().toLowerCase();
+  return normalized.contains('loan') || normalized.contains('emi');
 }
 
 class _BudgetDialog extends StatefulWidget {
@@ -479,7 +529,7 @@ class _BudgetDialogState extends State<_BudgetDialog> {
     for (final category in _categories) {
       final controller = _controllers[category];
       if (controller == null) continue;
-      final value = double.tryParse(controller.text.trim()) ?? 0;
+      final value = _parseBudgetAmount(controller.text) ?? 0;
       if (value > 0) {
         budgets[category] = value;
       }
@@ -581,4 +631,46 @@ class _BudgetDialogResult {
 
   final String currency;
   final Map<String, double> budgets;
+}
+
+double? _parseBudgetAmount(String value) {
+  var normalized = value.trim().replaceAll(' ', '');
+  if (normalized.isEmpty) {
+    return null;
+  }
+  normalized = normalized.replaceAll(RegExp(r'[^0-9,.\-]'), '');
+  if (normalized.isEmpty ||
+      normalized == '-' ||
+      normalized == ',' ||
+      normalized == '.') {
+    return null;
+  }
+
+  final lastComma = normalized.lastIndexOf(',');
+  final lastDot = normalized.lastIndexOf('.');
+  final commaCount = ','.allMatches(normalized).length;
+  final dotCount = '.'.allMatches(normalized).length;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    if (lastComma > lastDot) {
+      normalized = normalized.replaceAll('.', '').replaceAll(',', '.');
+    } else {
+      normalized = normalized.replaceAll(',', '');
+    }
+  } else if (lastComma >= 0) {
+    final fractionalDigits = normalized.length - lastComma - 1;
+    if (commaCount > 1 ||
+        (fractionalDigits == 3 && normalized.indexOf(',') == lastComma)) {
+      normalized = normalized.replaceAll(',', '');
+    } else {
+      normalized = normalized.replaceAll(',', '.');
+    }
+  } else if (lastDot >= 0) {
+    final fractionalDigits = normalized.length - lastDot - 1;
+    if (dotCount > 1 ||
+        (fractionalDigits == 3 && normalized.indexOf('.') == lastDot)) {
+      normalized = normalized.replaceAll('.', '');
+    }
+  }
+  return double.tryParse(normalized);
 }

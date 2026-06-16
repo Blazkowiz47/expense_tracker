@@ -186,7 +186,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('Currency'), findsOneWidget);
-      await _next(tester);
+      await _advance(tester);
 
       await tester.enterText(
         find.widgetWithText(TextField, 'Account name'),
@@ -206,23 +206,23 @@ void main() {
       expect(find.text('Checking'), findsNothing);
       await tester.tap(find.text('Current'));
       await tester.pumpAndSettle();
-      await _next(tester);
+      await _advance(tester);
 
       await tester.enterText(
         find.widgetWithText(TextField, 'Monthly salary'),
         '42000',
       );
-      await _next(tester);
+      await _advance(tester);
 
       await tester.enterText(
         find.widgetWithText(TextField, 'Rent or housing payment'),
         '12000',
       );
-      await _next(tester);
+      await _advance(tester);
 
       await tester.enterText(
         find.widgetWithText(TextField, 'Remaining principal'),
-        '146087.67',
+        '146,087.67',
       );
       await tester.enterText(
         find.widgetWithText(TextField, 'Monthly EMI'),
@@ -236,29 +236,55 @@ void main() {
         find.widgetWithText(TextField, 'Months left'),
         '46',
       );
-      await _next(tester);
+      await _advance(tester);
 
       await tester.enterText(
         find.widgetWithText(TextField, 'Monthly grocery budget'),
         '5000',
       );
-      await _next(tester);
+      await _advance(tester);
 
       await tester.enterText(
-        find.widgetWithText(TextField, 'Utilities'),
+        find.byKey(const ValueKey('utilities-0-name')),
+        'Power',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('utilities-0-amount')),
         '1200',
       );
       await tester.enterText(
-        find.widgetWithText(TextField, 'Subscriptions'),
-        '399',
+        find.byKey(const ValueKey('subscriptions-0-name')),
+        'Netflix',
       );
-      await _next(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('subscriptions-0-amount')),
+        '199',
+      );
+      await tester.tap(find.byKey(const ValueKey('subscriptions-add')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('subscriptions-1-name')),
+        'Spotify',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('subscriptions-1-amount')),
+        '200',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('memberships-0-name')),
+        'Gym',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('memberships-0-amount')),
+        '499',
+      );
+      await _advance(tester);
 
       await tester.enterText(
         find.widgetWithText(TextField, 'Monthly transport budget'),
         '750',
       );
-      await _next(tester);
+      await _advance(tester);
 
       await tester.enterText(
         find.widgetWithText(TextField, 'Monthly savings'),
@@ -268,10 +294,10 @@ void main() {
         find.widgetWithText(TextField, 'Target amount'),
         '300000',
       );
-      await _next(tester);
+      await _advance(tester);
 
       expect(find.text('Review'), findsOneWidget);
-      await tester.tap(find.text('Finish setup'));
+      await tester.tap(find.byKey(const ValueKey('onboarding-complete-setup')));
       await tester.pump();
       await tester.pump();
 
@@ -291,10 +317,26 @@ void main() {
       expect(setupWriter.loans.single.rateType, 'floating');
       expect(setupWriter.savingsGoals.single.accountName, 'DNB savings');
       expect(setupWriter.savingsGoals.single.familyVisibility, 'private');
+      expect(
+        setupWriter.recurringTemplates.map((item) => item.title),
+        containsAll(<String>['Power', 'Netflix', 'Spotify', 'Gym']),
+      );
       expect(setupWriter.monthlyPlans.single.currency, 'NOK');
       expect(
         setupWriter.monthlyPlans.single.budgets,
         containsPair('Groceries', 5000),
+      );
+      expect(
+        setupWriter.monthlyPlans.single.budgets,
+        containsPair('Utilities', 1200),
+      );
+      expect(
+        setupWriter.monthlyPlans.single.budgets,
+        containsPair('Subscriptions', 399),
+      );
+      expect(
+        setupWriter.monthlyPlans.single.budgets,
+        containsPair('Memberships', 499),
       );
       expect(
         setupWriter.monthlyPlans.single.budgets,
@@ -306,6 +348,58 @@ void main() {
       );
     },
   );
+
+  testWidgets('can complete setup early from the bills step', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(700, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final authCubit = _authCubit();
+    final setupWriter = _FakeOnboardingSetupWriter();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BlocProvider.value(
+          value: authCubit,
+          child: MonthlyPlanOnboardingPage(setupWriter: setupWriter),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await _advance(tester);
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Bills'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('subscriptions-0-name')),
+      'YouTube Premium',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('subscriptions-0-amount')),
+      '129',
+    );
+
+    await tester.ensureVisible(find.text('Complete setup'));
+    await tester.tap(find.text('Complete setup'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(authCubit.state.user?.onboardingCompleted, isTrue);
+    expect(setupWriter.recurringTemplates.single.title, 'YouTube Premium');
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      containsPair('Subscriptions', 129),
+    );
+  });
 
   testWidgets('can skip an individual onboarding step', (tester) async {
     await tester.binding.setSurfaceSize(const Size(700, 900));
@@ -323,7 +417,7 @@ void main() {
     );
     await tester.pump();
 
-    await _next(tester);
+    await _advance(tester);
     expect(find.text('Bank accounts'), findsOneWidget);
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
@@ -343,8 +437,14 @@ AuthCubit _authCubit() {
   );
 }
 
-Future<void> _next(WidgetTester tester) async {
-  await tester.tap(find.text('Next'));
+Future<void> _advance(WidgetTester tester) async {
+  final next = find.text('Next');
+  final review = find.text('Review');
+  if (review.evaluate().isNotEmpty) {
+    await tester.tap(review);
+  } else {
+    await tester.tap(next);
+  }
   await tester.pumpAndSettle();
 }
 

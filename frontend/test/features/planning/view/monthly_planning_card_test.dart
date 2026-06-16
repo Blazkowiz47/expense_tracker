@@ -13,6 +13,9 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
     this.categoryExcludedExpenseCount = 0,
     this.categoryExcludedActualsByCurrency = const {},
     this.totalBudget = 5000,
+    this.initialActual = 1500,
+    this.refreshedActual = 1750,
+    this.categories,
   }) : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   final int excludedExpenseCount;
@@ -20,6 +23,9 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
   final int categoryExcludedExpenseCount;
   final Map<String, double> categoryExcludedActualsByCurrency;
   final double totalBudget;
+  final double initialActual;
+  final double refreshedActual;
+  final List<MonthlyPlanCategory>? categories;
   Map<String, double>? savedBudgets;
   String? savedCurrency;
   int fetchCount = 0;
@@ -33,7 +39,7 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
   }) async {
     fetchCount += 1;
     fetchedGroupIds.add(groupId);
-    final actual = fetchCount == 1 ? 1500.0 : 1750.0;
+    final actual = fetchCount == 1 ? initialActual : refreshedActual;
     return MonthlyPlan(
       month: '2026-06',
       groupId: groupId,
@@ -43,26 +49,28 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
       totalRemaining: totalBudget - actual,
       excludedExpenseCount: excludedExpenseCount,
       excludedActualsByCurrency: excludedActualsByCurrency,
-      categories: [
-        MonthlyPlanCategory(
-          category: 'Groceries',
-          budget: totalBudget,
-          actual: actual,
-          remaining: totalBudget - actual,
-          progress: totalBudget <= 0 ? 0 : actual / totalBudget,
-          overBudget: false,
-          excludedExpenseCount: categoryExcludedExpenseCount,
-          excludedActualsByCurrency: categoryExcludedActualsByCurrency,
-        ),
-        const MonthlyPlanCategory(
-          category: 'Pet care',
-          budget: 0,
-          actual: 250,
-          remaining: -250,
-          progress: 0,
-          overBudget: false,
-        ),
-      ],
+      categories:
+          categories ??
+          [
+            MonthlyPlanCategory(
+              category: 'Groceries',
+              budget: totalBudget,
+              actual: actual,
+              remaining: totalBudget - actual,
+              progress: totalBudget <= 0 ? 0 : actual / totalBudget,
+              overBudget: false,
+              excludedExpenseCount: categoryExcludedExpenseCount,
+              excludedActualsByCurrency: categoryExcludedActualsByCurrency,
+            ),
+            const MonthlyPlanCategory(
+              category: 'Pet care',
+              budget: 0,
+              actual: 250,
+              remaining: -250,
+              progress: 0,
+              overBudget: false,
+            ),
+          ],
     );
   }
 
@@ -306,5 +314,46 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Not counted: USD 30.00'), findsOneWidget);
+  });
+
+  testWidgets('loan category is shown as due until it is paid', (tester) async {
+    final repository = _FakeMonthlyPlanRepository(
+      totalBudget: 9733,
+      initialActual: 0,
+      refreshedActual: 0,
+      categories: const [
+        MonthlyPlanCategory(
+          category: 'Groceries',
+          budget: 6000,
+          actual: 0,
+          remaining: 6000,
+          progress: 0,
+          overBudget: false,
+        ),
+        MonthlyPlanCategory(
+          category: 'Loans / EMI',
+          budget: 3733,
+          actual: 0,
+          remaining: 3733,
+          progress: 0,
+          overBudget: false,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MonthlyPlanningCard(repository: repository)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('INR 3733.00 due in loans'), findsOneWidget);
+    expect(find.text('INR 3733 due'), findsOneWidget);
+    expect(find.text('Paid INR 0 of 3733'), findsOneWidget);
+
+    final dueText = tester.widget<Text>(find.text('INR 3733 due'));
+    final context = tester.element(find.text('INR 3733 due'));
+    expect(dueText.style?.color, Theme.of(context).colorScheme.error);
   });
 }
