@@ -655,6 +655,49 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         app.state.db.users.update_one({"uid": user["uid"]}, {"$set": {"photoUrl": url, "updatedAt": now()}})
         return {"url": url}
 
+    @app.get("/api/v1/accounts")
+    def list_financial_accounts(
+        includeArchived: bool = False,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        filters: dict[str, Any] = {"uid": user["uid"]}
+        if not includeArchived:
+            filters["archivedAt"] = {"$exists": False}
+        docs = list(app.state.db.financial_accounts.find(filters).sort("updatedAt", DESCENDING))
+        return {"accounts": [financial_account_out(doc) for doc in docs]}
+
+    @app.post("/api/v1/accounts", status_code=201)
+    def create_financial_account(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        account = build_financial_account(body, user["uid"])
+        app.state.db.financial_accounts.insert_one(account)
+        return financial_account_out(account)
+
+    @app.put("/api/v1/accounts/{account_id}")
+    def update_financial_account(account_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        existing = app.state.db.financial_accounts.find_one({"id": account_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "account not found"))
+        updated = build_financial_account(
+            {**existing, **body},
+            user["uid"],
+            account_id=account_id,
+            created_at=existing.get("createdAt"),
+            archived_at=existing.get("archivedAt"),
+        )
+        app.state.db.financial_accounts.replace_one({"id": account_id, "uid": user["uid"]}, updated)
+        return financial_account_out(updated)
+
+    @app.delete("/api/v1/accounts/{account_id}", status_code=204)
+    def archive_financial_account(account_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
+        existing = app.state.db.financial_accounts.find_one({"id": account_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "account not found"))
+        app.state.db.financial_accounts.update_one(
+            {"id": account_id, "uid": user["uid"]},
+            {"$set": {"archivedAt": now(), "updatedAt": now()}},
+        )
+        return Response(status_code=204)
+
     @app.get("/api/v1/theme-packs")
     def theme_packs() -> list[dict[str, Any]]:
         return [
@@ -1828,6 +1871,7 @@ def ensure_indexes(db: Any) -> None:
     db.receipt_items.create_index([("groupId", ASCENDING), ("date", DESCENDING)])
     db.receipt_items.create_index([("normalizedName", ASCENDING), ("currency", ASCENDING), ("unitPriceNormalized", ASCENDING)])
     db.receipt_items.create_index([("sourceType", ASCENDING), ("expenseId", ASCENDING)])
+    db.financial_accounts.create_index([("uid", ASCENDING), ("updatedAt", DESCENDING)])
     db.loans.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("date", ASCENDING)])
     db.loan_payments.create_index([("uid", ASCENDING), ("loanId", ASCENDING), ("period", ASCENDING), ("paymentType", ASCENDING)])
@@ -2776,6 +2820,75 @@ def receipt_item_comparison_out(query: str, docs: list[dict[str, Any]]) -> dict[
         "summaryByCurrency": summaries,
         "items": items,
     }
+
+
+def normalize_financial_account_type(value: Any) -> str:
+    raw = str(value or "savings").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "bank": "checking",
+        "current": "checking",
+        "salary": "checking",
+        "saving": "savings",
+        "sparekonto": "savings",
+        "nre": "savings",
+        "nro": "savings",
+        "fd": "fixed_deposit",
+        "fixed": "fixed_deposit",
+        "deposit": "fixed_deposit",
+        "sip": "investment",
+        "mutual_fund": "investment",
+    }
+    normalized = aliases.get(raw, raw)
+    if normalized not in {"checking", "savings", "cash", "investment", "fixed_deposit", "credit", "other"}:
+        return "savings"
+    return normalized
+
+
+def build_financial_account(
+    body: dict[str, Any],
+    uid: str,
+    account_id: str | None = None,
+    created_at: datetime | None = None,
+    archived_at: datetime | None = None,
+) -> dict[str, Any]:
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "name is required"))
+    current = now()
+    raw_balance_as_of = body.get("balanceAsOf")
+    return {
+        "id": account_id or uuid.uuid4().hex,
+        "uid": uid,
+        "name": name,
+        "institution": str(body.get("institution") or "").strip(),
+        "accountType": normalize_financial_account_type(body.get("accountType") or body.get("type")),
+        "currency": normalize_currency(body.get("currency"), "NOK"),
+        "openingBalance": finite_number(body_first(body, ("openingBalance", "balance"), 0), "openingBalance"),
+        "balanceAsOf": parse_dt(str(raw_balance_as_of)) if raw_balance_as_of else current,
+        "familyVisibility": normalize_family_visibility(body.get("familyVisibility") or body.get("visibility")),
+        "notes": str(body.get("notes") or "").strip(),
+        "createdAt": created_at or current,
+        "updatedAt": current,
+        **({"archivedAt": archived_at} if archived_at else {}),
+    }
+
+
+def financial_account_out(doc: dict[str, Any]) -> dict[str, Any]:
+    return json_ready({
+        "id": doc.get("id") or "",
+        "name": doc.get("name") or "",
+        "institution": doc.get("institution") or "",
+        "accountType": normalize_financial_account_type(doc.get("accountType")),
+        "currency": normalize_currency(doc.get("currency"), "NOK"),
+        "openingBalance": float(doc.get("openingBalance") or 0),
+        "balanceAsOf": doc.get("balanceAsOf"),
+        "familyVisibility": normalize_family_visibility(doc.get("familyVisibility")),
+        "notes": doc.get("notes") or "",
+        "archived": bool(doc.get("archivedAt")),
+        "archivedAt": doc.get("archivedAt"),
+        "createdAt": doc.get("createdAt"),
+        "updatedAt": doc.get("updatedAt"),
+    })
 
 
 def build_loan(

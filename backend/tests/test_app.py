@@ -187,6 +187,81 @@ def test_firebase_auth_requires_project_config_without_test_verifier(tmp_path, m
     assert response.json()["error"]["code"] == "AUTH_NOT_CONFIGURED"
 
 
+def test_financial_accounts_lifecycle(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={
+            "name": "DNB salary",
+            "institution": "DNB",
+            "accountType": "salary",
+            "currency": "NOK",
+            "openingBalance": 12345.67,
+            "balanceAsOf": "2026-06-16T00:00:00Z",
+            "familyVisibility": "private",
+        },
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()
+    assert payload["name"] == "DNB salary"
+    assert payload["accountType"] == "checking"
+    assert payload["currency"] == "NOK"
+    assert payload["openingBalance"] == 12345.67
+    account_id = payload["id"]
+
+    listed = client.get("/api/v1/accounts", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert [item["id"] for item in listed.json()["accounts"]] == [account_id]
+
+    updated = client.put(
+        f"/api/v1/accounts/{account_id}",
+        headers=headers,
+        json={
+            "name": "DNB savings",
+            "accountType": "savings",
+            "openingBalance": 15000,
+            "notes": "Emergency buffer",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["name"] == "DNB savings"
+    assert updated.json()["accountType"] == "savings"
+    assert updated.json()["notes"] == "Emergency buffer"
+
+    archived = client.delete(f"/api/v1/accounts/{account_id}", headers=headers)
+    assert archived.status_code == 204, archived.text
+    assert client.get("/api/v1/accounts", headers=headers).json()["accounts"] == []
+    archived_list = client.get(
+        "/api/v1/accounts?includeArchived=true",
+        headers=headers,
+    )
+    assert archived_list.json()["accounts"][0]["archived"] is True
+
+
+def test_financial_account_inputs_return_api_errors(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    missing_name = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"currency": "NOK", "openingBalance": 100},
+    )
+    assert missing_name.status_code == 400, missing_name.text
+    assert missing_name.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+    bad_currency = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Bad", "currency": "KR", "openingBalance": 100},
+    )
+    assert bad_currency.status_code == 400, bad_currency.text
+    assert bad_currency.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+
 def test_expenses_persist_in_mongo(tmp_path):
     client, app = make_client(tmp_path)
     headers = register(client)
