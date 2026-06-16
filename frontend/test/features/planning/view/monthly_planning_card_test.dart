@@ -180,6 +180,34 @@ void main() {
     expect(find.textContaining('USD 1500.00 spent'), findsOneWidget);
   });
 
+  testWidgets('existing cost plan shows red costs and setup action', (
+    tester,
+  ) async {
+    final repository = _FakeMonthlyPlanRepository();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MonthlyPlanningCard(repository: repository)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Complete setup'), findsOneWidget);
+    expect(find.text('INR 5000.00 planned costs'), findsOneWidget);
+    expect(find.text('INR 1500 spent / 5000 planned'), findsOneWidget);
+
+    final headline = tester.widget<Text>(
+      find.text('INR 5000.00 planned costs'),
+    );
+    final rowAmount = tester.widget<Text>(
+      find.text('INR 1500 spent / 5000 planned'),
+    );
+    final context = tester.element(find.text('INR 5000.00 planned costs'));
+    final errorColor = Theme.of(context).colorScheme.error;
+    expect(headline.style?.color, errorColor);
+    expect(rowAmount.style?.color, errorColor);
+  });
+
   testWidgets('refreshes when refresh token changes', (tester) async {
     final repository = _FakeMonthlyPlanRepository();
 

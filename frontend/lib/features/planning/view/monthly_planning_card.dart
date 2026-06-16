@@ -190,11 +190,30 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
       );
     }
 
-    final remainingPositive = plan.totalRemaining >= 0;
     final outstandingLoanAmount = _outstandingLoanAmount(plan);
+    final plannedCostAmount = _plannedCostAmount(plan);
+    final plannedSavingsAmount = _plannedPositiveAmount(plan);
+    final hasPlannedCosts = plannedCostAmount > 0.005;
+    final isOverPlan = plan.totalRemaining < -0.005;
+    final colors = Theme.of(context).colorScheme;
+    final headlineText = isOverPlan
+        ? '${plan.currency} ${plan.totalRemaining.abs().toStringAsFixed(2)} over plan'
+        : hasPlannedCosts
+        ? '${plan.currency} ${plannedCostAmount.toStringAsFixed(2)} planned costs'
+        : '${plan.currency} ${plannedSavingsAmount.toStringAsFixed(2)} planned savings';
+    final headlineColor = isOverPlan || hasPlannedCosts
+        ? colors.error
+        : AppMoney.statusColor(context, positive: true);
+    final plannedCostText = hasPlannedCosts
+        ? '${plan.currency} ${plannedCostAmount.toStringAsFixed(2)} planned costs'
+        : '${plan.currency} ${plan.totalBudget.toStringAsFixed(2)} planned';
+    final savingsText = plannedSavingsAmount > 0.005 && hasPlannedCosts
+        ? ' + ${plan.currency} ${plannedSavingsAmount.toStringAsFixed(2)} planned savings'
+        : '';
     final progress = plan.totalBudget <= 0
         ? 0.0
         : (plan.totalActual / plan.totalBudget).clamp(0.0, 1.0);
+    final scoped = widget.groupId?.trim().isNotEmpty == true;
     return AppCard(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -208,6 +227,14 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
+              if (!scoped) ...[
+                TextButton.icon(
+                  onPressed: _openGuidedSetup,
+                  icon: const Icon(Icons.checklist_outlined),
+                  label: const Text('Complete setup'),
+                ),
+                const SizedBox(width: 4),
+              ],
               IconButton(
                 tooltip: 'Edit monthly plan',
                 onPressed: _editPlan,
@@ -217,9 +244,9 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
           ),
           const SizedBox(height: 8),
           Text(
-            '${plan.currency} ${plan.totalRemaining.abs().toStringAsFixed(2)} ${remainingPositive ? 'left' : 'over'}',
+            headlineText,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: AppMoney.statusColor(context, positive: remainingPositive),
+              color: headlineColor,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -237,7 +264,7 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
           LinearProgressIndicator(value: progress),
           const SizedBox(height: 8),
           Text(
-            '${plan.currency} ${plan.totalActual.toStringAsFixed(2)} spent of ${plan.currency} ${plan.totalBudget.toStringAsFixed(2)}',
+            '${plan.currency} ${plan.totalActual.toStringAsFixed(2)} spent of $plannedCostText$savingsText',
           ),
           if (plan.excludedExpenseCount > 0 ||
               plan.excludedActualsByCurrency.isNotEmpty) ...[
@@ -354,20 +381,16 @@ class _BudgetRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final obligation = _isLoanCategory(category.category);
+    final positivePlanCategory = _isPositivePlanCategory(category.category);
+    final colors = Theme.of(context).colorScheme;
     final outstandingAmount = obligation
         ? (category.budget - category.actual).clamp(0.0, double.infinity)
         : 0.0;
-    final color = obligation
-        ? AppMoney.statusColor(
-            context,
-            positive: outstandingAmount <= 0.005,
-            neutral: category.budget <= 0,
-          )
-        : AppMoney.statusColor(
-            context,
-            positive: !category.overBudget,
-            neutral: category.budget <= 0,
-          );
+    final color = category.budget <= 0
+        ? colors.outline
+        : positivePlanCategory
+        ? AppMoney.statusColor(context, positive: true)
+        : colors.error;
     final progress = category.budget <= 0
         ? 0.0
         : category.progress.clamp(0.0, 1.0);
@@ -375,7 +398,11 @@ class _BudgetRow extends StatelessWidget {
         ? outstandingAmount > 0.005
               ? '$currency ${outstandingAmount.toStringAsFixed(0)} due'
               : '$currency ${category.actual.toStringAsFixed(0)} paid'
-        : '$currency ${category.actual.toStringAsFixed(0)} / ${category.budget.toStringAsFixed(0)}';
+        : positivePlanCategory
+        ? '$currency ${category.budget.toStringAsFixed(0)} target'
+        : category.actual > 0.005
+        ? '$currency ${category.actual.toStringAsFixed(0)} spent / ${category.budget.toStringAsFixed(0)} planned'
+        : '$currency ${category.budget.toStringAsFixed(0)} planned';
     final content = Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
@@ -468,6 +495,32 @@ double _outstandingLoanAmount(MonthlyPlan plan) {
 bool _isLoanCategory(String category) {
   final normalized = category.trim().toLowerCase();
   return normalized.contains('loan') || normalized.contains('emi');
+}
+
+double _plannedCostAmount(MonthlyPlan plan) {
+  return plan.categories.fold<double>(0, (sum, category) {
+    if (_isPositivePlanCategory(category.category)) {
+      return sum;
+    }
+    return sum + category.budget;
+  });
+}
+
+double _plannedPositiveAmount(MonthlyPlan plan) {
+  return plan.categories.fold<double>(0, (sum, category) {
+    if (!_isPositivePlanCategory(category.category)) {
+      return sum;
+    }
+    return sum + category.budget;
+  });
+}
+
+bool _isPositivePlanCategory(String category) {
+  final normalized = category.trim().toLowerCase();
+  return normalized.contains('saving') ||
+      normalized.contains('investment') ||
+      normalized.contains('sip') ||
+      normalized.contains('fixed deposit');
 }
 
 class _BudgetDialog extends StatefulWidget {
