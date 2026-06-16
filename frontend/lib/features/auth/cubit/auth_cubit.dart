@@ -84,6 +84,18 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
+  Future<void> completeOnboarding() async {
+    final user = state.user;
+    if (user == null) {
+      return;
+    }
+    final updated = await _userProfileRepository.updateOnboardingCompleted(
+      user: user,
+      completed: true,
+    );
+    emit(state.copyWith(status: AuthStatus.authenticated, user: updated));
+  }
+
   void _onAuthChanged(AuthUser? user) {
     if (user == null) {
       emit(const AuthState(status: AuthStatus.unauthenticated));

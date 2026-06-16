@@ -44,6 +44,7 @@ class UserProfileRepository {
         displayName: fallback.displayName,
         email: fallback.email,
         photoUrl: fallback.photoUrl,
+        onboardingCompleted: fallback.onboardingCompleted,
       );
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -52,7 +53,36 @@ class UserProfileRepository {
       displayName: (json['displayName'] as String?) ?? fallback.displayName,
       email: (json['email'] as String?) ?? fallback.email,
       photoUrl: json['photoUrl'] as String?,
+      onboardingCompleted:
+          (json['onboardingCompleted'] as bool?) ??
+          fallback.onboardingCompleted,
     );
+  }
+
+  Future<AuthUser> updateOnboardingCompleted({
+    required AuthUser user,
+    required bool completed,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.put(
+      Uri.parse('${ApiConfig.baseUrl}/api/v1/profile/onboarding'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'completed': completed}),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Failed to save onboarding (${response.statusCode}): ${response.body}',
+      );
+    }
+    final updated = AuthUser.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    await _sessionStore.saveUser(updated);
+    return updated;
   }
 
   Future<void> updateDisplayName({

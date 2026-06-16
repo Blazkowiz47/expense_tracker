@@ -89,6 +89,11 @@ def test_register_login_me_and_logout(tmp_path):
     me = client.get("/api/v1/auth/me", headers=headers)
     assert me.status_code == 200
     assert me.json()["user"]["email"] == "user@example.com"
+    assert me.json()["user"]["onboardingCompleted"] is False
+
+    onboarding = client.put("/api/v1/profile/onboarding", headers=headers, json={"completed": True})
+    assert onboarding.status_code == 200, onboarding.text
+    assert onboarding.json()["onboardingCompleted"] is True
 
     login = client.post(
         "/api/v1/auth/login",
@@ -96,6 +101,7 @@ def test_register_login_me_and_logout(tmp_path):
     )
     assert login.status_code == 200
     assert login.json()["token"]
+    assert login.json()["user"]["onboardingCompleted"] is True
 
     logout = client.post("/api/v1/auth/logout", headers=headers)
     assert logout.status_code == 200
@@ -114,6 +120,7 @@ def test_firebase_auth_creates_local_session(tmp_path):
     assert payload["user"]["email"] == "google@example.com"
     assert payload["user"]["displayName"] == "Google User"
     assert payload["user"]["photoUrl"] == "https://example.com/avatar.png"
+    assert payload["user"]["onboardingCompleted"] is False
     stored = app.state.db.users.find_one({"emailNormalized": "google@example.com"})
     assert stored["firebaseUid"] == "firebase-user-1"
     assert stored["authProviders"] == ["google"]

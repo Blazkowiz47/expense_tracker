@@ -9,6 +9,7 @@ import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/loans/view/loans_page.dart';
+import 'package:expense_tracker/features/onboarding/view/monthly_plan_onboarding_page.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/profile/view/account_edit_route_page.dart';
 import 'package:expense_tracker/features/receipts/view/price_book_page.dart';
@@ -128,6 +129,10 @@ class _AuthGuardedRoute extends StatelessWidget {
         final user = authState.user;
         if (user == null) {
           return const LoginPage();
+        }
+
+        if (!user.onboardingCompleted) {
+          return const MonthlyPlanOnboardingPage();
         }
 
         final routed = switch (routeName) {

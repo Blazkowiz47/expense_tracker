@@ -163,6 +163,7 @@ def user_public(user: dict[str, Any]) -> dict[str, Any]:
         "displayName": user.get("displayName") or user.get("email", "User"),
         "photoUrl": user.get("photoUrl"),
         "phone": user.get("phone", ""),
+        "onboardingCompleted": bool(user.get("onboardingCompleted", False)),
     }
 
 
@@ -637,6 +638,15 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         if not display_name:
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "displayName is required"))
         app.state.db.users.update_one({"uid": user["uid"]}, {"$set": {"displayName": display_name, "updatedAt": now()}})
+        return user_public(app.state.db.users.find_one({"uid": user["uid"]}))
+
+    @app.put("/api/v1/profile/onboarding")
+    def update_onboarding(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        completed = bool(body.get("completed", True))
+        app.state.db.users.update_one(
+            {"uid": user["uid"]},
+            {"$set": {"onboardingCompleted": completed, "updatedAt": now()}},
+        )
         return user_public(app.state.db.users.find_one({"uid": user["uid"]}))
 
     @app.post("/api/v1/profile/photo")
@@ -1851,6 +1861,7 @@ def create_user_doc(uid: str, email: str, display_name: str, password_hash: str)
         "displayName": display_name.strip() or "User",
         "photoUrl": None,
         "phone": "",
+        "onboardingCompleted": False,
         "passwordHash": password_hash,
         "createdAt": current,
         "updatedAt": current,
