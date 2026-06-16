@@ -149,7 +149,32 @@ def test_firebase_auth_links_existing_email_user(tmp_path):
     assert app.state.db.users.count_documents({"emailNormalized": "user@example.com"}) == 1
     stored = app.state.db.users.find_one({"uid": original_user["uid"]})
     assert stored["firebaseUid"] == "firebase-existing-user"
+    assert "password" in stored["authProviders"]
     assert "google" in stored["authProviders"]
+
+
+def test_firebase_auth_reuses_same_verified_email_account(tmp_path):
+    client, app = make_client(tmp_path)
+    app.state.firebase_token_verifier = lambda token: firebase_claims(
+        email="shared@example.com",
+        firebase_uid="firebase-user-1",
+    )
+    first = client.post("/api/v1/auth/firebase", json={"idToken": "firebase-token-1"})
+    assert first.status_code == 200, first.text
+    first_uid = first.json()["user"]["uid"]
+
+    app.state.firebase_token_verifier = lambda token: firebase_claims(
+        email="shared@example.com",
+        firebase_uid="firebase-user-2",
+    )
+    second = client.post("/api/v1/auth/firebase", json={"idToken": "firebase-token-2"})
+
+    assert second.status_code == 200, second.text
+    assert second.json()["user"]["uid"] == first_uid
+    assert app.state.db.users.count_documents({"emailNormalized": "shared@example.com"}) == 1
+    stored = app.state.db.users.find_one({"uid": first_uid})
+    assert stored["firebaseUid"] == "firebase-user-2"
+    assert stored["authProviders"] == ["google"]
 
 
 def test_firebase_auth_requires_project_config_without_test_verifier(tmp_path, monkeypatch):

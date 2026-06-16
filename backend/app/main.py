@@ -1863,6 +1863,7 @@ def create_user_doc(uid: str, email: str, display_name: str, password_hash: str)
         "phone": "",
         "onboardingCompleted": False,
         "passwordHash": password_hash,
+        "authProviders": ["password"],
         "createdAt": current,
         "updatedAt": current,
     }
