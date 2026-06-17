@@ -45,10 +45,14 @@ void main() {
     expect(find.text('Confirm rent'), findsOneWidget);
     expect(find.text('Groceries is over budget'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Confirm rent'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm rent'));
     await tester.pump();
     expect(recurringOpened, isTrue);
 
+    await tester.ensureVisible(find.text('Groceries is over budget'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Groceries is over budget'));
     await tester.pump();
     expect(familyOpened, isTrue);
@@ -79,6 +83,8 @@ void main() {
     );
     await tester.pump();
 
+    await tester.ensureVisible(find.text('Confirm rent'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm rent'));
     await tester.pump();
 

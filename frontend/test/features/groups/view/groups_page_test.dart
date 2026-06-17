@@ -516,7 +516,8 @@ void main() {
 
     expect(find.text('Rao family'), findsOneWidget);
     expect(find.text('Trip to Goa'), findsNothing);
-    expect(find.textContaining('Wife', skipOffstage: false), findsOneWidget);
+    await tester.scrollUntilVisible(find.textContaining('Wife'), 500);
+    expect(find.textContaining('Wife'), findsOneWidget);
     expect(find.text('Groceries'), findsWidgets);
   });
 
@@ -616,11 +617,9 @@ void main() {
 
     expect(find.text('Rao household'), findsOneWidget);
     expect(find.text('1 active · 1 pending'), findsOneWidget);
-    expect(find.text('Pending invites', skipOffstage: false), findsOneWidget);
-    expect(
-      find.text('nisha@example.com · Wife', skipOffstage: false),
-      findsOneWidget,
-    );
+    await tester.scrollUntilVisible(find.text('Pending invites'), 500);
+    expect(find.text('Pending invites'), findsOneWidget);
+    expect(find.text('nisha@example.com · Wife'), findsOneWidget);
   });
 
   testWidgets('family page surfaces household settle up suggestion', (
@@ -1002,11 +1001,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(
-      find.byTooltip('Add Groceries expense'),
-      120,
+    final addCategoryExpenseButton = find.widgetWithIcon(
+      IconButton,
+      Icons.add_circle_outline,
     );
-    await tester.tap(find.byTooltip('Add Groceries expense'));
+    await tester.scrollUntilVisible(addCategoryExpenseButton, 500);
+    await Scrollable.ensureVisible(
+      tester.element(addCategoryExpenseButton),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(addCategoryExpenseButton);
     await tester.pumpAndSettle();
 
     expect(find.text('Add household expense'), findsOneWidget);

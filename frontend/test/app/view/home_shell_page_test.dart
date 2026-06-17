@@ -34,14 +34,16 @@ void main() {
     );
     expect(find.byType(FloatingActionButton), findsNWidgets(2));
     expect(find.byTooltip('Quick actions'), findsOneWidget);
-    expect(find.text('Overview'), findsNothing);
+    expect(find.text('Overview'), findsWidgets);
     expect(find.text('Home'), findsWidgets);
-    expect(find.text('Today'), findsOneWidget);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -360));
-    await tester.pumpAndSettle();
-    expect(find.text('Friends'), findsWidgets);
-    expect(find.text('Family'), findsWidgets);
-    expect(find.text('Split groups'), findsWidgets);
+    expect(find.text('Needs attention'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.text('Cashflow'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Cashflow'), findsWidgets);
+    expect(find.text('Budget focus'), findsWidgets);
     expect(find.text('Activity'), findsWidgets);
     expect(find.text('Account'), findsWidgets);
 
@@ -97,8 +99,8 @@ void main() {
 
       expect(find.byType(NavigationRail), findsNothing);
       expect(find.byType(FloatingActionButton), findsNothing);
-      expect(find.text('Expense Tracker'), findsOneWidget);
-      expect(find.text('Family and personal finance'), findsOneWidget);
+      expect(find.text('Expense tracker'), findsOneWidget);
+      expect(find.text('Overview'), findsOneWidget);
       expect(find.text('Scan bill'), findsOneWidget);
       expect(find.text('Price book'), findsWidgets);
       expect(find.text('Recurring'), findsWidgets);

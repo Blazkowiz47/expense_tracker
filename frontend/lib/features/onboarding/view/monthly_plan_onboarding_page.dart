@@ -1326,64 +1326,107 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     final theme = Theme.of(context);
     final progress = (_stepIndex + 1) / _setupSteps.length;
     return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceContainerLowest,
       body: SafeArea(
         child: Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Card(
+              margin: const EdgeInsets.all(AppSpacing.md),
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  const SizedBox(height: AppSpacing.sm),
-                  LinearProgressIndicator(value: progress),
-                  const SizedBox(height: AppSpacing.lg),
-                  Row(
-                    children: [
-                      IconButton(
-                        tooltip: 'Back',
-                        onPressed: _saving || _stepIndex == 0
-                            ? null
-                            : _previousStep,
-                        icon: const Icon(Icons.arrow_back),
-                      ),
-                      Expanded(
-                        child: Text(
-                          '${_stepIndex + 1} of ${_setupSteps.length}',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                            color: theme.colorScheme.outline,
+                  Container(
+                    color: theme.colorScheme.surface,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Back',
+                          onPressed: _saving || _stepIndex == 0
+                              ? null
+                              : _previousStep,
+                          icon: const Icon(Icons.chevron_left),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'Step ${_stepIndex + 1} of ${_setupSteps.length}',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        tooltip: 'Set up later',
-                        onPressed: _saving ? null : _skipAll,
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Icon(_stepIcon, size: 42, color: theme.colorScheme.primary),
-                  const SizedBox(height: AppSpacing.md),
-                  Text(
-                    _stepTitle,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    _stepDescription,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.outline,
+                        TextButton(
+                          onPressed: _saving ? null : _skipAll,
+                          child: const Text('Set up later'),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
+                  Container(
+                    color: theme.colorScheme.surface,
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      0,
+                      AppSpacing.md,
+                      AppSpacing.sm,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 4,
+                        value: progress,
+                      ),
+                    ),
+                  ),
                   Expanded(
                     child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(
+                        64,
+                        AppSpacing.lg,
+                        64,
+                        AppSpacing.lg,
+                      ),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withValues(
+                                alpha: 0.12,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: SizedBox.square(
+                              dimension: 56,
+                              child: Icon(
+                                _stepIcon,
+                                size: 28,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            _stepTitle,
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            _stepDescription,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.outline,
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 180),
                             child: KeyedSubtree(
@@ -1406,63 +1449,72 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
                       ),
                     ),
                   ),
-                  if (_step == _SetupStep.review)
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        key: const ValueKey('onboarding-complete-setup'),
-                        onPressed: _saving ? null : _finish,
-                        icon: _saving
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.check),
-                        label: const Text('Complete setup'),
-                      ),
-                    )
-                  else ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            key: const ValueKey('onboarding-complete-setup'),
-                            onPressed: _saving ? null : _finish,
-                            icon: const Icon(Icons.check_circle_outline),
-                            label: const Text('Complete setup'),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: _saving ? null : _nextStep,
-                            icon: _saving
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.arrow_forward),
-                            label: Text(
-                              _stepIndex == _setupSteps.length - 2
-                                  ? 'Review'
-                                  : 'Next',
+                  Container(
+                    color: theme.colorScheme.surface,
+                    padding: const EdgeInsets.fromLTRB(64, 14, 64, 22),
+                    child: _step == _SetupStep.review
+                        ? SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              key: const ValueKey('onboarding-complete-setup'),
+                              onPressed: _saving ? null : _finish,
+                              icon: _saving
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check),
+                              label: const Text('Complete setup'),
                             ),
+                          )
+                        : Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      key: const ValueKey(
+                                        'onboarding-complete-setup',
+                                      ),
+                                      onPressed: _saving ? null : _finish,
+                                      icon: const Icon(
+                                        Icons.check_circle_outline,
+                                      ),
+                                      label: const Text('Complete setup'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Expanded(
+                                    child: FilledButton.icon(
+                                      onPressed: _saving ? null : _nextStep,
+                                      icon: _saving
+                                          ? const SizedBox.square(
+                                              dimension: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(Icons.arrow_forward),
+                                      label: Text(
+                                        _stepIndex == _setupSteps.length - 2
+                                            ? 'Review'
+                                            : 'Next',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppSpacing.xs),
+                              TextButton.icon(
+                                onPressed: _saving ? null : _skipStep,
+                                icon: const Icon(Icons.skip_next_outlined),
+                                label: const Text('Skip this step'),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    TextButton.icon(
-                      onPressed: _saving ? null : _skipStep,
-                      icon: const Icon(Icons.skip_next_outlined),
-                      label: const Text('Skip this step'),
-                    ),
-                  ],
-                  const SizedBox(height: AppSpacing.lg),
+                  ),
                 ],
               ),
             ),
@@ -1492,12 +1544,22 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       children: [
         DropdownButtonFormField<String>(
           initialValue: _currency,
+          isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Primary currency',
             border: OutlineInputBorder(),
           ),
           items: _currencyOptions
-              .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+              .map(
+                (item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(
+                    item,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
               .toList(growable: false),
           onChanged: _saving
               ? null
@@ -2026,6 +2088,7 @@ class _LoanDraftEditor extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             DropdownButtonFormField<String>(
               initialValue: controller.loanType,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Loan type',
                 border: OutlineInputBorder(),
@@ -2040,8 +2103,14 @@ class _LoanDraftEditor extends StatelessWidget {
                         'Other',
                       ]
                       .map(
-                        (item) =>
-                            DropdownMenuItem(value: item, child: Text(item)),
+                        (item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(
+                            item,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       )
                       .toList(growable: false),
               onChanged: enabled
@@ -2091,6 +2160,7 @@ class _LoanDraftEditor extends StatelessWidget {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     initialValue: controller.rateType,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Rate',
                       border: OutlineInputBorder(),
@@ -2099,7 +2169,11 @@ class _LoanDraftEditor extends StatelessWidget {
                         .map(
                           (item) => DropdownMenuItem(
                             value: item,
-                            child: Text(_titleCase(item)),
+                            child: Text(
+                              _titleCase(item),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         )
                         .toList(growable: false),
@@ -2360,13 +2434,21 @@ class _SavingsDraftEditor extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             DropdownButtonFormField<String>(
               initialValue: controller.targetCurrency,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Target currency',
                 border: OutlineInputBorder(),
               ),
               items: _currencyOptions
                   .map(
-                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                    (item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(
+                        item,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   )
                   .toList(growable: false),
               onChanged: enabled
@@ -2396,13 +2478,21 @@ class _SavingsDraftEditor extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             DropdownButtonFormField<String>(
               initialValue: selectedAccount,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Savings account',
                 border: OutlineInputBorder(),
               ),
               items: accountNames
                   .map(
-                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                    (item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(
+                        item,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   )
                   .toList(growable: false),
               onChanged: enabled && accountNames.isNotEmpty
@@ -2506,6 +2596,7 @@ class _AccountEditor extends StatelessWidget {
             Expanded(
               child: DropdownButtonFormField<String>(
                 initialValue: controller.accountType,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Type',
                   border: OutlineInputBorder(),
@@ -2514,7 +2605,11 @@ class _AccountEditor extends StatelessWidget {
                     .map(
                       (item) => DropdownMenuItem(
                         value: item,
-                        child: Text(_accountTypeLabels[item] ?? item),
+                        child: Text(
+                          _accountTypeLabels[item] ?? item,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     )
                     .toList(growable: false),
@@ -2531,14 +2626,21 @@ class _AccountEditor extends StatelessWidget {
             Expanded(
               child: DropdownButtonFormField<String>(
                 initialValue: controller.currency,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Currency',
                   border: OutlineInputBorder(),
                 ),
                 items: _currencyOptions
                     .map(
-                      (item) =>
-                          DropdownMenuItem(value: item, child: Text(item)),
+                      (item) => DropdownMenuItem(
+                        value: item,
+                        child: Text(
+                          item,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     )
                     .toList(growable: false),
                 onChanged: enabled
@@ -2805,6 +2907,7 @@ class _InsuranceDraftEditor extends StatelessWidget {
                   child: DropdownButtonFormField<String>(
                     key: ValueKey('$fieldKeyPrefix-frequency'),
                     initialValue: controller.frequency,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Frequency',
                       border: OutlineInputBorder(),
@@ -2813,7 +2916,11 @@ class _InsuranceDraftEditor extends StatelessWidget {
                         .map(
                           (item) => DropdownMenuItem(
                             value: item,
-                            child: Text(_frequencyLabel(item)),
+                            child: Text(
+                              _frequencyLabel(item),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         )
                         .toList(growable: false),

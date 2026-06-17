@@ -428,30 +428,55 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   Widget _buildMaterial(BuildContext context) {
-    final title = _editing ? 'Edit expense' : 'Add an expense';
+    final title = _editing ? 'Edit expense' : 'Add expense';
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        centerTitle: true,
+        title: Text(title),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : _save,
+            child: const Text('Save'),
+          ),
+        ],
+      ),
       body: AppPageContainer(
-        maxWidth: 760,
+        maxWidth: 700,
         children: [
           AppCard(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Expense details',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  _billResult == null ? 'Choose how to add' : 'Review expense',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-                const SizedBox(height: 12),
-                _BillUploadButton(
+                const SizedBox(height: 4),
+                Text(
+                  _billResult == null
+                      ? 'Scan or upload a receipt, or enter the details manually.'
+                      : 'Extracted fields stay editable before saving.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _ExpenseChooserPanel(
                   extracting: _extractingBill,
                   saving: _saving,
-                  onPressed: _uploadBill,
+                  onScanReceipt: _uploadBill,
+                  onUploadReceipt: _uploadBill,
                 ),
                 if (_billMessage != null) ...[
-                  const SizedBox(height: 8),
-                  Text(_billMessage!),
+                  const SizedBox(height: 12),
+                  _AiStatusBanner(
+                    message: _billMessage!,
+                    extracting: _extractingBill,
+                  ),
                 ],
                 if (_billResult != null) ...[
                   const SizedBox(height: 12),
@@ -463,11 +488,12 @@ class _AddExpensePageState extends State<AddExpensePage> {
                         setState(() => _receiptItems = items),
                   ),
                 ],
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 TextField(
                   controller: _descriptionController,
                   decoration: const InputDecoration(
-                    labelText: 'Merchant or description',
+                    labelText: 'Description',
+                    hintText: 'e.g. Rema 1000, Spotify, bus pass',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -527,21 +553,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   const SizedBox(height: 8),
                   const _PaidPreviouslyNotice(),
                 ],
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _categories
-                      .map(
-                        (category) => ChoiceChip(
-                          label: Text(category),
-                          selected: _category == category,
-                          onSelected: (_) =>
-                              setState(() => _category = category),
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -589,9 +600,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
         ],
       ),
       bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        minimum: const EdgeInsets.fromLTRB(16, 10, 16, 18),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
+          constraints: const BoxConstraints(maxWidth: 700),
           child: Row(
             children: [
               if (!_editing) ...[
@@ -599,7 +610,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : () => _save(addAnother: true),
                     icon: const Icon(Icons.add),
-                    label: const Text('Save + another'),
+                    label: const Text('Save and add another'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -802,6 +813,193 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 }
 
+class _ExpenseChooserPanel extends StatelessWidget {
+  const _ExpenseChooserPanel({
+    required this.extracting,
+    required this.saving,
+    required this.onScanReceipt,
+    required this.onUploadReceipt,
+  });
+
+  final bool extracting;
+  final bool saving;
+  final VoidCallback onScanReceipt;
+  final VoidCallback onUploadReceipt;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _ChooserOption(
+          title: extracting ? 'Reading receipt' : 'Scan receipt',
+          subtitle: 'Camera or photo - AI reads merchant, items, and totals',
+          icon: extracting ? Icons.hourglass_top : Icons.document_scanner,
+          emphasized: true,
+          enabled: !saving && !extracting,
+          onTap: onScanReceipt,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _ChooserOption(
+                title: 'Upload receipt',
+                subtitle: 'Photo from your device',
+                icon: Icons.upload_file_outlined,
+                enabled: !saving && !extracting,
+                compact: true,
+                onTap: onUploadReceipt,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: _ChooserOption(
+                title: 'Enter manually',
+                subtitle: 'Type the fields below',
+                icon: Icons.edit_outlined,
+                compact: true,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ChooserOption extends StatelessWidget {
+  const _ChooserOption({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.emphasized = false,
+    this.enabled = true,
+    this.compact = false,
+    this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool emphasized;
+  final bool enabled;
+  final bool compact;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final accent = emphasized ? AppMoney.positiveColor : colors.primary;
+    return Material(
+      color: emphasized
+          ? AppMoney.positiveColor.withValues(alpha: 0.06)
+          : colors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: emphasized
+              ? AppMoney.positiveColor.withValues(alpha: 0.28)
+              : colors.outlineVariant,
+        ),
+      ),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: EdgeInsets.all(compact ? 12 : 16),
+          child: Row(
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SizedBox.square(
+                  dimension: compact ? 38 : 44,
+                  child: Icon(icon, color: accent),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: compact ? 2 : 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onTap != null)
+                Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AiStatusBanner extends StatelessWidget {
+  const _AiStatusBanner({required this.message, required this.extracting});
+
+  final String message;
+  final bool extracting;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppMoney.positiveColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: AppMoney.positiveColor.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            if (extracting)
+              const SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              const Icon(
+                Icons.auto_awesome_outlined,
+                size: 16,
+                color: AppMoney.positiveColor,
+              ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppMoney.positiveColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _PaidPreviouslyNotice extends StatelessWidget {
   const _PaidPreviouslyNotice();
 
@@ -952,6 +1150,7 @@ class _DropdownField extends StatelessWidget {
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
       initialValue: value,
+      isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
         border: const OutlineInputBorder(),
@@ -960,7 +1159,11 @@ class _DropdownField extends StatelessWidget {
           .map(
             (item) => DropdownMenuItem<String>(
               value: item,
-              child: Text(labelFor?.call(item) ?? item),
+              child: Text(
+                labelFor?.call(item) ?? item,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           )
           .toList(growable: false),

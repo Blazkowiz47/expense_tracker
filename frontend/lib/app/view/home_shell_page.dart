@@ -657,18 +657,6 @@ class _HomeShellPageState extends State<HomeShellPage>
 
   Widget _buildWideWebScaffold(String? accountPhotoUrl) {
     final colors = Theme.of(context).colorScheme;
-    final headerActions = <_QuickAction>[
-      _QuickAction(
-        label: 'Price book',
-        icon: Icons.price_check_outlined,
-        onTap: _openPriceBookPage,
-      ),
-      _QuickAction(
-        label: 'Recurring',
-        icon: Icons.event_repeat,
-        onTap: _openRecurringPage,
-      ),
-    ];
     final shortcuts = _quickActions();
 
     return Scaffold(
@@ -682,177 +670,154 @@ class _HomeShellPageState extends State<HomeShellPage>
                   bottom: BorderSide(color: colors.outlineVariant),
                 ),
               ),
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 18),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: colors.primaryContainer,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            Icons.account_balance_wallet_outlined,
-                            color: colors.onPrimaryContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showGreeting = constraints.maxWidth >= 1040;
+                  return Row(
+                    children: [
+                      Text(
+                        'Expense tracker',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      const SizedBox(width: 18),
+                      if (showGreeting)
+                        Expanded(
+                          child: Text(
+                            _wideGreeting,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: colors.outline),
                           ),
                         ),
-                        const SizedBox(width: 14),
-                        Flexible(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
+                      Flexible(
+                        fit: showGreeting ? FlexFit.loose : FlexFit.tight,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
                             children: [
-                              Text(
-                                'Expense Tracker',
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              for (final entry
+                                  in _destinations.asMap().entries) ...[
+                                _WideNavChip(
+                                  label: entry.value.label,
+                                  icon: _buildDestinationIcon(
+                                    index: entry.key,
+                                    selected: _selectedIndex == entry.key,
+                                    accountPhotoUrl: accountPhotoUrl,
+                                  ),
+                                  selected: _selectedIndex == entry.key,
+                                  onTap: () =>
+                                      _onDestinationSelected(entry.key),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              IconButton(
+                                tooltip: 'Price book',
+                                onPressed: _openPriceBookPage,
+                                icon: const Icon(Icons.price_check_outlined),
                               ),
-                              Text(
-                                'Family and personal finance',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: colors.outline),
+                              IconButton(
+                                tooltip: 'Recurring',
+                                onPressed: _openRecurringPage,
+                                icon: const Icon(Icons.event_repeat_outlined),
                               ),
+                              if (_showAddExpenseButton)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 6),
+                                  child: FilledButton.icon(
+                                    onPressed: _openAddExpense,
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Add expense'),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    flex: 2,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: _destinations
-                            .asMap()
-                            .entries
-                            .map(
-                              (entry) => _WideNavChip(
-                                label: entry.value.label,
-                                icon: _buildDestinationIcon(
-                                  index: entry.key,
-                                  selected: _selectedIndex == entry.key,
-                                  accountPhotoUrl: accountPhotoUrl,
-                                ),
-                                selected: _selectedIndex == entry.key,
-                                onTap: () => _onDestinationSelected(entry.key),
-                              ),
-                            )
-                            .toList(growable: false),
                       ),
-                    ),
-                  ),
-                  if (_showAddExpenseButton) ...[
-                    const SizedBox(width: 24),
-                    FilledButton.icon(
-                      onPressed: _openAddExpense,
-                      icon: const Icon(Icons.receipt_long),
-                      label: const Text('Add expense'),
-                    ),
-                  ],
-                ],
+                    ],
+                  );
+                },
               ),
             ),
             Expanded(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1480),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 220,
+                    decoration: BoxDecoration(
+                      color: colors.surface,
+                      border: Border(
+                        right: BorderSide(color: colors.outlineVariant),
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _destinations[_selectedIndex].label,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.headlineMedium,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    _widePageSubtitle,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(color: colors.outline),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 10,
-                              alignment: WrapAlignment.end,
-                              children: headerActions
-                                  .map(
-                                    (action) => OutlinedButton.icon(
-                                      onPressed: () => _runAction(action.onTap),
-                                      icon: Icon(action.icon, size: 18),
-                                      label: Text(action.label),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                          ],
-                        ),
-                        if (_selectedIndex != 3) ...[
-                          const SizedBox(height: 18),
-                          Text(
-                            'Quick access',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 10),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: shortcuts
-                                  .map(
-                                    (action) => Padding(
-                                      padding: const EdgeInsets.only(right: 12),
-                                      child: _WideShortcutTile(action: action),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 20),
                         Expanded(
-                          child: IndexedStack(
-                            index: _selectedIndex,
-                            children: _destinations
-                                .asMap()
-                                .entries
-                                .map(
-                                  (entry) => _pageForDestination(
-                                    entry.value,
-                                    entry.key,
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: [
+                                _SideShortcutTile(
+                                  label: 'Overview',
+                                  icon: Icons.dashboard_outlined,
+                                  selected: _selectedIndex == 0,
+                                  onTap: () => _onDestinationSelected(0),
+                                ),
+                                const SizedBox(height: 8),
+                                for (final action in shortcuts.take(3))
+                                  _SideShortcutTile(
+                                    label: action.label,
+                                    icon: action.icon,
+                                    onTap: action.onTap,
                                   ),
-                                )
-                                .toList(growable: false),
+                                const Divider(height: 24),
+                                for (final action in shortcuts.skip(3).take(4))
+                                  _SideShortcutTile(
+                                    label: action.label,
+                                    icon: action.icon,
+                                    onTap: action.onTap,
+                                  ),
+                                const Divider(height: 24),
+                                for (final action in shortcuts.skip(7))
+                                  _SideShortcutTile(
+                                    label: action.label,
+                                    icon: action.icon,
+                                    onTap: action.onTap,
+                                  ),
+                              ],
+                            ),
                           ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          _widePageSubtitle,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
                         ),
                       ],
                     ),
                   ),
-                ),
+                  Expanded(
+                    child: IndexedStack(
+                      index: _selectedIndex,
+                      children: _destinations
+                          .asMap()
+                          .entries
+                          .map(
+                            (entry) =>
+                                _pageForDestination(entry.value, entry.key),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1135,6 +1100,34 @@ class _HomeShellPageState extends State<HomeShellPage>
         return '';
     }
   }
+
+  String get _wideGreeting {
+    final now = DateTime.now();
+    const weekdays = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${weekdays[now.weekday - 1]} ${now.day} ${months[now.month - 1]} ${now.year}';
+  }
 }
 
 class _ShellDestination {
@@ -1224,22 +1217,22 @@ class _WideNavChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? colors.primaryContainer : colors.surface,
-      borderRadius: BorderRadius.circular(14),
+      color: selected
+          ? colors.primary.withValues(alpha: 0.12)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(999),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               IconTheme(
                 data: IconThemeData(
                   size: 20,
-                  color: selected
-                      ? colors.onPrimaryContainer
-                      : colors.onSurfaceVariant,
+                  color: selected ? colors.primary : colors.onSurfaceVariant,
                 ),
                 child: icon,
               ),
@@ -1247,9 +1240,7 @@ class _WideNavChip extends StatelessWidget {
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: selected
-                      ? colors.onPrimaryContainer
-                      : colors.onSurfaceVariant,
+                  color: selected ? colors.primary : colors.onSurfaceVariant,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                 ),
               ),
@@ -1261,49 +1252,51 @@ class _WideNavChip extends StatelessWidget {
   }
 }
 
-class _WideShortcutTile extends StatelessWidget {
-  const _WideShortcutTile({required this.action});
+class _SideShortcutTile extends StatelessWidget {
+  const _SideShortcutTile({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.selected = false,
+  });
 
-  final _QuickAction action;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 172,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
       child: Material(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(14),
+        color: selected
+            ? colors.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
         child: InkWell(
-          onTap: action.onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: colors.outlineVariant),
-            ),
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             child: Row(
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: colors.secondaryContainer,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    action.icon,
-                    size: 18,
-                    color: colors.onSecondaryContainer,
-                  ),
+                Icon(
+                  icon,
+                  size: 18,
+                  color: selected ? colors.primary : colors.onSurfaceVariant,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    action.label,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: selected
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     ),
                   ),
                 ),
