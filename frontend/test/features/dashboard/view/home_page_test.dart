@@ -1,5 +1,7 @@
 import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
+import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
+import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
@@ -33,6 +35,7 @@ void main() {
               onOpenRecurring: () => recurringOpened = true,
               onOpenFamily: () => familyOpened = true,
               monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
         ),
@@ -81,6 +84,7 @@ void main() {
             body: HomePage(
               onOpenAction: (item) => openedAction = item,
               monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
         ),
@@ -147,6 +151,7 @@ void main() {
                   ],
                 ),
               ),
+              creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
         ),
@@ -267,6 +272,7 @@ void main() {
                   ],
                 ),
               ),
+              creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
         ),
@@ -283,6 +289,85 @@ void main() {
     expect(find.text('Insurance'), findsOneWidget);
     expect(find.text('Memberships'), findsOneWidget);
     expect(find.text('Transport'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('planned-category-legend')))
+          .height,
+      lessThanOrEqualTo(280),
+    );
+  });
+
+  testWidgets('home page shows active credit cards', (tester) async {
+    tester.view.physicalSize = const Size(1200, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final cubit = DashboardSnapshotCubit(
+      repository: const _EmptySnapshotRepository(),
+    );
+    await cubit.load();
+    addTearDown(cubit.close);
+    var openedCards = false;
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(
+              onOpenCreditCards: () => openedCards = true,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              creditCardsRepository: _FakeCreditCardsRepository(
+                cards: const [
+                  CreditCardAccount(
+                    id: 'card-1',
+                    name: 'DNB Mastercard',
+                    issuer: 'DNB',
+                    network: 'Mastercard',
+                    last4: '1234',
+                    currency: 'NOK',
+                    creditLimit: 50000,
+                    currentBalance: 6200,
+                    availableCredit: 43800,
+                    balanceAsOf: null,
+                    statementDay: 15,
+                    dueDay: 1,
+                    cycleStart: null,
+                    statementDate: null,
+                    paymentDueDate: null,
+                    currentCycleSpend: 1200,
+                    familyVisibility: 'private',
+                    notes: '',
+                    archived: false,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (
+      var index = 0;
+      index < 6 && find.text('DNB Mastercard').evaluate().isEmpty;
+      index++
+    ) {
+      await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('DNB Mastercard'), findsOneWidget);
+    expect(find.text('NOK 6,200.00'), findsWidgets);
+    expect(find.text('NOK 1,200.00'), findsOneWidget);
+
+    await tester.tap(find.text('See all'));
+    await tester.pump();
+
+    expect(openedCards, isTrue);
   });
 
   testWidgets('home page shows complete onboarding in needs attention', (
@@ -304,6 +389,7 @@ void main() {
               showContinueSetup: true,
               onContinueSetup: () => setupOpened = true,
               monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
         ),
@@ -389,6 +475,7 @@ void main() {
                   ],
                 ),
               ),
+              creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
         ),
@@ -435,6 +522,7 @@ void main() {
               autoRefresh: true,
               freshnessRepository: freshnessRepository,
               monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
         ),
@@ -447,7 +535,11 @@ void main() {
 
     expect(repository.fetchCount, 1);
     expect(freshnessRepository.requests, hasLength(2));
-    expect(freshnessRepository.requests.last.sections, ['dashboard', 'plans']);
+    expect(freshnessRepository.requests.last.sections, [
+      'dashboard',
+      'plans',
+      'credit_cards',
+    ]);
     expect(
       freshnessRepository.requests.last.since,
       DateTime.parse('2026-06-07T10:00:00Z'),
@@ -544,6 +636,23 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
       totalRemaining: 0,
       categories: const [],
     );
+  }
+}
+
+class _FakeCreditCardsRepository extends ApiCreditCardsRepository {
+  _FakeCreditCardsRepository({this.cards = const []})
+    : super(client: MockClient((_) async => http.Response('{}', 200)));
+
+  final List<CreditCardAccount> cards;
+
+  @override
+  Future<List<CreditCardAccount>> fetchCards({
+    bool includeArchived = false,
+  }) async {
+    if (includeArchived) {
+      return cards;
+    }
+    return cards.where((card) => !card.archived).toList(growable: false);
   }
 }
 

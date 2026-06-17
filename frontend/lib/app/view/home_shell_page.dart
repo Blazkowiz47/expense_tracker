@@ -516,6 +516,7 @@ class _HomeShellPageState extends State<HomeShellPage>
         onOpenGroups: () => _openSharedSpace(GroupType.split),
         onOpenFamily: () => _onDestinationSelected(1),
         onOpenRecurring: _openRecurringPage,
+        onOpenCreditCards: _openCreditCardsPage,
         onOpenAction: _openDashboardAction,
         onContinueSetup: _openOnboardingSetup,
         onAddExpenseForCategory: _openPersonalPlannedExpense,

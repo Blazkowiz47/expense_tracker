@@ -4,12 +4,15 @@ import 'dart:async';
 import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
+import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
+import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:http/http.dart' as http;
 
 const _hybridAccent = AppPalette.accent;
 const _hybridAccentStrong = AppPalette.accentStrong;
@@ -29,6 +32,7 @@ class HomePage extends StatefulWidget {
     this.onOpenGroups,
     this.onOpenFamily,
     this.onOpenRecurring,
+    this.onOpenCreditCards,
     this.onOpenAction,
     this.onContinueSetup,
     this.onAddExpenseForCategory,
@@ -36,6 +40,7 @@ class HomePage extends StatefulWidget {
     this.onOpenActivityCategory,
     this.freshnessRepository,
     this.monthlyPlanRepository,
+    this.creditCardsRepository,
     this.autoRefresh = false,
     this.showContinueSetup = false,
     this.inferIncompleteSetup = false,
@@ -46,6 +51,7 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onOpenGroups;
   final VoidCallback? onOpenFamily;
   final VoidCallback? onOpenRecurring;
+  final VoidCallback? onOpenCreditCards;
   final void Function(DailyActionItem item)? onOpenAction;
   final VoidCallback? onContinueSetup;
   final ValueChanged<String>? onAddExpenseForCategory;
@@ -58,6 +64,7 @@ class HomePage extends StatefulWidget {
   final ValueChanged<String>? onOpenActivityCategory;
   final FreshnessRepository? freshnessRepository;
   final MonthlyPlanRepository? monthlyPlanRepository;
+  final ApiCreditCardsRepository? creditCardsRepository;
   final bool autoRefresh;
   final bool showContinueSetup;
   final bool inferIncompleteSetup;
@@ -71,9 +78,14 @@ class _HomePageState extends State<HomePage> {
   late final bool _ownsFreshnessRepository;
   late final MonthlyPlanRepository _monthlyPlanRepository;
   late final bool _ownsMonthlyPlanRepository;
+  late final ApiCreditCardsRepository _creditCardsRepository;
+  late final bool _ownsCreditCardsRepository;
+  http.Client? _creditCardsClient;
   DateTime? _dashboardFreshnessCursor;
   MonthlyPlan? _monthlyPlan;
   bool _monthlyPlanLoaded = false;
+  var _creditCards = <CreditCardAccount>[];
+  bool _creditCardsLoaded = false;
 
   @override
   void initState() {
@@ -83,10 +95,21 @@ class _HomePageState extends State<HomePage> {
     _monthlyPlanRepository =
         widget.monthlyPlanRepository ?? MonthlyPlanRepository();
     _ownsMonthlyPlanRepository = widget.monthlyPlanRepository == null;
+    if (widget.creditCardsRepository == null) {
+      _creditCardsClient = http.Client();
+      _creditCardsRepository = ApiCreditCardsRepository(
+        client: _creditCardsClient!,
+      );
+      _ownsCreditCardsRepository = true;
+    } else {
+      _creditCardsRepository = widget.creditCardsRepository!;
+      _ownsCreditCardsRepository = false;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(_markDashboardFreshnessSeen());
         unawaited(_loadMonthlyPlan());
+        unawaited(_loadCreditCards());
       }
     });
   }
@@ -99,6 +122,9 @@ class _HomePageState extends State<HomePage> {
     if (_ownsMonthlyPlanRepository) {
       _monthlyPlanRepository.dispose();
     }
+    if (_ownsCreditCardsRepository) {
+      _creditCardsClient?.close();
+    }
     super.dispose();
   }
 
@@ -106,6 +132,7 @@ class _HomePageState extends State<HomePage> {
     await dashboardCubit.load(showLoading: false);
     if (!mounted) return;
     await _loadMonthlyPlan();
+    await _loadCreditCards();
     unawaited(_markDashboardFreshnessSeen());
   }
 
@@ -114,11 +141,15 @@ class _HomePageState extends State<HomePage> {
   ) async {
     final freshness = await _freshnessRepository.fetchFreshness(
       since: _dashboardFreshnessCursor,
-      sections: const ['dashboard', 'plans'],
+      sections: const ['dashboard', 'plans', 'credit_cards'],
     );
     final dashboard = freshness.sections['dashboard'];
     final plans = freshness.sections['plans'];
-    final changed = (dashboard?.changed ?? true) || (plans?.changed ?? false);
+    final creditCards = freshness.sections['credit_cards'];
+    final changed =
+        (dashboard?.changed ?? true) ||
+        (plans?.changed ?? false) ||
+        (creditCards?.changed ?? false);
     if (!changed && dashboardCubit.state is DashboardSnapshotLoaded) {
       _dashboardFreshnessCursor = freshness.serverTime;
       return;
@@ -128,6 +159,9 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
     if (plans?.changed ?? false) {
       await _loadMonthlyPlan();
+    }
+    if (creditCards?.changed ?? false) {
+      await _loadCreditCards();
     }
     _dashboardFreshnessCursor = freshness.serverTime;
   }
@@ -143,6 +177,20 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _loadCreditCards() async {
+    try {
+      final cards = await _creditCardsRepository.fetchCards();
+      if (!mounted) return;
+      setState(() {
+        _creditCards = cards.where((card) => !card.archived).toList();
+        _creditCardsLoaded = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _creditCardsLoaded = true);
+    }
+  }
+
   String get _currentMonth {
     final now = DateTime.now();
     return '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
@@ -151,7 +199,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _markDashboardFreshnessSeen() async {
     try {
       final freshness = await _freshnessRepository.fetchFreshness(
-        sections: const ['dashboard', 'plans'],
+        sections: const ['dashboard', 'plans', 'credit_cards'],
       );
       _dashboardFreshnessCursor = freshness.serverTime;
     } catch (_) {}
@@ -212,6 +260,12 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 10),
             _SavingsGoalsPanel(plan: _monthlyPlan),
             const SizedBox(height: 10),
+            _CreditCardsHomePanel(
+              cards: _creditCards,
+              loaded: _creditCardsLoaded,
+              onOpen: widget.onOpenCreditCards,
+            ),
+            const SizedBox(height: 10),
             _SharedBalancesPanel(
               friendItems: snapshot.friendItems,
               groupItems: snapshot.groupItems,
@@ -241,6 +295,7 @@ class _HomePageState extends State<HomePage> {
               breakpoint: 820,
               spacing: 16,
               flexes: const [5, 5],
+              rowHeight: 364,
               children: [
                 _MonthlyBudgetChartCard(plan: _monthlyPlan, snapshot: snapshot),
                 _CashflowPanel(plan: _monthlyPlan, snapshot: snapshot),
@@ -251,15 +306,23 @@ class _HomePageState extends State<HomePage> {
               breakpoint: 840,
               spacing: 16,
               flexes: const [7, 4],
+              equalHeight: false,
               children: [
                 _CategoryBreakdownPanel(plan: _monthlyPlan),
                 _SpendTrendChartPanel(items: snapshot.activityItems),
               ],
             ),
             const SizedBox(height: 16),
+            _CreditCardsHomePanel(
+              cards: _creditCards,
+              loaded: _creditCardsLoaded,
+              onOpen: widget.onOpenCreditCards,
+            ),
+            const SizedBox(height: 16),
             _AdaptiveColumns(
               breakpoint: 760,
               spacing: 16,
+              rowHeight: 340,
               children: [
                 _SharedBalancesPanel(
                   friendItems: snapshot.friendItems,
@@ -1023,17 +1086,19 @@ class _CategoryBreakdownPanel extends StatelessWidget {
               ),
             ),
           );
-          final legend = Column(
-            children: [
-              for (var index = 0; index < slices.length; index++) ...[
-                _CategoryLegendRow(
-                  slice: slices[index],
-                  total: total,
-                  currency: currency,
-                ),
-                if (index < slices.length - 1) const Divider(height: 18),
-              ],
-            ],
+          final legend = _CategoryLegendList(
+            slices: slices,
+            total: total,
+            currency: currency,
+          );
+          final containedLegend = Scrollbar(
+            child: SingleChildScrollView(primary: false, child: legend),
+          );
+          final legendHeight = math.min(280.0, 54.0 * slices.length);
+          final boundedLegend = ConstrainedBox(
+            key: const ValueKey('planned-category-legend'),
+            constraints: BoxConstraints(maxHeight: legendHeight),
+            child: containedLegend,
           );
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1045,19 +1110,50 @@ class _CategoryBreakdownPanel extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               if (compact)
-                Column(children: [chart, const SizedBox(height: 12), legend])
+                Column(
+                  children: [chart, const SizedBox(height: 12), boundedLegend],
+                )
               else
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(flex: 4, child: Center(child: chart)),
                     const SizedBox(width: 20),
-                    Expanded(flex: 6, child: legend),
+                    Expanded(flex: 6, child: boundedLegend),
                   ],
                 ),
             ],
           );
         },
       ),
+    );
+  }
+}
+
+class _CategoryLegendList extends StatelessWidget {
+  const _CategoryLegendList({
+    required this.slices,
+    required this.total,
+    required this.currency,
+  });
+
+  final List<_CategorySlice> slices;
+  final double total;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var index = 0; index < slices.length; index++) ...[
+          _CategoryLegendRow(
+            slice: slices[index],
+            total: total,
+            currency: currency,
+          ),
+          if (index < slices.length - 1) const Divider(height: 18),
+        ],
+      ],
     );
   }
 }
@@ -1927,6 +2023,143 @@ class _ProgressLabel extends StatelessWidget {
   }
 }
 
+class _CreditCardsHomePanel extends StatelessWidget {
+  const _CreditCardsHomePanel({
+    required this.cards,
+    required this.loaded,
+    this.onOpen,
+  });
+
+  final List<CreditCardAccount> cards;
+  final bool loaded;
+  final VoidCallback? onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final outstanding = _creditCardAmountsByCurrency(
+      cards,
+      (card) => card.currentBalance,
+    );
+    final cycleSpend = _creditCardAmountsByCurrency(
+      cards,
+      (card) => card.currentCycleSpend,
+    );
+    final visibleCards = cards.take(2).toList(growable: false);
+
+    return _HybridCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SectionHeader(
+            title: 'Credit cards',
+            actionLabel: cards.isEmpty ? null : 'See all',
+            onAction: onOpen,
+          ),
+          const SizedBox(height: 8),
+          if (!loaded)
+            Text(
+              'Loading cards...',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            )
+          else if (cards.isEmpty)
+            Text(
+              'No credit cards logged',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            )
+          else ...[
+            _MetricStrip(
+              metrics: [
+                _MetricData(label: 'Cards', value: cards.length.toString()),
+                _MetricData(
+                  label: 'Outstanding',
+                  value: AppMoney.formatCurrencyAmounts(outstanding),
+                ),
+                _MetricData(
+                  label: 'This cycle',
+                  value: AppMoney.formatCurrencyAmounts(cycleSpend),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (var index = 0; index < visibleCards.length; index++) ...[
+              _CreditCardHomeRow(card: visibleCards[index]),
+              if (index < visibleCards.length - 1) const Divider(height: 1),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CreditCardHomeRow extends StatelessWidget {
+  const _CreditCardHomeRow({required this.card});
+
+  final CreditCardAccount card;
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = [
+      if (card.issuer.trim().isNotEmpty) card.issuer.trim(),
+      if (card.last4.trim().isNotEmpty) '••${card.last4.trim()}',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: AppPalette.accentSoft,
+            foregroundColor: AppPalette.accentStrong,
+            child: const Icon(Icons.credit_card_outlined, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  card.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                if (detail.isNotEmpty)
+                  Text(
+                    detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            AppMoney.formatCurrency(card.currentBalance, card.currency),
+            textAlign: TextAlign.end,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: card.currentBalance > 0.005
+                  ? _hybridNegative
+                  : AppMoney.positiveColor,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MetricData {
   const _MetricData({required this.label, required this.value, this.positive});
 
@@ -2189,12 +2422,16 @@ class _AdaptiveColumns extends StatelessWidget {
     required this.breakpoint,
     required this.spacing,
     this.flexes,
+    this.equalHeight = true,
+    this.rowHeight,
   });
 
   final List<Widget> children;
   final double breakpoint;
   final double spacing;
   final List<int>? flexes;
+  final bool equalHeight;
+  final double? rowHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -2210,22 +2447,26 @@ class _AdaptiveColumns extends StatelessWidget {
             ],
           );
         }
-        return IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var index = 0; index < children.length; index++) ...[
-                Expanded(
-                  flex: flexes == null || index >= flexes!.length
-                      ? 1
-                      : flexes![index],
-                  child: children[index],
-                ),
-                if (index < children.length - 1) SizedBox(width: spacing),
-              ],
+        final row = Row(
+          crossAxisAlignment: rowHeight != null && equalHeight
+              ? CrossAxisAlignment.stretch
+              : CrossAxisAlignment.start,
+          children: [
+            for (var index = 0; index < children.length; index++) ...[
+              Expanded(
+                flex: flexes == null || index >= flexes!.length
+                    ? 1
+                    : flexes![index],
+                child: children[index],
+              ),
+              if (index < children.length - 1) SizedBox(width: spacing),
             ],
-          ),
+          ],
         );
+        if (rowHeight != null && equalHeight) {
+          return SizedBox(height: rowHeight, child: row);
+        }
+        return row;
       },
     );
   }
@@ -2754,4 +2995,19 @@ bool _setupLooksIncomplete(MonthlyPlan? plan) {
     return label.isNotEmpty && category.budget.abs() > 0.005;
   }).length;
   return plannedCategories < 3;
+}
+
+Map<String, num> _creditCardAmountsByCurrency(
+  Iterable<CreditCardAccount> cards,
+  double Function(CreditCardAccount card) selector,
+) {
+  final amounts = <String, num>{};
+  for (final card in cards) {
+    final currency = card.currency.trim().toUpperCase();
+    if (currency.isEmpty) {
+      continue;
+    }
+    amounts[currency] = (amounts[currency] ?? 0) + selector(card);
+  }
+  return amounts;
 }
