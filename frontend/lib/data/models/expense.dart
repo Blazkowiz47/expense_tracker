@@ -10,6 +10,8 @@ class Expense {
   final DateTime? updatedAt;
   final String? paymentMethod;
   final String? sourceType;
+  final String? sourceAccountId;
+  final String? sourceAccountName;
   final String? sourcePaymentType;
   final String? sourcePeriod;
   final String? sourceSetupKey;
@@ -22,6 +24,8 @@ class Expense {
     this.updatedAt,
     this.paymentMethod,
     this.sourceType,
+    this.sourceAccountId,
+    this.sourceAccountName,
     this.sourcePaymentType,
     this.sourcePeriod,
     this.sourceSetupKey,
@@ -47,6 +51,8 @@ class Expense {
     final currency = (json['currency'] as String?)?.trim();
     final paymentMethod = (json['paymentMethod'] as String?)?.trim();
     final sourceType = (json['sourceType'] as String?)?.trim();
+    final sourceAccountId = (json['sourceAccountId'] as String?)?.trim();
+    final sourceAccountName = (json['sourceAccountName'] as String?)?.trim();
     final sourcePaymentType = (json['sourcePaymentType'] as String?)?.trim();
     final sourcePeriod = (json['sourcePeriod'] as String?)?.trim();
     final sourceSetupKey = (json['sourceSetupKey'] as String?)?.trim();
@@ -69,6 +75,12 @@ class Expense {
       updatedAt: updatedRaw != null ? DateTime.tryParse(updatedRaw) : null,
       paymentMethod: paymentMethod?.isNotEmpty == true ? paymentMethod : null,
       sourceType: sourceType?.isNotEmpty == true ? sourceType : null,
+      sourceAccountId: sourceAccountId?.isNotEmpty == true
+          ? sourceAccountId
+          : null,
+      sourceAccountName: sourceAccountName?.isNotEmpty == true
+          ? sourceAccountName
+          : null,
       sourcePaymentType: sourcePaymentType?.isNotEmpty == true
           ? sourcePaymentType
           : null,
@@ -93,6 +105,8 @@ class Expense {
     DateTime? updatedAt,
     String? paymentMethod,
     String? sourceType,
+    String? sourceAccountId,
+    String? sourceAccountName,
     String? sourcePaymentType,
     String? sourcePeriod,
     String? sourceSetupKey,
@@ -105,6 +119,8 @@ class Expense {
       updatedAt: updatedAt ?? this.updatedAt,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       sourceType: sourceType ?? this.sourceType,
+      sourceAccountId: sourceAccountId ?? this.sourceAccountId,
+      sourceAccountName: sourceAccountName ?? this.sourceAccountName,
       sourcePaymentType: sourcePaymentType ?? this.sourcePaymentType,
       sourcePeriod: sourcePeriod ?? this.sourcePeriod,
       sourceSetupKey: sourceSetupKey ?? this.sourceSetupKey,

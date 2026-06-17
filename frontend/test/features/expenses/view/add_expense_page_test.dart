@@ -377,6 +377,62 @@ void main() {
     expect(cardRepository.loggedCategory, 'Personal');
     expect(cardRepository.loggedDescription, 'Coffee');
   });
+
+  testWidgets('edit mode preserves setup account and custom category', (
+    tester,
+  ) async {
+    final existing = Expense(
+      core: ExpenseCore(
+        id: 'setup-savings',
+        title: 'For SGP Trip',
+        amount: 2000,
+        currency: 'NOK',
+        category: 'Savings - For SGP Trip',
+        createdAt: DateTime(2026, 6, 17),
+      ),
+      description: 'For SGP Trip',
+      paymentMethod: 'account:account-1',
+      sourceType: 'setup_month_entry',
+      sourceAccountId: 'account-1',
+      sourceAccountName: 'DNB current - DNB',
+      sourcePaymentType: 'expense',
+      sourcePeriod: '2026-06',
+      sourceSetupKey: 'savings:sgp-trip',
+    );
+    final repository = _FakeExpenseRepository(existing);
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            expense: existing,
+            accountsRepository: _FakeAccountsRepository([
+              _account(id: 'account-1', name: 'DNB current'),
+            ]),
+            creditCardsRepository: _FakeCreditCardsRepository(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Savings - For SGP Trip'), findsWidgets);
+    expect(find.text('DNB current - DNB'), findsOneWidget);
+    expect(find.text('Paid previously'), findsNothing);
+
+    await tester.tap(find.text('Save expense'));
+    await tester.pumpAndSettle();
+
+    expect(repository.updatedExpense, isNotNull);
+    expect(repository.updatedExpense!.category, 'Savings - For SGP Trip');
+    expect(repository.updatedExpense!.paymentMethod, 'account:account-1');
+    expect(repository.updatedExpense!.sourceAccountId, 'account-1');
+    expect(repository.updatedExpense!.sourceAccountName, 'DNB current - DNB');
+  });
 }
 
 FinancialAccount _account({

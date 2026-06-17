@@ -1325,6 +1325,22 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
 
+    account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={
+            "name": "DNB current",
+            "institution": "DNB",
+            "accountType": "checking",
+            "currency": "NOK",
+            "openingBalance": 10000,
+        },
+    )
+    assert account.status_code == 201, account.text
+    account_payload = account.json()
+    account_id = account_payload["id"]
+    account_label = "DNB current - DNB"
+
     salary = client.post(
         "/api/v1/recurring/templates",
         headers=headers,
@@ -1352,6 +1368,8 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
             "frequency": "monthly",
             "dayOfMonth": 1,
             "startDate": "2026-06-17T00:00:00Z",
+            "sourceAccountId": account_id,
+            "sourceAccountName": account_label,
         },
     )
     assert insurance.status_code == 201, insurance.text
@@ -1381,6 +1399,7 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
             "sourceCurrency": "NOK",
             "monthlyTargetAmount": 2000,
             "startMonth": "2026-06",
+            "accountName": account_label,
         },
     )
     assert savings.status_code == 201, savings.text
@@ -1391,8 +1410,12 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
     titles = {expense["description"]: expense for expense in expenses}
     assert titles["Salary"]["sourcePaymentType"] == "income"
     assert titles["Car insurance"]["category"] == "Insurance"
+    assert titles["Car insurance"]["paymentMethod"] == f"account:{account_id}"
+    assert titles["Car insurance"]["sourceAccountName"] == account_label
     assert titles["Home loan"]["category"] == "Loans / EMI"
     assert titles["Emergency fund"]["category"] == "Savings - Emergency fund"
+    assert titles["Emergency fund"]["paymentMethod"] == f"account:{account_id}"
+    assert titles["Emergency fund"]["sourceAccountName"] == account_label
 
     listed_again = client.get("/api/v1/expenses?page=1&limit=200", headers=headers)
     assert listed_again.status_code == 200, listed_again.text

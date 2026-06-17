@@ -124,11 +124,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       _notesController.text = descriptionParts.notes;
       _amountController.text = expense.amount.toStringAsFixed(2);
       _expenseDate = expense.createdAt;
-      _category = _normalizedChoice(
-        expense.category ?? 'Personal',
-        _categories,
-        'Personal',
-      );
+      _category = _normalizedCategory(expense.category ?? 'Personal');
       _currency = _normalizedChoice(expense.currency, _currencies, 'INR');
       _paymentMethod = _normalizedChoice(
         expense.paymentMethod ?? 'cash',
@@ -145,7 +141,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
         _descriptionController.text = initialDescription;
       }
       if (initialCategory != null && initialCategory.isNotEmpty) {
-        _category = _normalizedChoice(initialCategory, _categories, 'Personal');
+        _category = _normalizedCategory(initialCategory);
       }
       if (initialAmount != null && initialAmount > 0) {
         _amountController.text = initialAmount.toStringAsFixed(2);
@@ -218,6 +214,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     final notes = _notesController.text.trim();
     final existing = widget.expense;
     final selectedCard = _selectedCreditCard;
+    final selectedAccount = _selectedAccount;
     final effectiveCurrency = selectedCard?.currency ?? _currency;
     final effectivePaymentMethod = selectedCard == null
         ? _paymentMethod
@@ -234,6 +231,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
       description: _composeDescription(description, notes),
       paymentMethod: effectivePaymentMethod,
       sourceType: existing?.sourceType,
+      sourceAccountId: selectedAccount?.id ?? existing?.sourceAccountId,
+      sourceAccountName: selectedAccount == null
+          ? existing?.sourceAccountName
+          : _accountLabel(selectedAccount),
       sourcePaymentType: existing?.sourcePaymentType,
       sourcePeriod: existing?.sourcePeriod,
       sourceSetupKey: existing?.sourceSetupKey,
@@ -490,6 +491,25 @@ class _AddExpensePageState extends State<AddExpensePage> {
     );
   }
 
+  String _normalizedCategory(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return 'Personal';
+    return _categories.firstWhere(
+      (choice) => choice.toLowerCase() == trimmed.toLowerCase(),
+      orElse: () => trimmed,
+    );
+  }
+
+  List<String> get _categoryChoices {
+    final choices = <String>[..._categories];
+    if (!choices.any(
+      (choice) => choice.toLowerCase() == _category.toLowerCase(),
+    )) {
+      choices.add(_category);
+    }
+    return choices;
+  }
+
   List<String> get _paymentChoices {
     final choices = <String>[
       ..._paymentMethods,
@@ -511,6 +531,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
     final id = _paymentMethod.substring(_creditCardPaymentPrefix.length);
     for (final card in _creditCards) {
       if (card.id == id && !card.archived) return card;
+    }
+    return null;
+  }
+
+  FinancialAccount? get _selectedAccount {
+    if (!_paymentMethod.startsWith(_accountPaymentPrefix)) return null;
+    final id = _paymentMethod.substring(_accountPaymentPrefix.length);
+    for (final account in _accounts) {
+      if (account.id == id && !account.archived) return account;
     }
     return null;
   }
@@ -652,7 +681,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       child: _DropdownField(
                         label: 'Category',
                         value: _category,
-                        values: _categories,
+                        values: _categoryChoices,
                         onChanged: (value) => setState(() => _category = value),
                       ),
                     ),
@@ -854,7 +883,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                           padding: EdgeInsets.zero,
                           onPressed: () => _showCupertinoChoice(
                             title: 'Category',
-                            values: _categories,
+                            values: _categoryChoices,
                             selectedValue: _category,
                             onSelected: (value) {
                               if (!mounted) return;

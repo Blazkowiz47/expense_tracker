@@ -2008,6 +2008,8 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "category": str(body["category"]).strip(),
             "frequency": frequency,
             "dayOfMonth": day_of_month,
+            "sourceAccountId": str(body.get("sourceAccountId") or "").strip(),
+            "sourceAccountName": str(body.get("sourceAccountName") or body.get("accountName") or "").strip(),
             "startDate": start,
             "nextDueDate": recurring_next_due_date(
                 {"startDate": start, "dayOfMonth": day_of_month, "frequency": frequency},
@@ -3032,6 +3034,8 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "sourceLoanId",
         "sourceLoanPaymentId",
         "sourceCreditCardId",
+        "sourceAccountId",
+        "sourceAccountName",
         "sourcePaymentType",
         "sourcePeriod",
         "sourceSetupKey",
@@ -3057,6 +3061,8 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "sourceLoanId",
             "sourceLoanPaymentId",
             "sourceCreditCardId",
+            "sourceAccountId",
+            "sourceAccountName",
             "sourcePaymentType",
             "sourcePeriod",
             "sourceSetupKey",
@@ -3917,6 +3923,10 @@ def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -
         if not category:
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "category is required"))
         updates["category"] = category
+    if "sourceAccountId" in body:
+        updates["sourceAccountId"] = str(body.get("sourceAccountId") or "").strip()
+    if "sourceAccountName" in body or "accountName" in body:
+        updates["sourceAccountName"] = str(body.get("sourceAccountName") or body.get("accountName") or "").strip()
     if "frequency" in body:
         frequency = str(body.get("frequency") or "monthly").strip().lower()
         if frequency not in recurring_frequency_values():
@@ -4592,6 +4602,31 @@ def setup_month_entry_date(month: str, day: Any | None = None, fallback: datetim
     return start
 
 
+def account_reference_for_name(db: Any, uid: str, account_name: Any, currency: str = "") -> dict[str, str]:
+    name = str(account_name or "").strip()
+    if not name:
+        return {}
+    filters: dict[str, Any] = {
+        "uid": uid,
+        "archivedAt": {"$exists": False},
+    }
+    normalized_currency = safe_currency(currency, "")
+    if normalized_currency:
+        filters["currency"] = normalized_currency
+    candidates = list(db.financial_accounts.find(filters))
+    normalized_name = name.lower()
+    for account in candidates:
+        label = str(account.get("name") or "").strip()
+        institution = str(account.get("institution") or "").strip()
+        display = f"{label} - {institution}" if institution else label
+        if normalized_name in {label.lower(), display.lower()}:
+            return {
+                "id": str(account.get("id") or ""),
+                "name": display or label or name,
+            }
+    return {"name": name}
+
+
 def insert_setup_month_entry_if_missing(
     db: Any,
     uid: str,
@@ -4604,6 +4639,9 @@ def insert_setup_month_entry_if_missing(
     currency: str,
     date: datetime,
     entry_type: str,
+    payment_method: str | None = None,
+    source_account_id: str = "",
+    source_account_name: str = "",
 ) -> bool:
     if amount <= 0:
         return False
@@ -4614,6 +4652,20 @@ def insert_setup_month_entry_if_missing(
         "sourceSetupKey": setup_key,
     })
     if existing:
+        updates: dict[str, Any] = {}
+        if source_account_id and not existing.get("sourceAccountId"):
+            updates["sourceAccountId"] = source_account_id
+        if source_account_name and not existing.get("sourceAccountName"):
+            updates["sourceAccountName"] = source_account_name
+        if (
+            source_account_id
+            and not existing.get("sourceAccountId")
+            and str(existing.get("paymentMethod") or "").strip().lower() in {"", "cash", "paid_previously"}
+        ):
+            updates["paymentMethod"] = f"account:{source_account_id}"
+        if updates:
+            updates["updatedAt"] = now()
+            db.expenses.update_one({"id": existing["id"], "uid": uid}, {"$set": updates})
         return False
     expense = build_expense(
         {
@@ -4621,12 +4673,14 @@ def insert_setup_month_entry_if_missing(
             "currency": currency,
             "category": category,
             "description": title,
-            "paymentMethod": "income" if entry_type == "income" else "paid_previously",
+            "paymentMethod": payment_method or ("income" if entry_type == "income" else "paid_previously"),
             "date": iso(date),
             "sourceType": "setup_month_entry",
             "sourcePaymentType": entry_type,
             "sourcePeriod": month,
             "sourceSetupKey": setup_key,
+            "sourceAccountId": source_account_id,
+            "sourceAccountName": source_account_name,
         },
         uid,
     )
@@ -4658,6 +4712,11 @@ def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = N
         if not due_dates and not starts_this_month:
             continue
         entry_type = "income" if str(template.get("kind") or "expense").strip().lower() == "income" else "expense"
+        template_account_id = str(template.get("sourceAccountId") or "").strip()
+        template_account_name = str(template.get("sourceAccountName") or template.get("accountName") or "").strip()
+        payment_method = None
+        if template_account_id:
+            payment_method = f"account:{template_account_id}"
         date = due_dates[0] if due_dates else setup_month_entry_date(period, template.get("dayOfMonth"), template.get("startDate"))
         created += int(insert_setup_month_entry_if_missing(
             db,
@@ -4670,6 +4729,9 @@ def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = N
             currency=safe_currency(template.get("currency"), "INR") or "INR",
             date=date,
             entry_type=entry_type,
+            payment_method=payment_method,
+            source_account_id=template_account_id,
+            source_account_name=template_account_name,
         ))
 
     loans = db.loans.find({"uid": uid, "archivedAt": {"$exists": False}})
@@ -4705,6 +4767,9 @@ def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = N
         if start_month > period:
             continue
         name = str(goal.get("name") or "Savings")
+        account_ref = account_reference_for_name(db, uid, goal.get("accountName"), goal.get("sourceCurrency"))
+        account_id = account_ref.get("id", "")
+        account_name = account_ref.get("name", "")
         created += int(insert_setup_month_entry_if_missing(
             db,
             uid,
@@ -4716,6 +4781,9 @@ def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = N
             currency=safe_currency(goal.get("sourceCurrency"), "INR") or "INR",
             date=setup_month_entry_date(period, fallback=goal.get("createdAt")),
             entry_type="expense",
+            payment_method=f"account:{account_id}" if account_id else None,
+            source_account_id=account_id,
+            source_account_name=account_name,
         ))
 
     return created
