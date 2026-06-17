@@ -638,6 +638,7 @@ class _ActivityPageState extends State<ActivityPage> {
   List<_CategoryTotal> _categoryTotals(List<_ActivityExpenseEntry> expenses) {
     final totals = <String, _CategoryTotal>{};
     for (final expense in expenses) {
+      if (expense.isIncome) continue;
       final label = expense.category.trim().isEmpty
           ? 'Other'
           : expense.category.trim();
@@ -1136,22 +1137,29 @@ class _ActivityExpenseEntry {
     required this.filterCategory,
     required this.filterCurrencies,
     required this.missingReceipt,
+    this.isIncome = false,
     this.personalExpense,
     this.groupExpense,
   });
 
   factory _ActivityExpenseEntry.personal(Expense expense) {
+    final isIncome = expense.isIncome;
     return _ActivityExpenseEntry(
       title: expense.title,
       category: (expense.category ?? '').trim(),
       amount: expense.amount,
       currency: expense.currency,
-      amountsByCurrency: {expense.currency: expense.amount},
+      amountsByCurrency: isIncome
+          ? const {}
+          : {expense.currency: expense.amount},
       date: expense.createdAt,
-      icon: Icons.receipt_long_outlined,
+      icon: isIncome
+          ? Icons.account_balance_wallet_outlined
+          : Icons.receipt_long_outlined,
       filterCategory: _normalizeFilterLabel(expense.category ?? ''),
       filterCurrencies: _currencyFilters({expense.currency: expense.amount}),
       missingReceipt: false,
+      isIncome: isIncome,
       personalExpense: expense,
     );
   }
@@ -1189,6 +1197,7 @@ class _ActivityExpenseEntry {
   final String filterCategory;
   final List<String> filterCurrencies;
   final bool missingReceipt;
+  final bool isIncome;
   final Expense? personalExpense;
   final _GroupExpenseEntry? groupExpense;
 }
@@ -1218,6 +1227,8 @@ class _ActivityTimelineEntry {
       amountText: AppMoney.formatCurrency(entry.amount, entry.currency),
       date: entry.date,
       icon: entry.icon,
+      positive: entry.isIncome,
+      neutral: !entry.isIncome,
       filterCategory: entry.filterCategory,
       filterCurrencies: entry.filterCurrencies,
       missingReceipt: entry.missingReceipt,

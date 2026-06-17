@@ -203,6 +203,15 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       final salaryAmount = _amountValue(_salaryAmountController);
       if (salaryAmount > 0) {
         final salaryDay = _dayValue(_salaryDayController, 'Salary day');
+        await _createSetupMonthActivityEntry(
+          title: 'Salary',
+          category: 'Salary',
+          entryType: 'income',
+          amount: salaryAmount,
+          dayOfMonth: salaryDay,
+          setupDate: setupDate,
+          setupKey: 'salary',
+        );
         await _saveRecurringTemplate(
           id: _salaryTemplateId,
           title: 'Salary',
@@ -218,6 +227,15 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       final rentAmount = _amountValue(_rentAmountController);
       if (rentAmount > 0) {
         final rentDay = _dayValue(_rentDayController, 'Housing due day');
+        await _createSetupMonthActivityEntry(
+          title: 'Rent and housing',
+          category: 'Rent and housing',
+          entryType: 'expense',
+          amount: rentAmount,
+          dayOfMonth: rentDay,
+          setupDate: setupDate,
+          setupKey: 'housing',
+        );
         if (_countsForSetupMonth(rentDay, setupDate)) {
           budgets['Rent and housing'] = rentAmount;
         }
@@ -233,7 +251,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         );
       }
 
-      for (final loan in _loans) {
+      for (var loanIndex = 0; loanIndex < _loans.length; loanIndex++) {
+        final loan = _loans[loanIndex];
         final loanPrincipal = _amountValue(loan.principalController);
         final loanEmi = _amountValue(loan.emiController);
         if (!_loanHasContent(loan)) {
@@ -252,6 +271,20 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         final interestRate = _amountValue(loan.interestController);
         final remainingEmis = _intValue(loan.monthsController);
         final dueDay = _dayValue(loan.dueDayController, 'Loan due day');
+        await _createSetupMonthActivityEntry(
+          title: name,
+          category: 'Loans / EMI',
+          entryType: 'expense',
+          amount: loanEmi,
+          dayOfMonth: dueDay,
+          setupDate: setupDate,
+          setupKey: _setupActivityKey('loan', [
+            loanIndex.toString(),
+            name,
+            lender,
+            dueDay.toString(),
+          ]),
+        );
         if (_countsForSetupMonth(dueDay, setupDate)) {
           _addBudgetAmount(budgets, 'Loans / EMI', loanEmi);
         }
@@ -436,7 +469,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     required List<_CommitmentDraftController> drafts,
     required String fallbackTitle,
   }) async {
-    for (final draft in drafts) {
+    for (var index = 0; index < drafts.length; index++) {
+      final draft = drafts[index];
       final amount = _amountValue(draft.amountController);
       if (amount <= 0) {
         continue;
@@ -445,6 +479,21 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           ? fallbackTitle
           : draft.nameController.text.trim();
       final dayOfMonth = _dayValue(draft.dayController, '$title due day');
+      await _createSetupMonthActivityEntry(
+        title: title,
+        category: category,
+        entryType: 'expense',
+        amount: amount,
+        dayOfMonth: dayOfMonth,
+        setupDate: setupDate,
+        setupKey: _setupActivityKey('commitment', [
+          category,
+          index.toString(),
+          title,
+          draft.frequency,
+          dayOfMonth.toString(),
+        ]),
+      );
       if (_countsForSetupMonth(dayOfMonth, setupDate)) {
         _addBudgetAmount(budgets, category, amount);
       }
@@ -487,6 +536,49 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         amount,
       );
     }
+  }
+
+  Future<void> _createSetupMonthActivityEntry({
+    required String title,
+    required String category,
+    required String entryType,
+    required double amount,
+    required int dayOfMonth,
+    required DateTime setupDate,
+    required String setupKey,
+  }) {
+    if (amount <= 0) return Future<void>.value();
+    final month = _monthKey(setupDate);
+    return _setupWriter.createSetupMonthActivityEntry(
+      title: title,
+      category: category,
+      entryType: entryType,
+      amount: amount,
+      currency: _currency,
+      date: _dateInSetupMonth(setupDate, dayOfMonth),
+      month: month,
+      setupKey: setupKey,
+    );
+  }
+
+  DateTime _dateInSetupMonth(DateTime setupDate, int dayOfMonth) {
+    final lastDay = DateTime(setupDate.year, setupDate.month + 1, 0).day;
+    final clampedDay = dayOfMonth.clamp(1, lastDay).toInt();
+    return DateTime(setupDate.year, setupDate.month, clampedDay, 12);
+  }
+
+  String _setupActivityKey(String prefix, List<String> parts) {
+    final normalized = parts
+        .map(
+          (part) => part
+              .trim()
+              .toLowerCase()
+              .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+              .replaceAll(RegExp(r'^-+|-+$'), ''),
+        )
+        .where((part) => part.isNotEmpty)
+        .join('-');
+    return normalized.isEmpty ? prefix : '$prefix:$normalized';
   }
 
   Future<void> _skipAll() {

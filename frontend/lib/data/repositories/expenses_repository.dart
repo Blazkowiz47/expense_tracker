@@ -47,6 +47,14 @@ class ExpenseRepository {
             'description': expense.description ?? expense.title,
             'paymentMethod': expense.paymentMethod ?? 'cash',
             'date': BackendDateCodec.encodeDate(expense.createdAt),
+            if (expense.sourceType?.trim().isNotEmpty == true)
+              'sourceType': expense.sourceType!.trim(),
+            if (expense.sourcePaymentType?.trim().isNotEmpty == true)
+              'sourcePaymentType': expense.sourcePaymentType!.trim(),
+            if (expense.sourcePeriod?.trim().isNotEmpty == true)
+              'sourcePeriod': expense.sourcePeriod!.trim(),
+            if (expense.sourceSetupKey?.trim().isNotEmpty == true)
+              'sourceSetupKey': expense.sourceSetupKey!.trim(),
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )
@@ -84,6 +92,14 @@ class ExpenseRepository {
             'description': expense.description ?? expense.title,
             'paymentMethod': expense.paymentMethod ?? 'cash',
             'date': BackendDateCodec.encodeDate(expense.createdAt),
+            if (expense.sourceType?.trim().isNotEmpty == true)
+              'sourceType': expense.sourceType!.trim(),
+            if (expense.sourcePaymentType?.trim().isNotEmpty == true)
+              'sourcePaymentType': expense.sourcePaymentType!.trim(),
+            if (expense.sourcePeriod?.trim().isNotEmpty == true)
+              'sourcePeriod': expense.sourcePeriod!.trim(),
+            if (expense.sourceSetupKey?.trim().isNotEmpty == true)
+              'sourceSetupKey': expense.sourceSetupKey!.trim(),
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )

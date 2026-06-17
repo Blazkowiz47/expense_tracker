@@ -1,3 +1,6 @@
+import 'package:expense_tracker/data/models/expense.dart';
+import 'package:expense_tracker/data/models/expense_core.dart';
+import 'package:expense_tracker/data/repositories/expenses_repository.dart';
 import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/accounts/repositories/api_accounts_repository.dart';
 import 'package:expense_tracker/features/loans/models/loan.dart';
@@ -99,6 +102,17 @@ abstract class OnboardingSetupWriter {
     required String familyVisibility,
   });
 
+  Future<void> createSetupMonthActivityEntry({
+    required String title,
+    required String category,
+    required String entryType,
+    required double amount,
+    required String currency,
+    required DateTime date,
+    required String month,
+    required String setupKey,
+  });
+
   Future<void> createFinancialAccount({
     required String name,
     required String institution,
@@ -126,6 +140,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     ApiLoansRepository? loansRepository,
     ApiSavingsRepository? savingsRepository,
     ApiAccountsRepository? accountsRepository,
+    ExpenseRepository? expenseRepository,
     http.Client? client,
   }) {
     final sharedClient = client ?? http.Client();
@@ -142,6 +157,8 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
           savingsRepository ?? ApiSavingsRepository(client: sharedClient),
       accountsRepository:
           accountsRepository ?? ApiAccountsRepository(client: sharedClient),
+      expenseRepository:
+          expenseRepository ?? ExpenseRepository(client: sharedClient),
     );
   }
 
@@ -153,13 +170,15 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     required ApiLoansRepository loansRepository,
     required ApiSavingsRepository savingsRepository,
     required ApiAccountsRepository accountsRepository,
+    required ExpenseRepository expenseRepository,
   }) : _client = client,
        _ownsClient = ownsClient,
        _monthlyPlanRepository = monthlyPlanRepository,
        _recurringRepository = recurringRepository,
        _loansRepository = loansRepository,
        _savingsRepository = savingsRepository,
-       _accountsRepository = accountsRepository;
+       _accountsRepository = accountsRepository,
+       _expenseRepository = expenseRepository;
 
   final http.Client _client;
   final bool _ownsClient;
@@ -168,6 +187,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
   final ApiLoansRepository _loansRepository;
   final ApiSavingsRepository _savingsRepository;
   final ApiAccountsRepository _accountsRepository;
+  final ExpenseRepository _expenseRepository;
 
   @override
   Future<List<FinancialAccount>> fetchFinancialAccounts() {
@@ -364,6 +384,42 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
       accountName: accountName,
       familyVisibility: familyVisibility,
       notes: 'Updated during setup.',
+    );
+  }
+
+  @override
+  Future<void> createSetupMonthActivityEntry({
+    required String title,
+    required String category,
+    required String entryType,
+    required double amount,
+    required String currency,
+    required DateTime date,
+    required String month,
+    required String setupKey,
+  }) async {
+    final normalizedType = entryType.trim().toLowerCase() == 'income'
+        ? 'income'
+        : 'expense';
+    await _expenseRepository.createExpense(
+      Expense(
+        core: ExpenseCore(
+          id: '',
+          title: title,
+          amount: amount,
+          currency: currency,
+          category: category,
+          createdAt: date,
+        ),
+        description: title,
+        paymentMethod: normalizedType == 'income'
+            ? 'income'
+            : 'paid_previously',
+        sourceType: 'setup_month_entry',
+        sourcePaymentType: normalizedType,
+        sourcePeriod: month,
+        sourceSetupKey: setupKey,
+      ),
     );
   }
 

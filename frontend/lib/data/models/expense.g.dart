@@ -13,6 +13,10 @@ Expense _$ExpenseFromJson(Map<String, dynamic> json) => Expense(
       ? null
       : DateTime.parse(json['updatedAt'] as String),
   paymentMethod: json['paymentMethod'] as String?,
+  sourceType: json['sourceType'] as String?,
+  sourcePaymentType: json['sourcePaymentType'] as String?,
+  sourcePeriod: json['sourcePeriod'] as String?,
+  sourceSetupKey: json['sourceSetupKey'] as String?,
   isSynced: json['isSynced'] as bool? ?? true,
   deleted: json['deleted'] as bool? ?? false,
 );
@@ -22,6 +26,10 @@ Map<String, dynamic> _$ExpenseToJson(Expense instance) => <String, dynamic>{
   'description': instance.description,
   'updatedAt': instance.updatedAt?.toIso8601String(),
   'paymentMethod': instance.paymentMethod,
+  'sourceType': instance.sourceType,
+  'sourcePaymentType': instance.sourcePaymentType,
+  'sourcePeriod': instance.sourcePeriod,
+  'sourceSetupKey': instance.sourceSetupKey,
   'isSynced': instance.isSynced,
   'deleted': instance.deleted,
 };

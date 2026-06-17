@@ -1045,6 +1045,18 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     @app.post("/api/v1/expenses", status_code=201)
     def create_expense(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         expense = build_expense(body, user["uid"])
+        if expense.get("sourceType") == "setup_month_entry" and expense.get("sourcePeriod") and expense.get("sourceSetupKey"):
+            existing = app.state.db.expenses.find_one({
+                "uid": user["uid"],
+                "sourceType": "setup_month_entry",
+                "sourcePeriod": expense["sourcePeriod"],
+                "sourceSetupKey": expense["sourceSetupKey"],
+            })
+            if existing:
+                expense["id"] = existing["id"]
+                expense["createdAt"] = existing.get("createdAt") or expense["createdAt"]
+                app.state.db.expenses.replace_one({"id": expense["id"], "uid": user["uid"]}, expense)
+                return expense_out(expense)
         app.state.db.expenses.insert_one(expense)
         if receipt_items_in_body(body):
             save_receipt_items_for_source(
@@ -3019,6 +3031,7 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "sourceCreditCardId",
         "sourcePaymentType",
         "sourcePeriod",
+        "sourceSetupKey",
     ]:
         value = str(body.get(key) or "").strip()
         if value:
@@ -3043,6 +3056,7 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "sourceCreditCardId",
             "sourcePaymentType",
             "sourcePeriod",
+            "sourceSetupKey",
             "createdAt",
             "updatedAt",
         ]
@@ -4203,11 +4217,16 @@ def format_currency_amount(currency: str, amount: float) -> str:
 def personal_dashboard_activity_item(doc: dict[str, Any]) -> dict[str, Any]:
     currency = safe_currency(doc.get("currency"), "INR") or "INR"
     amount = float(doc.get("amount") or 0)
+    is_income = str(doc.get("sourcePaymentType") or "").strip().lower() == "income"
     return {
         "title": doc.get("description") or doc.get("category") or "Expense",
         "subtitle": doc.get("date"),
-        "amountText": f"You spent {format_currency_amount(currency, amount)}",
-        "positive": False,
+        "amountText": (
+            f"You received {format_currency_amount(currency, amount)}"
+            if is_income
+            else f"You spent {format_currency_amount(currency, amount)}"
+        ),
+        "positive": is_income,
     }
 
 

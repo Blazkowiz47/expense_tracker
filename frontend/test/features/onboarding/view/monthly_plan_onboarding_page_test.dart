@@ -72,6 +72,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
   final updatedLoans = <_SavedLoan>[];
   final savingsGoals = <_SavedSavingsGoal>[];
   final updatedSavingsGoals = <_SavedSavingsGoal>[];
+  final activityEntries = <_SavedSetupActivityEntry>[];
   final accounts = <_SavedAccount>[];
   final updatedAccounts = <_SavedAccount>[];
   var disposed = false;
@@ -282,6 +283,31 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
         startMonth: startMonth,
         accountName: accountName,
         familyVisibility: familyVisibility,
+      ),
+    );
+  }
+
+  @override
+  Future<void> createSetupMonthActivityEntry({
+    required String title,
+    required String category,
+    required String entryType,
+    required double amount,
+    required String currency,
+    required DateTime date,
+    required String month,
+    required String setupKey,
+  }) async {
+    activityEntries.add(
+      _SavedSetupActivityEntry(
+        title: title,
+        category: category,
+        entryType: entryType,
+        amount: amount,
+        currency: currency,
+        date: date,
+        month: month,
+        setupKey: setupKey,
       ),
     );
   }
@@ -550,6 +576,24 @@ void main() {
       expect(
         setupWriter.monthlyPlans.single.budgets,
         containsPair('Savings', 2500),
+      );
+      final salaryActivity = setupWriter.activityEntries.singleWhere(
+        (entry) => entry.setupKey == 'salary',
+      );
+      expect(salaryActivity.entryType, 'income');
+      expect(salaryActivity.amount, 42000);
+      expect(salaryActivity.date, DateTime(2026, 6, 25, 12));
+      expect(
+        setupWriter.activityEntries.map((entry) => entry.title),
+        containsAll(<String>[
+          'Rent and housing',
+          'Loan',
+          'Car insurance',
+          'Power',
+          'Netflix',
+          'Spotify',
+          'Gym',
+        ]),
       );
     },
   );
@@ -1236,6 +1280,14 @@ void main() {
       setupWriter.monthlyPlans.single.budgets,
       isNot(contains('Savings - Emergency fund')),
     );
+    final loggedEntries = {
+      for (final entry in setupWriter.activityEntries) entry.title: entry,
+    };
+    expect(loggedEntries['Salary']?.entryType, 'income');
+    expect(loggedEntries['Salary']?.date, DateTime(2026, 6, 5, 12));
+    expect(loggedEntries['Rent and housing']?.date, DateTime(2026, 6, 1, 12));
+    expect(loggedEntries['Old EMI']?.date, DateTime(2026, 6, 5, 12));
+    expect(loggedEntries['Upcoming EMI']?.date, DateTime(2026, 6, 25, 12));
   });
 }
 
@@ -1373,6 +1425,28 @@ class _SavedSavingsGoal {
   final String startMonth;
   final String accountName;
   final String familyVisibility;
+}
+
+class _SavedSetupActivityEntry {
+  const _SavedSetupActivityEntry({
+    required this.title,
+    required this.category,
+    required this.entryType,
+    required this.amount,
+    required this.currency,
+    required this.date,
+    required this.month,
+    required this.setupKey,
+  });
+
+  final String title;
+  final String category;
+  final String entryType;
+  final double amount;
+  final String currency;
+  final DateTime date;
+  final String month;
+  final String setupKey;
 }
 
 class _SavedAccount {

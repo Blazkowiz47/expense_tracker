@@ -409,6 +409,58 @@ def test_expenses_persist_in_mongo(tmp_path):
     assert listed.json()["expenses"][0]["id"] == expense_id
 
 
+def test_setup_month_activity_entries_are_idempotent_and_mark_income(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 36000,
+            "currency": "NOK",
+            "category": "Salary",
+            "description": "Salary",
+            "paymentMethod": "income",
+            "date": "2026-06-05T12:00:00Z",
+            "sourceType": "setup_month_entry",
+            "sourcePaymentType": "income",
+            "sourcePeriod": "2026-06",
+            "sourceSetupKey": "salary",
+        },
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()
+    assert payload["sourcePaymentType"] == "income"
+    assert payload["sourceSetupKey"] == "salary"
+    first_id = payload["id"]
+
+    updated = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 37000,
+            "currency": "NOK",
+            "category": "Salary",
+            "description": "Salary corrected",
+            "paymentMethod": "income",
+            "date": "2026-06-05T12:00:00Z",
+            "sourceType": "setup_month_entry",
+            "sourcePaymentType": "income",
+            "sourcePeriod": "2026-06",
+            "sourceSetupKey": "salary",
+        },
+    )
+    assert updated.status_code == 201, updated.text
+    assert updated.json()["id"] == first_id
+    assert updated.json()["amount"] == 37000
+    assert updated.json()["description"] == "Salary corrected"
+
+    listed = client.get("/api/v1/expenses", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()["expenses"]) == 1
+
+
 def test_personal_summaries_keep_expense_currencies_separate(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
