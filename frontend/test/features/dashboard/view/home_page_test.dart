@@ -155,15 +155,16 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
-      find.text('Cashflow'),
+      find.text('Cashflow - June'),
       500,
       scrollable: find.byType(Scrollable).first,
     );
 
     expect(find.text('Income'), findsOneWidget);
     expect(find.text('Surplus'), findsOneWidget);
-    expect(find.text('NOK 36,000.00'), findsOneWidget);
-    expect(find.text('NOK 23,706.00'), findsOneWidget);
+    expect(find.text('Net surplus after all planned costs'), findsOneWidget);
+    expect(find.text('NOK 36,000'), findsOneWidget);
+    expect(find.text('NOK 23,706'), findsNWidgets(2));
   });
 
   testWidgets('home auto-refresh skips reload when dashboard is fresh', (

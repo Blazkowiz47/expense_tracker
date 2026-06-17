@@ -257,9 +257,9 @@ class _HomePageState extends State<HomePage> {
     return AppPageContainer(
       maxWidth: compact ? double.infinity : 1040,
       padding: EdgeInsets.fromLTRB(
-        compact ? 0 : 20,
-        compact ? 10 : 20,
-        compact ? 0 : 20,
+        compact ? 16 : 20,
+        compact ? 16 : 20,
+        compact ? 16 : 20,
         24,
       ),
       onRefresh: () => _refreshDashboard(dashboardCubit),
@@ -1354,14 +1354,17 @@ class _CashflowPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
-            title: 'Cashflow',
-            actionLabel: _monthLabel(plan?.month),
-          ),
+          _SectionHeader(title: 'Cashflow - ${_monthOnlyLabel(plan?.month)}'),
           const SizedBox(height: 10),
           for (var index = 0; index < rows.length; index++) ...[
             _CashflowBar(row: rows[index]),
             if (index < rows.length - 1) const SizedBox(height: 10),
+          ],
+          if (loadedPlan != null) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: _hybridTrack),
+            const SizedBox(height: 10),
+            _NetSurplusFooter(plan: loadedPlan),
           ],
         ],
       ),
@@ -1386,36 +1389,73 @@ class _CashflowPanel extends StatelessWidget {
     return [
       _CashflowRowData(
         label: 'Income',
-        amountText: AppMoney.formatCurrency(income, plan.currency),
+        amountText: _formatWhole(income, plan.currency),
         fraction: fraction(income),
         color: AppMoney.positiveColor,
       ),
       _CashflowRowData(
         label: 'Planned costs',
-        amountText: AppMoney.formatCurrency(plannedCosts, plan.currency),
+        amountText: _formatWhole(plannedCosts, plan.currency),
         fraction: fraction(plannedCosts),
         color: _hybridExpenseStrong,
       ),
       _CashflowRowData(
         label: 'Loan EMIs',
-        amountText: AppMoney.formatCurrency(loanEmis, plan.currency),
+        amountText: _formatWhole(loanEmis, plan.currency),
         fraction: fraction(loanEmis),
         color: _hybridNegative,
       ),
       _CashflowRowData(
         label: 'Discretionary',
-        amountText: AppMoney.formatCurrency(discretionary, plan.currency),
+        amountText: _formatWhole(discretionary, plan.currency),
         fraction: fraction(discretionary),
         color: _hybridExpense,
       ),
       _CashflowRowData(
         label: surplusPositive ? 'Surplus' : 'Shortfall',
-        amountText: AppMoney.formatCurrency(surplus.abs(), plan.currency),
+        amountText: _formatWhole(surplus.abs(), plan.currency),
         fraction: fraction(surplus),
         color: surplusPositive ? _hybridAccentSoft : _hybridNegativeSoft,
         amountColor: surplusPositive ? AppMoney.positiveColor : _hybridNegative,
       ),
     ];
+  }
+}
+
+class _NetSurplusFooter extends StatelessWidget {
+  const _NetSurplusFooter({required this.plan});
+
+  final MonthlyPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final surplus = _cashflowSurplus(plan);
+    final positive = surplus >= -0.005;
+    final amountColor = positive ? AppMoney.positiveColor : _hybridNegative;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Text(
+            positive
+                ? 'Net surplus after all planned costs'
+                : 'Net shortfall after all planned costs',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          _formatWhole(surplus.abs(), plan.currency),
+          textAlign: TextAlign.end,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: amountColor,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -2094,19 +2134,21 @@ class _AdaptiveColumns extends StatelessWidget {
             ],
           );
         }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var index = 0; index < children.length; index++) ...[
-              Expanded(
-                flex: flexes == null || index >= flexes!.length
-                    ? 1
-                    : flexes![index],
-                child: children[index],
-              ),
-              if (index < children.length - 1) SizedBox(width: spacing),
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var index = 0; index < children.length; index++) ...[
+                Expanded(
+                  flex: flexes == null || index >= flexes!.length
+                      ? 1
+                      : flexes![index],
+                  child: children[index],
+                ),
+                if (index < children.length - 1) SizedBox(width: spacing),
+              ],
             ],
-          ],
+          ),
         );
       },
     );
@@ -2137,53 +2179,76 @@ List<_CategorySlice> _plannedCategories(MonthlyPlan? plan) {
       _CategorySlice(
         label: 'Rent and housing',
         amount: 8000,
-        color: AppMoney.positiveColor,
+        color: _hybridExpenseStrong,
       ),
       _CategorySlice(
         label: 'Loans / EMI',
         amount: 4294,
-        color: _hybridAccent,
+        color: _hybridNegative,
         isAlert: true,
       ),
       _CategorySlice(
         label: 'Groceries',
         amount: 4200,
-        color: Color(0xFF3FBF9B),
+        color: Color(0xFFF97316),
       ),
       _CategorySlice(
         label: 'Transport',
         amount: 1800,
-        color: Color(0xFF7AA2F7),
+        color: Color(0xFFFB923C),
       ),
-      _CategorySlice(
-        label: 'Utilities',
-        amount: 1200,
-        color: Color(0xFFE8A317),
-      ),
+      _CategorySlice(label: 'Utilities', amount: 1200, color: _hybridExpense),
       _CategorySlice(
         label: 'Subscriptions',
         amount: 600,
-        color: Color(0xFF9D7CFF),
+        color: Color(0xFFD97706),
       ),
     ];
   }
-  const colors = [
-    AppMoney.positiveColor,
-    _hybridAccent,
-    Color(0xFF3FBF9B),
-    Color(0xFF7AA2F7),
-    Color(0xFFE8A317),
-    Color(0xFF9D7CFF),
-  ];
   return [
     for (var index = 0; index < source.length; index++)
       _CategorySlice(
         label: source[index].category,
         amount: source[index].budget.abs(),
-        color: colors[index % colors.length],
+        color: _plannedCostColor(source[index].category, index),
         isAlert: _isLoanLikeCategory(source[index].category),
       ),
   ];
+}
+
+Color _plannedCostColor(String category, int index) {
+  final normalized = category.trim().toLowerCase();
+  if (_isLoanLikeCategory(category)) {
+    return _hybridNegative;
+  }
+  if (normalized.contains('rent') ||
+      normalized.contains('housing') ||
+      normalized.contains('home')) {
+    return _hybridExpenseStrong;
+  }
+  if (normalized.contains('grocery') ||
+      normalized.contains('food') ||
+      normalized.contains('rema')) {
+    return const Color(0xFFF97316);
+  }
+  if (normalized.contains('transport') ||
+      normalized.contains('fuel') ||
+      normalized.contains('pass')) {
+    return const Color(0xFFFB923C);
+  }
+  if (normalized.contains('subscription') ||
+      normalized.contains('membership')) {
+    return const Color(0xFFD97706);
+  }
+  const colors = [
+    _hybridExpenseStrong,
+    _hybridNegative,
+    Color(0xFFF97316),
+    Color(0xFFFB923C),
+    _hybridExpense,
+    Color(0xFFD97706),
+  ];
+  return colors[index % colors.length];
 }
 
 String _formatWhole(num amount, String currency) {
@@ -2394,6 +2459,10 @@ String _monthLabel(String? value) {
   return _formatMonth(year, month);
 }
 
+String _monthOnlyLabel(String? value) {
+  return _monthLabel(value).split(' ').first;
+}
+
 String _formatMonth(int year, int month) {
   const monthNames = [
     'January',
@@ -2436,6 +2505,10 @@ double _cashflowIncome(MonthlyPlan plan) {
     return 36000;
   }
   return 0;
+}
+
+double _cashflowSurplus(MonthlyPlan plan) {
+  return plan.surplus ?? _cashflowIncome(plan) - plan.totalBudget;
 }
 
 bool _isLoanLikeCategory(String category) {

@@ -1001,6 +1001,8 @@ class _HomeShellPageState extends State<HomeShellPage>
       return FloatingActionButton(
         heroTag: 'add-expense-action',
         tooltip: 'Add expense',
+        backgroundColor: _hybridAccent,
+        foregroundColor: Colors.white,
         onPressed: () => _openAddExpense(),
         child: const Icon(Icons.add),
       );
@@ -1040,6 +1042,8 @@ class _HomeShellPageState extends State<HomeShellPage>
               tooltip: _actionMenuOpen
                   ? 'Close quick actions'
                   : 'Quick actions',
+              backgroundColor: _hybridAccentSoft,
+              foregroundColor: _hybridAccentStrong,
               onPressed: _toggleActionMenu,
               child: AnimatedRotation(
                 turns: _actionMenuOpen ? 0.25 : 0,
@@ -1050,6 +1054,8 @@ class _HomeShellPageState extends State<HomeShellPage>
             const SizedBox(width: 10),
             FloatingActionButton.extended(
               heroTag: 'add-expense-action',
+              backgroundColor: _hybridAccent,
+              foregroundColor: Colors.white,
               onPressed: () => _openAddExpense(),
               icon: const Icon(Icons.receipt_long),
               label: Text(compact ? 'Add' : 'Add expense'),
