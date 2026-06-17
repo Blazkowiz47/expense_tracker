@@ -409,6 +409,7 @@ class LocalGemmaBillExtractor:
             context,
             (
                 "Write two concise finance summary cards for the home screen. "
+                "Use the provided finance-context-v1 packet; do not request raw transactions. "
                 "Return JSON with cards: [{label, message, tone, actions}]. "
                 "Use tone positive, warning, critical, or neutral. Keep each message under 150 characters."
             ),
@@ -423,6 +424,7 @@ class LocalGemmaBillExtractor:
             payload,
             (
                 "Answer a personal finance planning question for an expense tracker. "
+                "Use the provided finance-context-v1 packet; backend math is authoritative. "
                 "Return JSON with question, title, answer, steps, and suggestions. "
                 "steps must be short actionable strings. Use only facts in the provided context."
             ),
@@ -1575,9 +1577,10 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         action_items = dashboard_action_items(app.state.db, user["uid"])
         ai_summary = await generate_ai_dashboard_summary(
             app.state.ai_provider,
-            dashboard_ai_context(
+            build_ai_financial_context(
                 app.state.db,
                 user["uid"],
+                purpose="home_summary",
                 overall_summary=overall_summary,
                 action_items=action_items,
                 activity_items=docs,
@@ -2149,7 +2152,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         question = str(body.get("question") or "").strip()
         if not question:
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "question is required"))
-        context = dashboard_ai_context(app.state.db, user["uid"])
+        context = build_ai_financial_context(app.state.db, user["uid"], purpose="finance_chat")
         result = await generate_ai_finance_chat(app.state.ai_provider, context, question)
         app.state.db.ai_suggestions.insert_one({
             "id": uuid.uuid4().hex,
@@ -2167,7 +2170,10 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "period must be daily or monthly"))
         docs = list(app.state.db.expenses.find({"uid": user["uid"]}))
         total = sum(float(doc.get("amount") or 0) for doc in docs)
-        ai_summary = await generate_ai_dashboard_summary(app.state.ai_provider, dashboard_ai_context(app.state.db, user["uid"]))
+        ai_summary = await generate_ai_dashboard_summary(
+            app.state.ai_provider,
+            build_ai_financial_context(app.state.db, user["uid"], purpose="home_summary"),
+        )
         primary_card = (ai_summary.get("cards") or [{}])[0]
         summary = {
             "id": uuid.uuid4().hex,
@@ -4205,6 +4211,226 @@ def personal_dashboard_activity_item(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+AI_CONTEXT_SCHEMA_VERSION = "finance-context-v1"
+AI_CONTEXT_PURPOSE_LIMITS: dict[str, dict[str, int]] = {
+    "home_summary": {
+        "maxCategories": 6,
+        "maxRecentExpenses": 0,
+        "maxActionItems": 4,
+        "maxMerchants": 4,
+        "maxBytes": 6000,
+    },
+    "finance_chat": {
+        "maxCategories": 8,
+        "maxRecentExpenses": 8,
+        "maxActionItems": 5,
+        "maxMerchants": 5,
+        "maxBytes": 10000,
+    },
+    "receipt_autofill": {
+        "maxCategories": 8,
+        "maxRecentExpenses": 3,
+        "maxActionItems": 3,
+        "maxMerchants": 5,
+        "maxBytes": 8000,
+    },
+}
+
+
+def ai_context_limits(purpose: str) -> dict[str, int]:
+    return AI_CONTEXT_PURPOSE_LIMITS.get(purpose, AI_CONTEXT_PURPOSE_LIMITS["finance_chat"])
+
+
+def ai_context_text(value: Any, max_length: int = 80) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return text[:max_length]
+
+
+def ai_context_money(value: Any) -> float:
+    try:
+        return round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def ai_context_month_actual(db: Any, uid: str, month: str, currency: str) -> float:
+    start, end = month_range(month)
+    total = 0.0
+
+    def add_expense(expense: dict[str, Any]) -> None:
+        nonlocal total
+        amount = expense_amount_for_currency(expense, currency)
+        if amount is not None:
+            total += float(amount or 0)
+
+    for expense in db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}}):
+        add_expense(expense)
+    family_groups = list(db.groups.find({"memberUids": uid, "groupType": "family"}, {"id": 1}))
+    family_group_ids = [group.get("id") for group in family_groups if group.get("id")]
+    if family_group_ids:
+        for expense in db.group_expenses.find({"groupId": {"$in": family_group_ids}, "date": {"$gte": start, "$lt": end}}):
+            add_expense(expense)
+    return round(total, 2)
+
+
+def ai_context_recent_expenses(db: Any, uid: str, month: str, currency: str, limit: int) -> tuple[list[dict[str, Any]], bool]:
+    if limit <= 0:
+        return [], db.expenses.count_documents({"uid": uid, "date": {"$gte": month_range(month)[0], "$lt": month_range(month)[1]}}) > 0
+    start, end = month_range(month)
+    docs = list(db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}}).sort("date", DESCENDING).limit(limit + 1))
+    expenses = []
+    for doc in docs[:limit]:
+        amount = expense_amount_for_currency(doc, currency)
+        expenses.append({
+            "date": iso(aware(doc.get("date"))) if doc.get("date") else None,
+            "description": ai_context_text(doc.get("description") or doc.get("category") or "Expense", 72),
+            "category": ai_context_text(doc.get("category") or "Personal", 48),
+            "amount": ai_context_money(amount if amount is not None else doc.get("amount")),
+            "currency": currency if amount is not None else safe_currency(doc.get("currency"), currency),
+            "paymentMethod": ai_context_text(doc.get("paymentMethod"), 32),
+        })
+    return expenses, len(docs) > limit
+
+
+def ai_context_top_merchants(db: Any, uid: str, month: str, currency: str, limit: int) -> tuple[list[dict[str, Any]], bool]:
+    start, end = month_range(month)
+    totals: dict[str, dict[str, Any]] = {}
+    for doc in db.expenses.find({"uid": uid, "date": {"$gte": start, "$lt": end}}):
+        merchant = ai_context_text(doc.get("description") or doc.get("category") or "Expense", 64)
+        if not merchant:
+            continue
+        amount = expense_amount_for_currency(doc, currency)
+        if amount is None:
+            continue
+        entry = totals.setdefault(merchant, {"merchant": merchant, "amount": 0.0, "count": 0})
+        entry["amount"] = ai_context_money(float(entry["amount"]) + float(amount or 0))
+        entry["count"] = int(entry["count"]) + 1
+    ranked = sorted(totals.values(), key=lambda item: float(item.get("amount") or 0), reverse=True)
+    return ranked[:limit], len(ranked) > limit
+
+
+def build_ai_financial_context(
+    db: Any,
+    uid: str,
+    *,
+    purpose: str = "finance_chat",
+    month: str = "",
+    overall_summary: dict[str, Any] | None = None,
+    action_items: list[dict[str, Any]] | None = None,
+    activity_items: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    purpose = purpose if purpose in AI_CONTEXT_PURPOSE_LIMITS else "finance_chat"
+    limits = ai_context_limits(purpose)
+    period = normalize_month(month or current_month())
+    plan = monthly_plan_out(db, uid, period)
+    raw_plan = db.monthly_plans.find_one({"uid": uid, "month": period}) or {}
+    currency = str(plan.get("currency") or "INR")
+    raw_categories = plan.get("categories") if isinstance(plan.get("categories"), list) else []
+    categories = [
+        {
+            "category": ai_context_text(item.get("category") or "Personal", 48),
+            "budget": ai_context_money(item.get("budget")),
+            "actual": ai_context_money(item.get("actual")),
+            "remaining": ai_context_money(item.get("remaining")),
+            "overBudget": bool(item.get("overBudget")),
+        }
+        for item in raw_categories
+        if isinstance(item, dict)
+    ]
+    categories.sort(key=lambda item: abs(float(item.get("budget") or item.get("actual") or 0)), reverse=True)
+    category_limit = limits["maxCategories"]
+    action_limit = limits["maxActionItems"]
+    merchant_limit = limits["maxMerchants"]
+    recent_limit = limits["maxRecentExpenses"]
+    limited_categories = categories[:category_limit]
+    resolved_actions = action_items if action_items is not None else dashboard_action_items(db, uid)
+    limited_actions = [
+        {
+            "title": ai_context_text(item.get("title"), 80),
+            "subtitle": ai_context_text(item.get("subtitle"), 120),
+            "severity": ai_context_text(item.get("severity"), 24),
+            "destination": ai_context_text(item.get("destination"), 32),
+            "actionType": ai_context_text(item.get("actionType"), 48),
+            "category": ai_context_text(item.get("category"), 48),
+        }
+        for item in resolved_actions[:action_limit]
+    ]
+    recent_expenses, recent_truncated = ai_context_recent_expenses(db, uid, period, currency, recent_limit)
+    top_merchants, merchants_truncated = ai_context_top_merchants(db, uid, period, currency, merchant_limit)
+    previous_month = add_months(period, -1)
+    current_actual = ai_context_money(plan.get("totalActual"))
+    previous_actual = ai_context_month_actual(db, uid, previous_month, currency)
+    total_budget = ai_context_money(plan.get("totalBudget"))
+    total_remaining = ai_context_money(plan.get("totalRemaining"))
+    income = raw_plan.get("income")
+    surplus = ai_context_money(income) - total_budget if income is not None else None
+    today = now()
+    days_in_month = calendar.monthrange(today.year, today.month)[1] if period == current_month() else calendar.monthrange(int(period[:4]), int(period[5:7]))[1]
+    day_of_month = min(today.day, days_in_month) if period == current_month() else days_in_month
+    projected_spend = ai_context_money((current_actual / max(day_of_month, 1)) * days_in_month) if current_actual > 0 else 0.0
+    budget_usage = round(current_actual / total_budget, 4) if total_budget > 0 else 0.0
+    month_delta = ai_context_money(current_actual - previous_actual)
+    month_delta_percent = round(month_delta / previous_actual, 4) if previous_actual > 0 else None
+    largest_category = limited_categories[0] if limited_categories else None
+    context = {
+        "schemaVersion": AI_CONTEXT_SCHEMA_VERSION,
+        "purpose": purpose,
+        "generatedAt": iso(today),
+        "currentDate": iso(today),
+        "month": period,
+        "currency": currency,
+        "limits": limits,
+        "summary": {
+            "currency": currency,
+            "income": ai_context_money(income) if income is not None else None,
+            "plannedCosts": total_budget,
+            "actualSpend": current_actual,
+            "remainingBudget": total_remaining,
+            "surplus": ai_context_money(surplus) if surplus is not None else None,
+            "categoryCount": len(categories),
+            "actionItemCount": len(resolved_actions),
+            "recentExpenseCount": db.expenses.count_documents({"uid": uid, "date": {"$gte": month_range(period)[0], "$lt": month_range(period)[1]}}),
+        },
+        "trends": {
+            "previousMonth": previous_month,
+            "previousMonthActualSpend": previous_actual,
+            "monthToDateSpend": current_actual,
+            "monthOverMonthDelta": month_delta,
+            "monthOverMonthDeltaPercent": month_delta_percent,
+            "projectedMonthEndSpend": projected_spend,
+            "budgetUsagePercent": budget_usage,
+            "largestCategory": largest_category,
+            "overBudgetCategories": [item for item in categories if item.get("overBudget")][:3],
+        },
+        "overall": overall_summary or dashboard_overall_summary(db, uid),
+        "monthlyPlan": {
+            "month": plan.get("month"),
+            "currency": currency,
+            "totalBudget": total_budget,
+            "totalActual": current_actual,
+            "totalRemaining": total_remaining,
+            "income": ai_context_money(income) if income is not None else None,
+            "surplus": ai_context_money(surplus) if surplus is not None else None,
+            "categories": limited_categories,
+        },
+        "topMerchants": top_merchants,
+        "recentExpenses": recent_expenses,
+        "actionItems": limited_actions,
+        "friendItems": friend_balance_items(db, uid)[:4],
+        "groupItems": group_balance_items(db, uid)[:4],
+        "truncated": False,
+        "truncation": {
+            "categories": len(categories) > category_limit,
+            "actionItems": len(resolved_actions) > action_limit,
+            "recentExpenses": recent_truncated,
+            "topMerchants": merchants_truncated,
+        },
+    }
+    context["truncated"] = any(bool(value) for value in context["truncation"].values())
+    context["estimatedBytes"] = len(json.dumps(json_ready(context), default=str, separators=(",", ":")))
+    return context
+
+
 def dashboard_ai_context(
     db: Any,
     uid: str,
@@ -4213,40 +4439,14 @@ def dashboard_ai_context(
     action_items: list[dict[str, Any]] | None = None,
     activity_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    period = current_month()
-    plan = monthly_plan_out(db, uid, period)
-    raw_categories = plan.get("categories") if isinstance(plan.get("categories"), list) else []
-    categories = [
-        {
-            "category": str(item.get("category") or "Personal"),
-            "budget": float(item.get("budget") or 0),
-            "actual": float(item.get("actual") or 0),
-            "remaining": float(item.get("remaining") or 0),
-            "overBudget": bool(item.get("overBudget")),
-        }
-        for item in raw_categories
-        if isinstance(item, dict)
-    ]
-    categories.sort(key=lambda item: abs(float(item.get("budget") or item.get("actual") or 0)), reverse=True)
-    activities = activity_items
-    if activities is None:
-        activities = [expense_out(doc) for doc in db.expenses.find({"uid": uid}).sort("date", -1).limit(10)]
-    return {
-        "month": period,
-        "overall": overall_summary or dashboard_overall_summary(db, uid),
-        "monthlyPlan": {
-            "month": plan.get("month"),
-            "currency": plan.get("currency"),
-            "totalBudget": plan.get("totalBudget"),
-            "totalActual": plan.get("totalActual"),
-            "totalRemaining": plan.get("totalRemaining"),
-            "categories": categories[:8],
-        },
-        "actionItems": action_items if action_items is not None else dashboard_action_items(db, uid),
-        "friendItems": friend_balance_items(db, uid)[:4],
-        "groupItems": group_balance_items(db, uid)[:4],
-        "recentActivity": [personal_dashboard_activity_item(item) for item in activities[:8]],
-    }
+    return build_ai_financial_context(
+        db,
+        uid,
+        purpose="finance_chat",
+        overall_summary=overall_summary,
+        action_items=action_items,
+        activity_items=activity_items,
+    )
 
 
 async def generate_ai_dashboard_summary(provider: Any, context: dict[str, Any]) -> dict[str, Any]:

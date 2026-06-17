@@ -6,7 +6,16 @@ from pathlib import Path
 import mongomock
 from fastapi.testclient import TestClient
 
-from app.main import create_app, current_month, ensure_indexes, iso, now, parse_model_json, run_bill_extraction
+from app.main import (
+    build_ai_financial_context,
+    create_app,
+    current_month,
+    ensure_indexes,
+    iso,
+    now,
+    parse_model_json,
+    run_bill_extraction,
+)
 
 
 class FakeExtractor:
@@ -42,6 +51,41 @@ class FakeExtractor:
                 },
             ],
             "confidence": 0.95,
+            "warnings": [],
+        }
+
+
+class CapturingAiProvider(FakeExtractor):
+    def __init__(self):
+        self.dashboard_context = None
+        self.chat_context = None
+
+    async def dashboard_summary(self, context):
+        self.dashboard_context = context
+        return {
+            "task": "dashboard_summary",
+            "schemaVersion": "finance-ai-v1",
+            "cards": [
+                {
+                    "label": "AI summary",
+                    "message": "Context received.",
+                    "tone": "positive",
+                    "actions": [],
+                }
+            ],
+            "warnings": [],
+        }
+
+    async def finance_chat(self, context, question: str):
+        self.chat_context = context
+        return {
+            "task": "finance_chat",
+            "schemaVersion": "finance-ai-v1",
+            "question": question,
+            "title": "AI plan",
+            "answer": "Context received.",
+            "steps": ["Use the compact context packet."],
+            "suggestions": [],
             "warnings": [],
         }
 
@@ -860,6 +904,79 @@ def test_ai_chat_returns_structured_plan(tmp_path):
     assert payload["schemaVersion"] == "finance-ai-v1"
     assert payload["question"] == "Save NOK 50,000 by December"
     assert payload["steps"]
+
+
+def test_ai_financial_context_is_capped_and_sanitized(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client)
+    month = current_month()
+    budgets = {f"Category {index}": 1000 + index for index in range(12)}
+    plan = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers,
+        json={"month": month, "currency": "NOK", "budgets": budgets, "income": 50000},
+    )
+    assert plan.status_code == 200, plan.text
+
+    for index in range(12):
+        created = client.post(
+            "/api/v1/expenses",
+            headers=headers,
+            json={
+                "amount": 100 + index,
+                "currency": "NOK",
+                "category": f"Category {index}",
+                "description": f"Merchant with a very long name {index} " * 6,
+                "date": f"{month}-{min(index + 1, 28):02d}T12:00:00Z",
+                "paymentMethod": "card",
+                "notes": "private raw note that should not be sent",
+            },
+        )
+        assert created.status_code == 201, created.text
+
+    uid = app.state.db.users.find_one()["uid"]
+    context = build_ai_financial_context(app.state.db, uid, purpose="finance_chat")
+
+    assert context["schemaVersion"] == "finance-context-v1"
+    assert context["purpose"] == "finance_chat"
+    assert context["currency"] == "NOK"
+    assert len(context["monthlyPlan"]["categories"]) == 8
+    assert len(context["recentExpenses"]) == 8
+    assert len(context["topMerchants"]) == 5
+    assert context["truncated"] is True
+    assert context["truncation"]["categories"] is True
+    assert context["truncation"]["recentExpenses"] is True
+    assert context["estimatedBytes"] <= context["limits"]["maxBytes"]
+    encoded = str(context)
+    assert "private raw note" not in encoded
+    assert "accountEmail" not in encoded
+
+
+def test_ai_endpoints_send_purpose_specific_financial_context(tmp_path):
+    provider = CapturingAiProvider()
+    mongo = mongomock.MongoClient()
+    app = create_app(database=mongo.expense_tracker_test, ai_provider=provider)
+    app.state.upload_dir = tmp_path / "uploads"
+    app.state.upload_dir.mkdir(parents=True, exist_ok=True)
+    client = TestClient(app)
+    headers = register(client)
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    assert provider.dashboard_context["schemaVersion"] == "finance-context-v1"
+    assert provider.dashboard_context["purpose"] == "home_summary"
+    assert provider.dashboard_context["recentExpenses"] == []
+
+    chat = client.post(
+        "/api/v1/ai/chat",
+        headers=headers,
+        json={"question": "Can I afford a laptop?"},
+    )
+    assert chat.status_code == 200, chat.text
+    assert provider.chat_context["schemaVersion"] == "finance-context-v1"
+    assert provider.chat_context["purpose"] == "finance_chat"
+    assert "summary" in provider.chat_context
+    assert "trends" in provider.chat_context
 
 
 def test_receipt_items_can_be_saved_with_personal_expense(tmp_path):
