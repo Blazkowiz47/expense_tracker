@@ -18,6 +18,7 @@ class HomePage extends StatefulWidget {
     this.onOpenRecurring,
     this.onOpenAction,
     this.onAddExpenseForCategory,
+    this.onRecordPlannedPayment,
     this.onOpenActivityCategory,
     this.freshnessRepository,
     this.monthlyPlanRepository,
@@ -31,6 +32,12 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onOpenRecurring;
   final void Function(DailyActionItem item)? onOpenAction;
   final ValueChanged<String>? onAddExpenseForCategory;
+  final Future<bool> Function(
+    String category, {
+    required double amount,
+    required String currency,
+  })?
+  onRecordPlannedPayment;
   final ValueChanged<String>? onOpenActivityCategory;
   final FreshnessRepository? freshnessRepository;
   final MonthlyPlanRepository? monthlyPlanRepository;
@@ -138,6 +145,7 @@ class _HomePageState extends State<HomePage> {
           repository: widget.monthlyPlanRepository,
           refreshToken: _planRefreshToken,
           onAddExpenseForCategory: widget.onAddExpenseForCategory,
+          onRecordPlannedPayment: widget.onRecordPlannedPayment,
           onReviewCategory: widget.onOpenActivityCategory,
         ),
         const SizedBox(height: 16),

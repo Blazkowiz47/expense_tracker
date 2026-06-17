@@ -20,6 +20,8 @@ class AddExpensePage extends StatefulWidget {
     this.initialBillUpload = false,
     this.initialCategory,
     this.initialDescription,
+    this.initialAmount,
+    this.initialCurrency,
     super.key,
   });
 
@@ -27,6 +29,8 @@ class AddExpensePage extends StatefulWidget {
   final bool initialBillUpload;
   final String? initialCategory;
   final String? initialDescription;
+  final double? initialAmount;
+  final String? initialCurrency;
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
@@ -36,11 +40,17 @@ class _AddExpensePageState extends State<AddExpensePage> {
   static const _categories = <String>[
     'Food',
     'Groceries',
+    'Rent and housing',
+    'Utilities',
+    'Subscriptions',
+    'Memberships',
     'Transport',
+    'Loans / EMI',
     'Shopping',
     'Bills',
     'Travel',
     'Health',
+    'Savings',
     'Personal',
   ];
   static const _currencies = <String>['INR', 'NOK', 'USD', 'EUR', 'GBP'];
@@ -98,11 +108,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
     } else {
       final initialCategory = widget.initialCategory?.trim();
       final initialDescription = widget.initialDescription?.trim();
+      final initialAmount = widget.initialAmount;
+      final initialCurrency = widget.initialCurrency?.trim();
       if (initialDescription != null && initialDescription.isNotEmpty) {
         _descriptionController.text = initialDescription;
       }
       if (initialCategory != null && initialCategory.isNotEmpty) {
         _category = _normalizedChoice(initialCategory, _categories, 'Personal');
+      }
+      if (initialAmount != null && initialAmount > 0) {
+        _amountController.text = initialAmount.toStringAsFixed(2);
+      }
+      if (initialCurrency != null && initialCurrency.isNotEmpty) {
+        _currency = _normalizedChoice(initialCurrency, _currencies, 'INR');
       }
     }
     if (widget.initialBillUpload && expense == null) {

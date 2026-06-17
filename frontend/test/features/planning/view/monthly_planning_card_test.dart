@@ -258,6 +258,40 @@ void main() {
     expect(selectedCategory, 'Groceries');
   });
 
+  testWidgets('category check action reports remaining planned payment', (
+    tester,
+  ) async {
+    final repository = _FakeMonthlyPlanRepository();
+    String? selectedCategory;
+    double? selectedAmount;
+    String? selectedCurrency;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MonthlyPlanningCard(
+            repository: repository,
+            onRecordPlannedPayment:
+                (category, {required amount, required currency}) async {
+                  selectedCategory = category;
+                  selectedAmount = amount;
+                  selectedCurrency = currency;
+                  return false;
+                },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Record Groceries payment'));
+    await tester.pumpAndSettle();
+
+    expect(selectedCategory, 'Groceries');
+    expect(selectedAmount, 3500);
+    expect(selectedCurrency, 'INR');
+  });
+
   testWidgets('category row reports selected review category', (tester) async {
     final repository = _FakeMonthlyPlanRepository();
     String? reviewedCategory;

@@ -1,8 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:expense_tracker/core/constants/app_spacing.dart';
+import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/onboarding/repositories/onboarding_setup_writer.dart';
+import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 const _currencyOptions = <String>['NOK', 'INR', 'USD', 'EUR', 'GBP'];
 const _accountTypeOptions = <String>[
@@ -21,6 +28,8 @@ const _accountTypeLabels = <String, String>{
   'cash': 'Cash',
   'other': 'Other',
 };
+const _setupDraftBoxName = 'monthly_setup_draft_v1';
+const _accountDraftsKey = 'accountDrafts';
 const _setupSteps = <_SetupStep>[
   _SetupStep.currency,
   _SetupStep.accounts,
@@ -94,6 +103,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   var _savingsAccountName = '';
   var _showSavingsInFamily = false;
   var _savingsTargetCurrencyTouched = false;
+  var _accountsTouched = false;
+  var _loadingExistingSetup = false;
   var _saving = false;
   String? _message;
 
@@ -108,6 +119,11 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _resetCommitmentDrafts(_utilities);
     _resetCommitmentDrafts(_subscriptions);
     _resetCommitmentDrafts(_memberships);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadExistingSetup();
+      }
+    });
   }
 
   @override
@@ -154,13 +170,24 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       for (final account in _accounts) {
         final name = account.nameController.text.trim();
         if (name.isEmpty) continue;
-        await _setupWriter.createFinancialAccount(
-          name: name,
-          institution: account.institutionController.text.trim(),
-          accountType: account.accountType,
-          currency: account.currency,
-          openingBalance: _amountValue(account.balanceController),
-        );
+        if (account.existingId == null) {
+          await _setupWriter.createFinancialAccount(
+            name: name,
+            institution: account.institutionController.text.trim(),
+            accountType: account.accountType,
+            currency: account.currency,
+            openingBalance: _amountValue(account.balanceController),
+          );
+        } else {
+          await _setupWriter.updateFinancialAccount(
+            id: account.existingId!,
+            name: name,
+            institution: account.institutionController.text.trim(),
+            accountType: account.accountType,
+            currency: account.currency,
+            openingBalance: _amountValue(account.balanceController),
+          );
+        }
       }
 
       final salaryAmount = _amountValue(_salaryAmountController);
@@ -261,6 +288,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           budgets: budgets,
         );
       }
+      await _clearLocalAccountDraft();
       if (!mounted) return;
       if (widget.completeOnFinish) {
         await context.read<AuthCubit>().completeOnboarding();
@@ -347,6 +375,200 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     }
   }
 
+  Future<void> _loadExistingSetup() async {
+    if (_loadingExistingSetup) return;
+    setState(() => _loadingExistingSetup = true);
+    try {
+      await _loadLocalAccountDraft();
+      final month = _monthKey(DateTime.now());
+      final accounts = await _setupWriter.fetchFinancialAccounts();
+      final plan = await _setupWriter.fetchMonthlyPlan(month: month);
+      if (!mounted) return;
+      setState(() {
+        if (!_accountsTouched) {
+          _applyExistingAccounts(accounts);
+        }
+        _applyExistingPlan(plan);
+        _loadingExistingSetup = false;
+        _message = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingExistingSetup = false);
+    }
+  }
+
+  void _applyExistingAccounts(List<FinancialAccount> accounts) {
+    if (accounts.isEmpty) {
+      return;
+    }
+    for (final account in _accounts) {
+      account.dispose();
+    }
+    _accounts
+      ..clear()
+      ..addAll(
+        accounts.map((account) {
+          final draft = _AccountDraftController(
+            existingId: account.id,
+            currency: account.currency,
+          );
+          draft.nameController.text = account.name;
+          draft.institutionController.text = account.institution;
+          draft.accountType = account.accountType;
+          draft.balanceController.text = account.openingBalance.toStringAsFixed(
+            2,
+          );
+          return draft;
+        }),
+      );
+    if (_accounts.isNotEmpty) {
+      _currency = _accounts.first.currency;
+      if (!_savingsTargetCurrencyTouched) {
+        _savingsTargetCurrency = _currency;
+      }
+    }
+    _syncSavingsAccountSelection();
+  }
+
+  Future<void> _loadLocalAccountDraft() async {
+    final box = await _openDraftBox();
+    if (box == null || _accountsTouched) return;
+    final raw = box.get(_accountDraftsKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List || decoded.isEmpty || !mounted) return;
+      setState(() => _applyAccountDraftPayload(decoded));
+    } catch (_) {}
+  }
+
+  void _applyAccountDraftPayload(List<dynamic> items) {
+    final drafts = <_AccountDraftController>[];
+    for (final item in items) {
+      if (item is! Map) continue;
+      final currency = _normalizedCurrency(_stringValue(item['currency']));
+      final draft = _AccountDraftController(
+        existingId: _nullableStringValue(item['existingId']),
+        currency: currency,
+      );
+      draft.nameController.text = _stringValue(item['name']);
+      draft.institutionController.text = _stringValue(item['institution']);
+      final accountType = _stringValue(item['accountType']);
+      draft.accountType = _accountTypeOptions.contains(accountType)
+          ? accountType
+          : 'savings';
+      draft.balanceController.text = _stringValue(item['balance']);
+      if (_accountDraftHasContent(draft)) {
+        drafts.add(draft);
+      } else {
+        draft.dispose();
+      }
+    }
+    if (drafts.isEmpty) return;
+    for (final account in _accounts) {
+      account.dispose();
+    }
+    _accounts
+      ..clear()
+      ..addAll(drafts);
+    _currency = _accounts.first.currency;
+    if (!_savingsTargetCurrencyTouched) {
+      _savingsTargetCurrency = _currency;
+    }
+    _syncSavingsAccountSelection();
+  }
+
+  void _markAccountsChanged() {
+    _accountsTouched = true;
+    _syncSavingsAccountSelection();
+    unawaited(_saveLocalAccountDraft());
+  }
+
+  Future<void> _saveLocalAccountDraft() async {
+    final box = await _openDraftBox();
+    if (box == null) return;
+    final payload = _accounts
+        .where(_accountDraftHasContent)
+        .map(
+          (account) => <String, String?>{
+            'existingId': account.existingId,
+            'name': account.nameController.text,
+            'institution': account.institutionController.text,
+            'accountType': account.accountType,
+            'currency': account.currency,
+            'balance': account.balanceController.text,
+          },
+        )
+        .toList(growable: false);
+    if (payload.isEmpty) {
+      await box.delete(_accountDraftsKey);
+      return;
+    }
+    await box.put(_accountDraftsKey, jsonEncode(payload));
+  }
+
+  Future<void> _clearLocalAccountDraft() async {
+    final box = await _openDraftBox();
+    await box?.delete(_accountDraftsKey);
+  }
+
+  Future<Box<String>?> _openDraftBox() async {
+    try {
+      if (!Hive.isBoxOpen(_setupDraftBoxName)) {
+        if (!kIsWeb) return null;
+        await Hive.openBox<String>(_setupDraftBoxName);
+      }
+      return Hive.box<String>(_setupDraftBoxName);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _accountDraftHasContent(_AccountDraftController account) {
+    return account.existingId?.trim().isNotEmpty == true ||
+        account.nameController.text.trim().isNotEmpty ||
+        account.institutionController.text.trim().isNotEmpty ||
+        account.balanceController.text.trim().isNotEmpty;
+  }
+
+  String _normalizedCurrency(String value) {
+    final normalized = value.trim().toUpperCase();
+    return _currencyOptions.contains(normalized) ? normalized : _currency;
+  }
+
+  String _stringValue(Object? value) {
+    return value?.toString() ?? '';
+  }
+
+  String? _nullableStringValue(Object? value) {
+    final text = _stringValue(value).trim();
+    return text.isEmpty ? null : text;
+  }
+
+  void _applyExistingPlan(MonthlyPlan plan) {
+    final currency = plan.currency.trim().toUpperCase();
+    if (_currencyOptions.contains(currency)) {
+      _currency = currency;
+      if (!_savingsTargetCurrencyTouched) {
+        _savingsTargetCurrency = currency;
+      }
+    }
+    final budgets = plan.budgetsByCategory;
+    _setAmountText(_rentAmountController, budgets['Rent and housing']);
+    _setAmountText(_groceriesController, budgets['Groceries']);
+    _setAmountText(_transportController, budgets['Transport']);
+    _setAmountText(_savingsMonthlyController, budgets['Savings']);
+  }
+
+  void _setAmountText(TextEditingController controller, double? value) {
+    if (value == null || value <= 0 || controller.text.trim().isNotEmpty) {
+      return;
+    }
+    final decimals = value.truncateToDouble() == value ? 0 : 2;
+    controller.text = value.toStringAsFixed(decimals);
+  }
+
   void _nextStep() {
     if (_stepIndex >= _setupSteps.length - 1) {
       _finish();
@@ -384,6 +606,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           ..clear()
           ..add(_AccountDraftController(currency: _currency));
         _savingsAccountName = '';
+        _accountsTouched = true;
+        unawaited(_clearLocalAccountDraft());
         break;
       case _SetupStep.salary:
         _salaryAmountController.clear();
@@ -757,13 +981,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           _AccountEditor(
             controller: _accounts[index],
             enabled: !_saving,
-            onChanged: () => setState(_syncSavingsAccountSelection),
+            onChanged: () => setState(_markAccountsChanged),
             onRemove: _accounts.length == 1
                 ? null
                 : () {
                     setState(() {
                       _accounts.removeAt(index).dispose();
-                      _syncSavingsAccountSelection();
+                      _markAccountsChanged();
                     });
                   },
           ),
@@ -779,6 +1003,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
                       _accounts.add(
                         _AccountDraftController(currency: _currency),
                       );
+                      _markAccountsChanged();
                     });
                   },
             icon: const Icon(Icons.add),
@@ -1216,8 +1441,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 }
 
 class _AccountDraftController {
-  _AccountDraftController({required this.currency});
+  _AccountDraftController({this.existingId, required this.currency});
 
+  final String? existingId;
   final nameController = TextEditingController();
   final institutionController = TextEditingController();
   final balanceController = TextEditingController();
@@ -1273,6 +1499,7 @@ class _AccountEditor extends StatelessWidget {
         TextField(
           controller: controller.institutionController,
           enabled: enabled,
+          onChanged: (_) => onChanged(),
           decoration: const InputDecoration(
             labelText: 'Bank or provider',
             border: OutlineInputBorder(),
@@ -1334,6 +1561,7 @@ class _AccountEditor extends StatelessWidget {
         TextField(
           controller: controller.balanceController,
           enabled: enabled,
+          onChanged: (_) => onChanged(),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: InputDecoration(
             labelText: 'Balance now',

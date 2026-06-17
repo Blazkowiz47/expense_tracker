@@ -1,8 +1,10 @@
+import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/auth/models/auth_user.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/onboarding/repositories/onboarding_setup_writer.dart';
 import 'package:expense_tracker/features/onboarding/view/monthly_plan_onboarding_page.dart';
+import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -47,12 +49,38 @@ class _FakeProfileRepository extends UserProfileRepository {
 }
 
 class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
+  _FakeOnboardingSetupWriter({
+    this.existingAccounts = const [],
+    this.existingMonthlyPlan,
+  });
+
+  final List<FinancialAccount> existingAccounts;
+  final MonthlyPlan? existingMonthlyPlan;
   final monthlyPlans = <_SavedMonthlyPlan>[];
   final recurringTemplates = <_SavedRecurring>[];
   final loans = <_SavedLoan>[];
   final savingsGoals = <_SavedSavingsGoal>[];
   final accounts = <_SavedAccount>[];
+  final updatedAccounts = <_SavedAccount>[];
   var disposed = false;
+
+  @override
+  Future<List<FinancialAccount>> fetchFinancialAccounts() async {
+    return existingAccounts;
+  }
+
+  @override
+  Future<MonthlyPlan> fetchMonthlyPlan({required String month}) async {
+    return existingMonthlyPlan ??
+        MonthlyPlan(
+          month: month,
+          currency: 'NOK',
+          totalBudget: 0,
+          totalActual: 0,
+          totalRemaining: 0,
+          categories: const [],
+        );
+  }
 
   @override
   Future<void> saveMonthlyPlan({
@@ -150,6 +178,27 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
   }) async {
     accounts.add(
       _SavedAccount(
+        name: name,
+        institution: institution,
+        accountType: accountType,
+        currency: currency,
+        openingBalance: openingBalance,
+      ),
+    );
+  }
+
+  @override
+  Future<void> updateFinancialAccount({
+    required String id,
+    required String name,
+    required String institution,
+    required String accountType,
+    required String currency,
+    required double openingBalance,
+  }) async {
+    updatedAccounts.add(
+      _SavedAccount(
+        id: id,
         name: name,
         institution: institution,
         accountType: accountType,
@@ -423,6 +472,78 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Salary'), findsOneWidget);
   });
+
+  testWidgets('reopened setup preloads existing bank accounts', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(700, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final setupWriter = _FakeOnboardingSetupWriter(
+      existingAccounts: [
+        FinancialAccount(
+          id: 'account-1',
+          name: 'DNB current',
+          institution: 'DNB',
+          accountType: 'checking',
+          currency: 'NOK',
+          openingBalance: 12345.67,
+          balanceAsOf: DateTime(2026, 6, 16),
+          familyVisibility: 'private',
+          notes: '',
+          archived: false,
+          archivedAt: null,
+          createdAt: DateTime(2026, 6, 16),
+          updatedAt: DateTime(2026, 6, 16),
+        ),
+      ],
+      existingMonthlyPlan: const MonthlyPlan(
+        month: '2026-06',
+        currency: 'NOK',
+        totalBudget: 8000,
+        totalActual: 0,
+        totalRemaining: 8000,
+        categories: [
+          MonthlyPlanCategory(
+            category: 'Rent and housing',
+            budget: 8000,
+            actual: 0,
+            remaining: 8000,
+            progress: 0,
+            overBudget: false,
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BlocProvider.value(
+          value: _authCubit(),
+          child: MonthlyPlanOnboardingPage(
+            setupWriter: setupWriter,
+            completeOnFinish: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _advance(tester);
+
+    expect(find.text('DNB current'), findsOneWidget);
+    expect(find.text('DNB'), findsOneWidget);
+    expect(find.text('Current'), findsOneWidget);
+
+    await _advance(tester);
+    await _advance(tester);
+    expect(find.text('8000'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('onboarding-complete-setup')));
+    await tester.pumpAndSettle();
+
+    expect(setupWriter.accounts, isEmpty);
+    expect(setupWriter.updatedAccounts.single.id, 'account-1');
+    expect(setupWriter.updatedAccounts.single.name, 'DNB current');
+  });
 }
 
 AuthCubit _authCubit() {
@@ -528,6 +649,7 @@ class _SavedSavingsGoal {
 
 class _SavedAccount {
   const _SavedAccount({
+    this.id,
     required this.name,
     required this.institution,
     required this.accountType,
@@ -535,6 +657,7 @@ class _SavedAccount {
     required this.openingBalance,
   });
 
+  final String? id;
   final String name;
   final String institution;
   final String accountType;

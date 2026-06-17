@@ -7,6 +7,13 @@ import 'package:flutter/material.dart';
 
 const _planCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
 
+typedef RecordPlannedPayment =
+    Future<bool> Function(
+      String category, {
+      required double amount,
+      required String currency,
+    });
+
 class MonthlyPlanningCard extends StatefulWidget {
   const MonthlyPlanningCard({
     this.repository,
@@ -14,6 +21,7 @@ class MonthlyPlanningCard extends StatefulWidget {
     this.groupId,
     this.title = 'Monthly plan',
     this.onAddExpenseForCategory,
+    this.onRecordPlannedPayment,
     this.onReviewCategory,
     this.onPlanLoaded,
     super.key,
@@ -24,6 +32,7 @@ class MonthlyPlanningCard extends StatefulWidget {
   final String? groupId;
   final String title;
   final ValueChanged<String>? onAddExpenseForCategory;
+  final RecordPlannedPayment? onRecordPlannedPayment;
   final ValueChanged<String>? onReviewCategory;
   final ValueChanged<MonthlyPlan>? onPlanLoaded;
 
@@ -294,6 +303,9 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
                       ? null
                       : () =>
                             widget.onAddExpenseForCategory!(category.category),
+                  onRecordPayment: widget.onRecordPlannedPayment == null
+                      ? null
+                      : () => _recordPlannedPayment(category),
                   onReview: widget.onReviewCategory == null
                       ? null
                       : () => widget.onReviewCategory!(category.category),
@@ -302,6 +314,23 @@ class _MonthlyPlanningCardState extends State<MonthlyPlanningCard> {
         ],
       ),
     );
+  }
+
+  Future<void> _recordPlannedPayment(MonthlyPlanCategory category) async {
+    final callback = widget.onRecordPlannedPayment;
+    if (callback == null) return;
+    final remaining = (category.budget - category.actual).clamp(
+      0.0,
+      double.infinity,
+    );
+    final saved = await callback(
+      category.category,
+      amount: remaining > 0.005 ? remaining : category.budget,
+      currency: _plan?.currency ?? 'INR',
+    );
+    if (saved && mounted) {
+      await _load(showLoading: false);
+    }
   }
 }
 
@@ -370,12 +399,14 @@ class _BudgetRow extends StatelessWidget {
     required this.category,
     required this.currency,
     this.onAddExpense,
+    this.onRecordPayment,
     this.onReview,
   });
 
   final MonthlyPlanCategory category;
   final String currency;
   final VoidCallback? onAddExpense;
+  final VoidCallback? onRecordPayment;
   final VoidCallback? onReview;
 
   @override
@@ -386,6 +417,15 @@ class _BudgetRow extends StatelessWidget {
     final outstandingAmount = obligation
         ? (category.budget - category.actual).clamp(0.0, double.infinity)
         : 0.0;
+    final remainingCost = (category.budget - category.actual).clamp(
+      0.0,
+      double.infinity,
+    );
+    final canRecordPayment =
+        onRecordPayment != null &&
+        !positivePlanCategory &&
+        remainingCost > 0.005 &&
+        category.budget > 0;
     final color = category.budget <= 0
         ? colors.outline
         : positivePlanCategory
@@ -426,6 +466,20 @@ class _BudgetRow extends StatelessWidget {
                     iconSize: 18,
                     onPressed: onAddExpense,
                     icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ),
+              ],
+              if (canRecordPayment) ...[
+                const SizedBox(width: 4),
+                SizedBox(
+                  height: 32,
+                  width: 32,
+                  child: IconButton(
+                    tooltip: 'Record ${category.category} payment',
+                    padding: EdgeInsets.zero,
+                    iconSize: 18,
+                    onPressed: onRecordPayment,
+                    icon: const Icon(Icons.check_circle_outline),
                   ),
                 ),
               ],

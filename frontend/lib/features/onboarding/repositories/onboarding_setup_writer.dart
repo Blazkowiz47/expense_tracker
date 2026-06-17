@@ -1,11 +1,17 @@
+import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/accounts/repositories/api_accounts_repository.dart';
 import 'package:expense_tracker/features/loans/repositories/api_loans_repository.dart';
+import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:expense_tracker/features/recurring/repositories/api_recurring_repository.dart';
 import 'package:expense_tracker/features/savings/repositories/api_savings_repository.dart';
 import 'package:http/http.dart' as http;
 
 abstract class OnboardingSetupWriter {
+  Future<List<FinancialAccount>> fetchFinancialAccounts();
+
+  Future<MonthlyPlan> fetchMonthlyPlan({required String month});
+
   Future<void> saveMonthlyPlan({
     required String month,
     required String currency,
@@ -46,6 +52,15 @@ abstract class OnboardingSetupWriter {
   });
 
   Future<void> createFinancialAccount({
+    required String name,
+    required String institution,
+    required String accountType,
+    required String currency,
+    required double openingBalance,
+  });
+
+  Future<void> updateFinancialAccount({
+    required String id,
     required String name,
     required String institution,
     required String accountType,
@@ -105,6 +120,16 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
   final ApiLoansRepository _loansRepository;
   final ApiSavingsRepository _savingsRepository;
   final ApiAccountsRepository _accountsRepository;
+
+  @override
+  Future<List<FinancialAccount>> fetchFinancialAccounts() {
+    return _accountsRepository.fetchAccounts();
+  }
+
+  @override
+  Future<MonthlyPlan> fetchMonthlyPlan({required String month}) {
+    return _monthlyPlanRepository.fetchPlan(month: month);
+  }
 
   @override
   Future<void> saveMonthlyPlan({
@@ -209,6 +234,26 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
       currency: currency,
       openingBalance: openingBalance,
       notes: 'Added during onboarding.',
+    );
+  }
+
+  @override
+  Future<void> updateFinancialAccount({
+    required String id,
+    required String name,
+    required String institution,
+    required String accountType,
+    required String currency,
+    required double openingBalance,
+  }) async {
+    await _accountsRepository.updateAccount(
+      id: id,
+      name: name,
+      institution: institution,
+      accountType: accountType,
+      currency: currency,
+      openingBalance: openingBalance,
+      notes: 'Updated during setup.',
     );
   }
 

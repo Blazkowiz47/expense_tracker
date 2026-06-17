@@ -10,11 +10,14 @@ import 'package:path_provider/path_provider.dart';
 
 import 'firebase_options.dart';
 
+const _setupDraftBoxName = 'monthly_setup_draft_v1';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await Hive.initFlutter();
   await Hive.openBox<String>(ApiGroupsRepository.cacheBoxName);
+  await Hive.openBox<String>(_setupDraftBoxName);
   await AuthSessionStore.ensureOpen();
   HydratedBloc.storage = await HydratedStorage.build(
     storageDirectory: kIsWeb

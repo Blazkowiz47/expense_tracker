@@ -15,7 +15,17 @@ class _FakeExpenseRepository extends ExpenseRepository {
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   Expense expense;
+  Expense? createdExpense;
   Expense? updatedExpense;
+
+  @override
+  Future<void> createExpense(
+    Expense expense, {
+    List<Map<String, dynamic>> receiptItems = const [],
+  }) async {
+    createdExpense = expense;
+    this.expense = expense;
+  }
 
   @override
   Future<void> updateExpense(
@@ -31,6 +41,53 @@ class _FakeExpenseRepository extends ExpenseRepository {
 }
 
 void main() {
+  testWidgets('planned expense opens with amount currency and category', (
+    tester,
+  ) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: const AddExpensePage(
+            initialCategory: 'Rent and housing',
+            initialDescription: 'Rent and housing',
+            initialAmount: 8000,
+            initialCurrency: 'NOK',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.widgetWithText(TextField, 'Rent and housing'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '8000.00'), findsOneWidget);
+    expect(find.text('Rent and housing'), findsWidgets);
+    expect(find.text('NOK'), findsWidgets);
+
+    await tester.tap(find.text('Save expense'));
+    await tester.pumpAndSettle();
+
+    expect(repository.createdExpense, isNotNull);
+    expect(repository.createdExpense!.category, 'Rent and housing');
+    expect(repository.createdExpense!.amount, 8000);
+    expect(repository.createdExpense!.currency, 'NOK');
+  });
+
   testWidgets('edit mode updates an existing expense with details', (
     tester,
   ) async {
@@ -158,10 +215,14 @@ void main() {
 
       await tester.tap(find.widgetWithText(CupertinoButton, 'Food').first);
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Travel'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Travel'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.widgetWithText(CupertinoButton, 'Card').first);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Bank transfer'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Bank transfer'));
       await tester.pumpAndSettle();

@@ -150,11 +150,13 @@ class _HomeShellPageState extends State<HomeShellPage>
     action();
   }
 
-  void _openAddExpense({
+  Future<bool> _openAddExpense({
     bool initialBillUpload = false,
     bool forcePersonal = false,
     String? initialCategory,
     String? initialDescription,
+    double? initialAmount,
+    String? initialCurrency,
   }) {
     if (!forcePersonal && _destinations[_selectedIndex].label == 'Family') {
       final category = (initialCategory?.trim().isNotEmpty == true)
@@ -176,21 +178,25 @@ class _HomeShellPageState extends State<HomeShellPage>
           ),
         ),
       );
-      return;
+      return Future.value(false);
     }
     final expensesBloc = context.read<ExpensesBloc>();
-    Navigator.of(context).push<void>(
-      platformPageRoute(
-        builder: (context) => BlocProvider.value(
-          value: expensesBloc,
-          child: AddExpensePage(
-            initialBillUpload: initialBillUpload,
-            initialCategory: initialCategory,
-            initialDescription: initialDescription,
+    return Navigator.of(context)
+        .push<bool>(
+          platformPageRoute(
+            builder: (context) => BlocProvider.value(
+              value: expensesBloc,
+              child: AddExpensePage(
+                initialBillUpload: initialBillUpload,
+                initialCategory: initialCategory,
+                initialDescription: initialDescription,
+                initialAmount: initialAmount,
+                initialCurrency: initialCurrency,
+              ),
+            ),
           ),
-        ),
-      ),
-    );
+        )
+        .then((value) => value == true);
   }
 
   void _openHouseholdGroceries() {
@@ -318,6 +324,21 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
+  Future<bool> _recordPersonalPlannedPayment(
+    String category, {
+    required double amount,
+    required String currency,
+  }) {
+    final label = category.trim().isEmpty ? 'Personal' : category.trim();
+    return _openAddExpense(
+      forcePersonal: true,
+      initialCategory: label,
+      initialDescription: label,
+      initialAmount: amount,
+      initialCurrency: currency,
+    );
+  }
+
   void _openActivityCategory(String category) {
     final label = category.trim();
     Navigator.of(context).push<void>(
@@ -442,6 +463,7 @@ class _HomeShellPageState extends State<HomeShellPage>
         onOpenRecurring: _openRecurringPage,
         onOpenAction: _openDashboardAction,
         onAddExpenseForCategory: _openPersonalPlannedExpense,
+        onRecordPlannedPayment: _recordPersonalPlannedPayment,
         onOpenActivityCategory: _openActivityCategory,
       );
     }
