@@ -32,6 +32,7 @@ void main() {
             body: HomePage(
               onOpenRecurring: () => recurringOpened = true,
               onOpenFamily: () => familyOpened = true,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
             ),
           ),
         ),
@@ -39,7 +40,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Needs attention'), findsWidgets);
+    expect(find.text('2 items'), findsOneWidget);
     expect(find.text('Confirm rent'), findsOneWidget);
     expect(find.text('Groceries is over budget'), findsOneWidget);
 
@@ -67,7 +69,10 @@ void main() {
         value: cubit,
         child: MaterialApp(
           home: Scaffold(
-            body: HomePage(onOpenAction: (item) => openedAction = item),
+            body: HomePage(
+              onOpenAction: (item) => openedAction = item,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+            ),
           ),
         ),
       ),
