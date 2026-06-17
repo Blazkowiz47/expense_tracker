@@ -177,7 +177,7 @@ void main() {
     );
   });
 
-  testWidgets('home page shows continue setup in needs attention', (
+  testWidgets('home page shows complete onboarding in needs attention', (
     tester,
   ) async {
     final cubit = DashboardSnapshotCubit(
@@ -204,14 +204,14 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
-      find.text('Continue setup'),
+      find.text('Complete onboarding'),
       500,
       scrollable: find.byType(Scrollable).first,
     );
 
     expect(find.text('Needs attention'), findsWidgets);
     expect(find.text('1 items'), findsOneWidget);
-    expect(find.text('Continue setup'), findsOneWidget);
+    expect(find.text('Complete onboarding'), findsOneWidget);
     expect(
       find.text(
         'Finish onboarding so budgets, bills, and savings stay aligned.',
@@ -220,10 +220,72 @@ void main() {
     );
     expect(find.text('Continue'), findsOneWidget);
 
-    await tester.tap(find.text('Continue setup'));
+    await tester.tap(find.text('Complete onboarding'));
     await tester.pump();
 
     expect(setupOpened, isTrue);
+  });
+
+  testWidgets('home page infers incomplete setup from partial monthly plan', (
+    tester,
+  ) async {
+    final cubit = DashboardSnapshotCubit(
+      repository: const _EmptySnapshotRepository(),
+    );
+    await cubit.load();
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(
+              inferIncompleteSetup: true,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(
+                plan: const MonthlyPlan(
+                  month: '2026-06',
+                  currency: 'NOK',
+                  totalBudget: 12294,
+                  totalActual: 0,
+                  totalRemaining: 12294,
+                  income: 36000,
+                  surplus: 23706,
+                  categories: [
+                    MonthlyPlanCategory(
+                      category: 'Rent and housing',
+                      budget: 8000,
+                      actual: 0,
+                      remaining: 8000,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Loans / EMI',
+                      budget: 4294,
+                      actual: 0,
+                      remaining: 4294,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Complete onboarding'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Complete onboarding'), findsOneWidget);
+    expect(find.text('1 items'), findsOneWidget);
   });
 
   testWidgets('home auto-refresh skips reload when dashboard is fresh', (

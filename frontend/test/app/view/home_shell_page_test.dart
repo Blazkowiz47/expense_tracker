@@ -69,6 +69,19 @@ void main() {
       expect(find.text('Expense tracker'), findsOneWidget);
       expect(find.text('Overview'), findsOneWidget);
       expect(find.text('Scan bill'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Scan bill')).dy,
+        lessThan(tester.getTopLeft(find.text('Groceries')).dy),
+      );
+      expect(find.byIcon(Icons.grid_view_outlined), findsWidgets);
+      expect(find.byIcon(Icons.trending_up), findsOneWidget);
+      expect(find.byIcon(Icons.shopping_bag_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.sync_alt), findsOneWidget);
+      expect(find.byIcon(Icons.umbrella_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.credit_card_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.attach_money), findsOneWidget);
+      expect(find.byIcon(Icons.group_outlined), findsWidgets);
       expect(find.text('Price book'), findsWidgets);
       expect(find.text('Recurring'), findsWidgets);
       expect(find.text('Add expense'), findsOneWidget);

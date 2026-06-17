@@ -65,26 +65,26 @@ class _HomeShellPageState extends State<HomeShellPage>
   static const _destinations = <_ShellDestination>[
     _ShellDestination(
       label: 'Home',
-      icon: Icons.dashboard_outlined,
-      selectedIcon: Icons.dashboard,
+      icon: Icons.grid_view_outlined,
+      selectedIcon: Icons.grid_view_rounded,
       page: SizedBox.shrink(),
     ),
     _ShellDestination(
       label: 'Family',
-      icon: Icons.home_outlined,
-      selectedIcon: Icons.home,
+      icon: Icons.group_outlined,
+      selectedIcon: Icons.group,
       page: FamilyPage(),
     ),
     _ShellDestination(
       label: 'Activity',
-      icon: Icons.list_alt_outlined,
-      selectedIcon: Icons.list_alt,
+      icon: Icons.show_chart,
+      selectedIcon: Icons.show_chart,
       page: ActivityPage(),
     ),
     _ShellDestination(
       label: 'Account',
-      icon: Icons.account_circle_outlined,
-      selectedIcon: Icons.account_circle,
+      icon: Icons.person_outline,
+      selectedIcon: Icons.person,
       page: AccountPage(),
     ),
   ];
@@ -500,6 +500,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       return HomePage(
         autoRefresh: autoRefresh,
         showContinueSetup: onboardingIncomplete || _hasOnboardingDraft,
+        inferIncompleteSetup: true,
         onOpenFriends: _openFriendsPage,
         onOpenGroups: () => _openSharedSpace(GroupType.split),
         onOpenFamily: () => _onDestinationSelected(1),
@@ -887,7 +888,7 @@ class _HomeShellPageState extends State<HomeShellPage>
                                         children: [
                                           _SideShortcutTile(
                                             label: 'Overview',
-                                            icon: Icons.dashboard_outlined,
+                                            icon: Icons.grid_view_outlined,
                                             selected: _selectedIndex == 0,
                                             onTap: () =>
                                                 _onDestinationSelected(0),
@@ -1109,26 +1110,16 @@ class _HomeShellPageState extends State<HomeShellPage>
         return CupertinoIcons.person;
       case Icons.person:
         return CupertinoIcons.person_fill;
-      case Icons.dashboard_outlined:
-        return CupertinoIcons.chart_bar;
-      case Icons.dashboard:
-        return CupertinoIcons.chart_bar_fill;
-      case Icons.home_outlined:
-        return CupertinoIcons.house;
-      case Icons.home:
-        return CupertinoIcons.house_fill;
+      case Icons.grid_view_outlined:
+        return CupertinoIcons.square_grid_2x2;
+      case Icons.grid_view_rounded:
+        return CupertinoIcons.square_grid_2x2_fill;
       case Icons.group_outlined:
         return CupertinoIcons.group;
       case Icons.group:
         return CupertinoIcons.group_solid;
-      case Icons.list_alt_outlined:
-        return CupertinoIcons.list_bullet;
-      case Icons.list_alt:
-        return CupertinoIcons.list_bullet_below_rectangle;
-      case Icons.account_circle_outlined:
-        return CupertinoIcons.profile_circled;
-      case Icons.account_circle:
-        return CupertinoIcons.profile_circled;
+      case Icons.show_chart:
+        return CupertinoIcons.chart_bar;
       default:
         return CupertinoIcons.circle;
     }
@@ -1187,43 +1178,43 @@ class _HomeShellPageState extends State<HomeShellPage>
   List<_QuickAction> _quickActions() {
     return [
       _QuickAction(
-        label: 'Groceries',
-        icon: Icons.shopping_basket_outlined,
-        onTap: () => _runAction(_openHouseholdGroceries),
-      ),
-      _QuickAction(
         label: 'Scan bill',
-        icon: Icons.document_scanner_outlined,
+        icon: Icons.trending_up,
         onTap: () => _runAction(_openScanBill),
       ),
       _QuickAction(
+        label: 'Groceries',
+        icon: Icons.shopping_bag_outlined,
+        onTap: () => _runAction(_openHouseholdGroceries),
+      ),
+      _QuickAction(
         label: 'Price book',
-        icon: Icons.price_check_outlined,
+        icon: Icons.menu_book_outlined,
         onTap: () => _runAction(_openPriceBookPage),
       ),
       _QuickAction(
         label: 'Recurring',
-        icon: Icons.event_repeat,
+        icon: Icons.sync_alt,
         onTap: () => _runAction(_openRecurringPage),
       ),
       _QuickAction(
         label: 'Loans',
-        icon: Icons.account_balance_outlined,
+        icon: Icons.umbrella_outlined,
         onTap: () => _runAction(_openLoansPage),
       ),
       _QuickAction(
         label: 'Credit cards',
-        icon: Icons.credit_card,
+        icon: Icons.credit_card_outlined,
         onTap: () => _runAction(_openCreditCardsPage),
       ),
       _QuickAction(
         label: 'Savings',
-        icon: Icons.savings_outlined,
+        icon: Icons.attach_money,
         onTap: () => _runAction(_openSavingsPage),
       ),
       _QuickAction(
         label: 'Friend balances',
-        icon: Icons.payments_outlined,
+        icon: Icons.group_outlined,
         onTap: () => _runAction(_openFriendsPage),
       ),
     ];

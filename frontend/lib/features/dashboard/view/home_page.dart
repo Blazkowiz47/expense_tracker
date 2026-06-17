@@ -38,6 +38,7 @@ class HomePage extends StatefulWidget {
     this.monthlyPlanRepository,
     this.autoRefresh = false,
     this.showContinueSetup = false,
+    this.inferIncompleteSetup = false,
     super.key,
   });
 
@@ -59,6 +60,7 @@ class HomePage extends StatefulWidget {
   final MonthlyPlanRepository? monthlyPlanRepository;
   final bool autoRefresh;
   final bool showContinueSetup;
+  final bool inferIncompleteSetup;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -71,6 +73,7 @@ class _HomePageState extends State<HomePage> {
   late final bool _ownsMonthlyPlanRepository;
   DateTime? _dashboardFreshnessCursor;
   MonthlyPlan? _monthlyPlan;
+  bool _monthlyPlanLoaded = false;
 
   @override
   void initState() {
@@ -134,7 +137,10 @@ class _HomePageState extends State<HomePage> {
       final plan = await _monthlyPlanRepository.fetchPlan(month: _currentMonth);
       if (!mounted) return;
       _handlePlanLoaded(plan);
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _monthlyPlanLoaded = true);
+    }
   }
 
   String get _currentMonth {
@@ -176,6 +182,11 @@ class _HomePageState extends State<HomePage> {
 
     final snapshot = state.snapshot;
     final compact = MediaQuery.sizeOf(context).width < 700;
+    final showContinueSetup =
+        widget.showContinueSetup ||
+        (widget.inferIncompleteSetup &&
+            _monthlyPlanLoaded &&
+            _setupLooksIncomplete(_monthlyPlan));
     final children = compact
         ? <Widget>[
             _InsightStrip(snapshot: snapshot),
@@ -190,7 +201,7 @@ class _HomePageState extends State<HomePage> {
               onOpenRecurring: widget.onOpenRecurring,
               onOpenAction: widget.onOpenAction,
               onContinueSetup: widget.onContinueSetup,
-              showContinueSetup: widget.showContinueSetup,
+              showContinueSetup: showContinueSetup,
             ),
             const SizedBox(height: 10),
             const _PlanningAssistantCard(),
@@ -223,7 +234,7 @@ class _HomePageState extends State<HomePage> {
               onOpenRecurring: widget.onOpenRecurring,
               onOpenAction: widget.onOpenAction,
               onContinueSetup: widget.onContinueSetup,
-              showContinueSetup: widget.showContinueSetup,
+              showContinueSetup: showContinueSetup,
             ),
             const SizedBox(height: 16),
             _AdaptiveColumns(
@@ -278,8 +289,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handlePlanLoaded(MonthlyPlan plan) {
-    if (!mounted || identical(plan, _monthlyPlan)) return;
-    setState(() => _monthlyPlan = plan);
+    if (!mounted) return;
+    if (identical(plan, _monthlyPlan) && _monthlyPlanLoaded) return;
+    setState(() {
+      _monthlyPlan = plan;
+      _monthlyPlanLoaded = true;
+    });
   }
 }
 
@@ -695,7 +710,7 @@ class _NeedsAttentionSection extends StatelessWidget {
 }
 
 const _continueSetupAttentionItem = DailyActionItem(
-  title: 'Continue setup',
+  title: 'Complete onboarding',
   subtitle: 'Finish onboarding so budgets, bills, and savings stay aligned.',
   severity: 'info',
   destination: 'onboarding',
@@ -2723,4 +2738,18 @@ String _primaryActionLabel(DailyActionItem item) {
   if (action.contains('review')) return 'Review';
   if (action.contains('settle')) return 'Settle';
   return 'Open';
+}
+
+bool _setupLooksIncomplete(MonthlyPlan? plan) {
+  if (plan == null) {
+    return true;
+  }
+  if ((plan.income ?? 0) <= 0) {
+    return true;
+  }
+  final plannedCategories = plan.categories.where((category) {
+    final label = category.category.trim();
+    return label.isNotEmpty && category.budget.abs() > 0.005;
+  }).length;
+  return plannedCategories < 3;
 }
