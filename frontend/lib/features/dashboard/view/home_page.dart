@@ -1637,7 +1637,6 @@ class _CashflowBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final barTextColor = row.amountColor ?? Colors.white;
     return Row(
       children: [
         SizedBox(
@@ -1651,20 +1650,36 @@ class _CashflowBar extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              height: 22,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  const ColoredBox(color: _hybridTrack),
-                  FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: row.fraction,
-                    child: ColoredBox(
-                      color: row.color,
-                      child: Align(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final textStyle = Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w800);
+              final painter = TextPainter(
+                maxLines: 1,
+                text: TextSpan(text: row.amountText, style: textStyle),
+                textDirection: Directionality.of(context),
+              )..layout(maxWidth: constraints.maxWidth);
+              final filledWidth = constraints.maxWidth * row.fraction;
+              final labelFitsInFill = filledWidth >= painter.width + 16;
+              final amountColor = row.amountColor == null && labelFitsInFill
+                  ? Colors.white
+                  : row.amountColor ?? colors.onSurface;
+
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: SizedBox(
+                  height: 22,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      const ColoredBox(color: _hybridTrack),
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: row.fraction,
+                        child: ColoredBox(color: row.color),
+                      ),
+                      Align(
                         alignment: Alignment.centerLeft,
                         child: Padding(
                           padding: const EdgeInsets.only(left: 8),
@@ -1673,19 +1688,15 @@ class _CashflowBar extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.clip,
                             softWrap: false,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  color: barTextColor,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                            style: textStyle?.copyWith(color: amountColor),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         ),
       ],

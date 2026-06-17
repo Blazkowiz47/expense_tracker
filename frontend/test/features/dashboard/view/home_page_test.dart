@@ -165,6 +165,16 @@ void main() {
     expect(find.text('Net surplus after all planned costs'), findsOneWidget);
     expect(find.text('NOK 36,000'), findsOneWidget);
     expect(find.text('NOK 23,706'), findsNWidgets(2));
+    expect(
+      tester
+          .widgetList<Text>(find.text('NOK 4,294'))
+          .map((widget) => widget.style?.color),
+      contains(
+        Theme.of(
+          tester.element(find.text('Cashflow — June')),
+        ).colorScheme.onSurface,
+      ),
+    );
   });
 
   testWidgets('home auto-refresh skips reload when dashboard is fresh', (
