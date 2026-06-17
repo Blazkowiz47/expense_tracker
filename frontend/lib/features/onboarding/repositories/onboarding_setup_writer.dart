@@ -1,9 +1,12 @@
 import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/accounts/repositories/api_accounts_repository.dart';
+import 'package:expense_tracker/features/loans/models/loan.dart';
 import 'package:expense_tracker/features/loans/repositories/api_loans_repository.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
+import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
 import 'package:expense_tracker/features/recurring/repositories/api_recurring_repository.dart';
+import 'package:expense_tracker/features/savings/models/savings_goal.dart';
 import 'package:expense_tracker/features/savings/repositories/api_savings_repository.dart';
 import 'package:http/http.dart' as http;
 
@@ -12,6 +15,12 @@ abstract class OnboardingSetupWriter {
 
   Future<MonthlyPlan> fetchMonthlyPlan({required String month});
 
+  Future<List<RecurringTemplate>> fetchRecurringTemplates();
+
+  Future<List<Loan>> fetchLoans();
+
+  Future<List<SavingsGoal>> fetchSavingsGoals();
+
   Future<void> saveMonthlyPlan({
     required String month,
     required String currency,
@@ -19,6 +28,16 @@ abstract class OnboardingSetupWriter {
   });
 
   Future<void> createRecurringTemplate({
+    required String title,
+    required String kind,
+    required double amount,
+    required String category,
+    required String currency,
+    required int dayOfMonth,
+  });
+
+  Future<void> updateRecurringTemplate({
+    required String id,
     required String title,
     required String kind,
     required double amount,
@@ -40,7 +59,33 @@ abstract class OnboardingSetupWriter {
     required int dueDay,
   });
 
+  Future<void> updateLoan({
+    required String id,
+    required String name,
+    required String lender,
+    required String loanType,
+    required double principalAmount,
+    required double emiAmount,
+    required String currency,
+    required double interestRate,
+    required String rateType,
+    required int remainingEmis,
+    required int dueDay,
+  });
+
   Future<void> createSavingsGoal({
+    required String name,
+    required double targetAmount,
+    required String targetCurrency,
+    required String sourceCurrency,
+    required double monthlyTargetAmount,
+    required String startMonth,
+    required String accountName,
+    required String familyVisibility,
+  });
+
+  Future<void> updateSavingsGoal({
+    required String id,
     required String name,
     required double targetAmount,
     required String targetCurrency,
@@ -132,6 +177,21 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
   }
 
   @override
+  Future<List<RecurringTemplate>> fetchRecurringTemplates() {
+    return _recurringRepository.fetchTemplates();
+  }
+
+  @override
+  Future<List<Loan>> fetchLoans() {
+    return _loansRepository.fetchLoans();
+  }
+
+  @override
+  Future<List<SavingsGoal>> fetchSavingsGoals() {
+    return _savingsRepository.fetchGoals();
+  }
+
+  @override
   Future<void> saveMonthlyPlan({
     required String month,
     required String currency,
@@ -154,6 +214,29 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     required int dayOfMonth,
   }) async {
     await _recurringRepository.createTemplate(
+      title: title,
+      kind: kind,
+      amount: amount,
+      category: category,
+      currency: currency,
+      frequency: 'monthly',
+      dayOfMonth: dayOfMonth,
+      startDate: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> updateRecurringTemplate({
+    required String id,
+    required String title,
+    required String kind,
+    required double amount,
+    required String category,
+    required String currency,
+    required int dayOfMonth,
+  }) async {
+    await _recurringRepository.updateTemplate(
+      id: id,
       title: title,
       kind: kind,
       amount: amount,
@@ -196,6 +279,38 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
   }
 
   @override
+  Future<void> updateLoan({
+    required String id,
+    required String name,
+    required String lender,
+    required String loanType,
+    required double principalAmount,
+    required double emiAmount,
+    required String currency,
+    required double interestRate,
+    required String rateType,
+    required int remainingEmis,
+    required int dueDay,
+  }) async {
+    await _loansRepository.updateLoan(
+      id: id,
+      name: name,
+      lender: lender,
+      loanType: loanType,
+      principalAmount: principalAmount,
+      emiAmount: emiAmount,
+      currency: currency,
+      interestRate: interestRate,
+      rateType: rateType,
+      totalEmis: remainingEmis,
+      dueDay: dueDay,
+      startDate: DateTime.now(),
+      category: 'Loans / EMI',
+      notes: 'Updated during setup.',
+    );
+  }
+
+  @override
   Future<void> createSavingsGoal({
     required String name,
     required double targetAmount,
@@ -216,6 +331,32 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
       accountName: accountName,
       familyVisibility: familyVisibility,
       notes: 'Added during onboarding.',
+    );
+  }
+
+  @override
+  Future<void> updateSavingsGoal({
+    required String id,
+    required String name,
+    required double targetAmount,
+    required String targetCurrency,
+    required String sourceCurrency,
+    required double monthlyTargetAmount,
+    required String startMonth,
+    required String accountName,
+    required String familyVisibility,
+  }) async {
+    await _savingsRepository.updateGoal(
+      id: id,
+      name: name,
+      targetAmount: targetAmount,
+      targetCurrency: targetCurrency,
+      sourceCurrency: sourceCurrency,
+      monthlyTargetAmount: monthlyTargetAmount,
+      startMonth: startMonth,
+      accountName: accountName,
+      familyVisibility: familyVisibility,
+      notes: 'Updated during setup.',
     );
   }
 

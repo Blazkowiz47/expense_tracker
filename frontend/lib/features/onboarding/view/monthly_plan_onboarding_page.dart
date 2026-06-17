@@ -4,8 +4,11 @@ import 'dart:convert';
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
+import 'package:expense_tracker/features/loans/models/loan.dart';
 import 'package:expense_tracker/features/onboarding/repositories/onboarding_setup_writer.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
+import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
+import 'package:expense_tracker/features/savings/models/savings_goal.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -101,6 +104,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   var _loanType = 'Car';
   var _savingsTargetCurrency = 'NOK';
   var _savingsAccountName = '';
+  String? _salaryTemplateId;
+  String? _housingTemplateId;
+  String? _loanExistingId;
+  String? _savingsExistingId;
   var _showSavingsInFamily = false;
   var _savingsTargetCurrencyTouched = false;
   var _accountsTouched = false;
@@ -192,7 +199,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
       final salaryAmount = _amountValue(_salaryAmountController);
       if (salaryAmount > 0) {
-        await _setupWriter.createRecurringTemplate(
+        await _saveRecurringTemplate(
+          id: _salaryTemplateId,
           title: 'Salary',
           kind: 'income',
           amount: salaryAmount,
@@ -205,7 +213,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       final rentAmount = _amountValue(_rentAmountController);
       if (rentAmount > 0) {
         budgets['Rent and housing'] = rentAmount;
-        await _setupWriter.createRecurringTemplate(
+        await _saveRecurringTemplate(
+          id: _housingTemplateId,
           title: 'Rent and housing',
           kind: 'expense',
           amount: rentAmount,
@@ -224,20 +233,42 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           );
         }
         budgets['Loans / EMI'] = loanEmi;
-        await _setupWriter.createLoan(
-          name: _loanNameController.text.trim().isEmpty
-              ? 'Loan'
-              : _loanNameController.text.trim(),
-          lender: _loanLenderController.text.trim(),
-          loanType: _loanType,
-          principalAmount: loanPrincipal,
-          emiAmount: loanEmi,
-          currency: _currency,
-          interestRate: _amountValue(_loanInterestController),
-          rateType: _loanRateType,
-          remainingEmis: _intValue(_loanMonthsController),
-          dueDay: _dayValue(_loanDueDayController, 'Loan due day'),
-        );
+        final name = _loanNameController.text.trim().isEmpty
+            ? 'Loan'
+            : _loanNameController.text.trim();
+        final lender = _loanLenderController.text.trim();
+        final principal = loanPrincipal;
+        final interestRate = _amountValue(_loanInterestController);
+        final remainingEmis = _intValue(_loanMonthsController);
+        final dueDay = _dayValue(_loanDueDayController, 'Loan due day');
+        if (_loanExistingId == null) {
+          await _setupWriter.createLoan(
+            name: name,
+            lender: lender,
+            loanType: _loanType,
+            principalAmount: principal,
+            emiAmount: loanEmi,
+            currency: _currency,
+            interestRate: interestRate,
+            rateType: _loanRateType,
+            remainingEmis: remainingEmis,
+            dueDay: dueDay,
+          );
+        } else {
+          await _setupWriter.updateLoan(
+            id: _loanExistingId!,
+            name: name,
+            lender: lender,
+            loanType: _loanType,
+            principalAmount: principal,
+            emiAmount: loanEmi,
+            currency: _currency,
+            interestRate: interestRate,
+            rateType: _loanRateType,
+            remainingEmis: remainingEmis,
+            dueDay: dueDay,
+          );
+        }
       }
 
       _addBudget(budgets, 'Groceries', _groceriesController);
@@ -265,20 +296,37 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       if (savingsMonthly > 0) {
         budgets['Savings'] = savingsMonthly;
         final explicitTarget = _amountValue(_savingsTargetController);
-        await _setupWriter.createSavingsGoal(
-          name: _savingsNameController.text.trim().isEmpty
-              ? 'Savings'
-              : _savingsNameController.text.trim(),
-          targetAmount: explicitTarget > 0
-              ? explicitTarget
-              : savingsMonthly * 12,
-          targetCurrency: _savingsTargetCurrency,
-          sourceCurrency: _currency,
-          monthlyTargetAmount: savingsMonthly,
-          startMonth: month,
-          accountName: _savingsAccountName,
-          familyVisibility: _showSavingsInFamily ? 'family' : 'private',
-        );
+        final name = _savingsNameController.text.trim().isEmpty
+            ? 'Savings'
+            : _savingsNameController.text.trim();
+        final targetAmount = explicitTarget > 0
+            ? explicitTarget
+            : savingsMonthly * 12;
+        final familyVisibility = _showSavingsInFamily ? 'family' : 'private';
+        if (_savingsExistingId == null) {
+          await _setupWriter.createSavingsGoal(
+            name: name,
+            targetAmount: targetAmount,
+            targetCurrency: _savingsTargetCurrency,
+            sourceCurrency: _currency,
+            monthlyTargetAmount: savingsMonthly,
+            startMonth: month,
+            accountName: _savingsAccountName,
+            familyVisibility: familyVisibility,
+          );
+        } else {
+          await _setupWriter.updateSavingsGoal(
+            id: _savingsExistingId!,
+            name: name,
+            targetAmount: targetAmount,
+            targetCurrency: _savingsTargetCurrency,
+            sourceCurrency: _currency,
+            monthlyTargetAmount: savingsMonthly,
+            startMonth: month,
+            accountName: _savingsAccountName,
+            familyVisibility: familyVisibility,
+          );
+        }
       }
 
       if (budgets.isNotEmpty) {
@@ -298,6 +346,36 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     });
   }
 
+  Future<void> _saveRecurringTemplate({
+    required String? id,
+    required String title,
+    required String kind,
+    required double amount,
+    required String category,
+    required String currency,
+    required int dayOfMonth,
+  }) {
+    if (id == null) {
+      return _setupWriter.createRecurringTemplate(
+        title: title,
+        kind: kind,
+        amount: amount,
+        category: category,
+        currency: currency,
+        dayOfMonth: dayOfMonth,
+      );
+    }
+    return _setupWriter.updateRecurringTemplate(
+      id: id,
+      title: title,
+      kind: kind,
+      amount: amount,
+      category: category,
+      currency: currency,
+      dayOfMonth: dayOfMonth,
+    );
+  }
+
   Future<void> _addCommitments(
     Map<String, double> budgets, {
     required String category,
@@ -313,7 +391,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       final title = draft.nameController.text.trim().isEmpty
           ? fallbackTitle
           : draft.nameController.text.trim();
-      await _setupWriter.createRecurringTemplate(
+      await _saveRecurringTemplate(
+        id: draft.existingId,
         title: title,
         kind: 'expense',
         amount: amount,
@@ -381,20 +460,56 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     try {
       await _loadLocalAccountDraft();
       final month = _monthKey(DateTime.now());
-      final accounts = await _setupWriter.fetchFinancialAccounts();
-      final plan = await _setupWriter.fetchMonthlyPlan(month: month);
+      final accounts = await _withSetupFallback(
+        _setupWriter.fetchFinancialAccounts(),
+        const <FinancialAccount>[],
+      );
+      final plan = await _withSetupFallback(
+        _setupWriter.fetchMonthlyPlan(month: month),
+        MonthlyPlan(
+          month: month,
+          currency: _currency,
+          totalBudget: 0,
+          totalActual: 0,
+          totalRemaining: 0,
+          categories: const [],
+        ),
+      );
+      final recurringTemplates = await _withSetupFallback(
+        _setupWriter.fetchRecurringTemplates(),
+        const <RecurringTemplate>[],
+      );
+      final loans = await _withSetupFallback(
+        _setupWriter.fetchLoans(),
+        const <Loan>[],
+      );
+      final savingsGoals = await _withSetupFallback(
+        _setupWriter.fetchSavingsGoals(),
+        const <SavingsGoal>[],
+      );
       if (!mounted) return;
       setState(() {
         if (!_accountsTouched) {
           _applyExistingAccounts(accounts);
         }
         _applyExistingPlan(plan);
+        _applyExistingRecurringTemplates(recurringTemplates);
+        _applyExistingLoans(loans);
+        _applyExistingSavingsGoals(savingsGoals);
         _loadingExistingSetup = false;
         _message = null;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingExistingSetup = false);
+    }
+  }
+
+  Future<T> _withSetupFallback<T>(Future<T> future, T fallback) async {
+    try {
+      return await future;
+    } catch (_) {
+      return fallback;
     }
   }
 
@@ -561,12 +676,172 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _setAmountText(_savingsMonthlyController, budgets['Savings']);
   }
 
+  void _applyExistingRecurringTemplates(List<RecurringTemplate> templates) {
+    final activeMonthly = templates
+        .where(
+          (template) =>
+              template.active && template.frequency.toLowerCase() == 'monthly',
+        )
+        .toList(growable: false);
+    final salary = _firstTemplate(
+      activeMonthly,
+      kind: 'income',
+      category: 'Salary',
+    );
+    if (salary != null) {
+      _salaryTemplateId = salary.id;
+      _salaryAmountController.text = _formatAmount(salary.amount);
+      _salaryDayController.text = salary.dayOfMonth.toString();
+      _applyCurrencyIfKnown(salary.currency);
+    }
+
+    final housing = _firstTemplate(
+      activeMonthly,
+      kind: 'expense',
+      category: 'Rent and housing',
+    );
+    if (housing != null) {
+      _housingTemplateId = housing.id;
+      _rentAmountController.text = _formatAmount(housing.amount);
+      _rentDayController.text = housing.dayOfMonth.toString();
+      _applyCurrencyIfKnown(housing.currency);
+    }
+
+    _applyCommitmentTemplates(
+      activeMonthly,
+      category: 'Utilities',
+      drafts: _utilities,
+    );
+    _applyCommitmentTemplates(
+      activeMonthly,
+      category: 'Subscriptions',
+      drafts: _subscriptions,
+    );
+    _applyCommitmentTemplates(
+      activeMonthly,
+      category: 'Memberships',
+      drafts: _memberships,
+    );
+  }
+
+  RecurringTemplate? _firstTemplate(
+    List<RecurringTemplate> templates, {
+    required String kind,
+    required String category,
+  }) {
+    for (final template in templates) {
+      if (template.kind.toLowerCase() == kind &&
+          template.category.toLowerCase() == category.toLowerCase()) {
+        return template;
+      }
+    }
+    return null;
+  }
+
+  void _applyCommitmentTemplates(
+    List<RecurringTemplate> templates, {
+    required String category,
+    required List<_CommitmentDraftController> drafts,
+  }) {
+    final matches = templates
+        .where(
+          (template) =>
+              template.kind.toLowerCase() == 'expense' &&
+              template.category.toLowerCase() == category.toLowerCase(),
+        )
+        .toList(growable: false);
+    if (matches.isEmpty) return;
+    for (final draft in drafts) {
+      draft.dispose();
+    }
+    drafts
+      ..clear()
+      ..addAll(
+        matches.map((template) {
+          final draft = _CommitmentDraftController(existingId: template.id);
+          draft.nameController.text = template.title;
+          draft.amountController.text = _formatAmount(template.amount);
+          draft.dayController.text = template.dayOfMonth.toString();
+          _applyCurrencyIfKnown(template.currency);
+          return draft;
+        }),
+      );
+  }
+
+  void _applyExistingLoans(List<Loan> loans) {
+    final activeLoans = loans.where((loan) => !loan.archived).toList();
+    if (activeLoans.isEmpty) return;
+    final loan = activeLoans.first;
+    _loanExistingId = loan.id;
+    _loanNameController.text = loan.name;
+    _loanLenderController.text = loan.lender;
+    _loanType = _normalizeLoanType(loan.loanType);
+    _loanPrincipalController.text = _formatAmount(
+      loan.estimatedOutstanding > 0
+          ? loan.estimatedOutstanding
+          : loan.principalAmount,
+    );
+    _loanEmiController.text = _formatAmount(loan.emiAmount);
+    _loanInterestController.text = _formatAmount(loan.interestRate);
+    _loanRateType = _normalizeLoanRateType(loan.rateType);
+    final monthsLeft = loan.remainingEmis ?? loan.totalEmis;
+    if (monthsLeft > 0) {
+      _loanMonthsController.text = monthsLeft.toString();
+    }
+    _loanDueDayController.text = loan.dueDay.toString();
+    _applyCurrencyIfKnown(loan.currency);
+  }
+
+  void _applyExistingSavingsGoals(List<SavingsGoal> goals) {
+    final activeGoals = goals.where((goal) => !goal.archived).toList();
+    if (activeGoals.isEmpty) return;
+    final goal = activeGoals.first;
+    _savingsExistingId = goal.id;
+    _applyCurrencyIfKnown(goal.sourceCurrency);
+    _savingsNameController.text = goal.name;
+    _savingsMonthlyController.text = _formatAmount(goal.monthlyTargetAmount);
+    _savingsTargetCurrency = _normalizedCurrency(goal.targetCurrency);
+    _savingsTargetController.text = _formatAmount(goal.targetAmount);
+    _savingsAccountName = goal.accountName;
+    _showSavingsInFamily = goal.familyVisibility == 'family';
+    _syncSavingsAccountSelection();
+  }
+
+  void _applyCurrencyIfKnown(String value) {
+    final currency = value.trim().toUpperCase();
+    if (!_currencyOptions.contains(currency)) return;
+    _currency = currency;
+    if (!_savingsTargetCurrencyTouched) {
+      _savingsTargetCurrency = currency;
+    }
+  }
+
   void _setAmountText(TextEditingController controller, double? value) {
     if (value == null || value <= 0 || controller.text.trim().isNotEmpty) {
       return;
     }
+    controller.text = _formatAmount(value);
+  }
+
+  String _formatAmount(double value) {
     final decimals = value.truncateToDouble() == value ? 0 : 2;
-    controller.text = value.toStringAsFixed(decimals);
+    return value.toStringAsFixed(decimals);
+  }
+
+  String _normalizeLoanType(String value) {
+    const options = ['Car', 'Home', 'Personal', 'Education', 'Other'];
+    for (final option in options) {
+      if (option.toLowerCase() == value.toLowerCase()) {
+        return option;
+      }
+    }
+    return 'Other';
+  }
+
+  String _normalizeLoanRateType(String value) {
+    const options = ['floating', 'fixed', 'unknown'];
+    final normalized = value.toLowerCase();
+    return options.contains(normalized) ? normalized : 'unknown';
   }
 
   void _nextStep() {
@@ -1634,11 +1909,12 @@ class _DayField extends StatelessWidget {
 }
 
 class _CommitmentDraftController {
-  _CommitmentDraftController()
+  _CommitmentDraftController({this.existingId})
     : nameController = TextEditingController(),
       amountController = TextEditingController(),
       dayController = TextEditingController(text: '5');
 
+  final String? existingId;
   final TextEditingController nameController;
   final TextEditingController amountController;
   final TextEditingController dayController;
