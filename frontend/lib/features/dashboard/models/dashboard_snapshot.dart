@@ -9,6 +9,7 @@ class DashboardSnapshot extends Equatable {
     required this.groupItems,
     required this.actionItems,
     required this.activityItems,
+    required this.aiInsights,
     required this.accountName,
     required this.accountEmail,
   });
@@ -20,6 +21,7 @@ class DashboardSnapshot extends Equatable {
   final List<BalanceItem> groupItems;
   final List<DailyActionItem> actionItems;
   final List<ActivityItem> activityItems;
+  final List<AiInsight> aiInsights;
   final String accountName;
   final String accountEmail;
 
@@ -48,6 +50,14 @@ class DashboardSnapshot extends Equatable {
           .toList(growable: false);
     }
 
+    List<AiInsight> parseAiInsights(dynamic raw) {
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(AiInsight.fromJson)
+          .toList(growable: false);
+    }
+
     return DashboardSnapshot(
       overallLabel: (json['overallLabel'] ?? '').toString(),
       overallAmountText: (json['overallAmountText'] ?? '').toString(),
@@ -56,6 +66,7 @@ class DashboardSnapshot extends Equatable {
       groupItems: parseBalanceList(json['groupItems']),
       actionItems: parseActionList(json['actionItems']),
       activityItems: parseActivityList(json['activityItems']),
+      aiInsights: parseAiInsights(json['aiInsights']),
       accountName: (json['accountName'] ?? '').toString(),
       accountEmail: (json['accountEmail'] ?? '').toString(),
     );
@@ -70,9 +81,59 @@ class DashboardSnapshot extends Equatable {
     groupItems,
     actionItems,
     activityItems,
+    aiInsights,
     accountName,
     accountEmail,
   ];
+}
+
+class AiInsight extends Equatable {
+  const AiInsight({
+    required this.label,
+    required this.message,
+    required this.tone,
+    required this.actions,
+  });
+
+  final String label;
+  final String message;
+  final String tone;
+  final List<AiInsightAction> actions;
+
+  factory AiInsight.fromJson(Map<String, dynamic> json) {
+    final rawActions = json['actions'];
+    return AiInsight(
+      label: (json['label'] ?? 'AI summary').toString(),
+      message: (json['message'] ?? '').toString(),
+      tone: (json['tone'] ?? 'neutral').toString(),
+      actions: rawActions is List
+          ? rawActions
+                .whereType<Map<String, dynamic>>()
+                .map(AiInsightAction.fromJson)
+                .toList(growable: false)
+          : const [],
+    );
+  }
+
+  @override
+  List<Object?> get props => [label, message, tone, actions];
+}
+
+class AiInsightAction extends Equatable {
+  const AiInsightAction({required this.label, required this.prompt});
+
+  final String label;
+  final String prompt;
+
+  factory AiInsightAction.fromJson(Map<String, dynamic> json) {
+    return AiInsightAction(
+      label: (json['label'] ?? '').toString(),
+      prompt: (json['prompt'] ?? '').toString(),
+    );
+  }
+
+  @override
+  List<Object?> get props => [label, prompt];
 }
 
 class BalanceItem extends Equatable {

@@ -325,6 +325,8 @@ def normalize_receipt_line_items(raw_items: Any) -> list[dict[str, Any]]:
 
 
 class LocalGemmaBillExtractor:
+    schema_version = "finance-ai-v1"
+
     def __init__(self, base_url: str | None, model: str):
         self.base_url = (base_url or "").strip()
         self.model = model
@@ -371,17 +373,88 @@ class LocalGemmaBillExtractor:
             amount = 0
             warnings.append("Amount could not be parsed.")
         line_items = normalize_receipt_line_items(raw.get("lineItems"))
-        return {
+        date = str(raw.get("date") or iso(now()))
+        merchant = str(raw.get("merchant") or Path(original_name).stem or "Uploaded bill").strip()
+        currency = str(raw.get("currency") or "INR")
+        category = str(raw.get("category") or "Personal")
+        notes = str(raw.get("notes") or "")
+        result = {
+            "task": "receipt_extraction",
+            "schemaVersion": self.schema_version,
             "merchant": str(raw.get("merchant") or Path(original_name).stem or "Uploaded bill").strip(),
-            "date": str(raw.get("date") or iso(now())),
+            "date": date,
             "amount": amount,
-            "currency": str(raw.get("currency") or "INR"),
-            "category": str(raw.get("category") or "Personal"),
-            "notes": str(raw.get("notes") or ""),
+            "currency": currency,
+            "category": category,
+            "notes": notes,
             "lineItems": line_items,
             "confidence": max(0.0, min(float(raw.get("confidence") or 0), 1.0)),
             "warnings": warnings + [str(item) for item in raw.get("warnings", []) if str(item).strip()],
         }
+        result["expenseDraft"] = {
+            "description": merchant,
+            "amount": amount,
+            "currency": currency,
+            "category": category,
+            "date": date,
+            "notes": notes,
+            "receiptItems": line_items,
+        }
+        return result
+
+    async def dashboard_summary(self, context: dict[str, Any]) -> dict[str, Any]:
+        fallback = fallback_ai_dashboard_summary(context)
+        return await self._complete_structured(
+            "dashboard_summary",
+            context,
+            (
+                "Write two concise finance summary cards for the home screen. "
+                "Return JSON with cards: [{label, message, tone, actions}]. "
+                "Use tone positive, warning, critical, or neutral. Keep each message under 150 characters."
+            ),
+            fallback,
+        )
+
+    async def finance_chat(self, context: dict[str, Any], question: str) -> dict[str, Any]:
+        fallback = fallback_ai_finance_chat(context, question)
+        payload = {**context, "question": question}
+        return await self._complete_structured(
+            "finance_chat",
+            payload,
+            (
+                "Answer a personal finance planning question for an expense tracker. "
+                "Return JSON with question, title, answer, steps, and suggestions. "
+                "steps must be short actionable strings. Use only facts in the provided context."
+            ),
+            fallback,
+        )
+
+    async def _complete_structured(
+        self,
+        task: str,
+        context: dict[str, Any],
+        instructions: str,
+        fallback: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not self.base_url:
+            return with_ai_warning(fallback, "Local Gemma provider is not configured.")
+        try:
+            async with httpx.AsyncClient(timeout=90) as client:
+                response = await client.post(
+                    self.base_url.rstrip("/") + "/api/v1/finance-ai",
+                    json={
+                        "task": task,
+                        "schemaVersion": self.schema_version,
+                        "model": self.model,
+                        "instructions": instructions,
+                        "context": context,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                return normalize_structured_ai_response(task, data, fallback)
+        except Exception as exc:  # pragma: no cover - exercised through fake provider tests
+            return with_ai_warning(fallback, f"Local Gemma provider unavailable: {exc}")
 
 
 class LlamaServerBillExtractor(LocalGemmaBillExtractor):
@@ -443,6 +516,44 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
         encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
         return f"data:{mime_type};base64,{encoded}"
 
+    async def _complete_structured(
+        self,
+        task: str,
+        context: dict[str, Any],
+        instructions: str,
+        fallback: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not self.base_url:
+            return with_ai_warning(fallback, "Local llama-server provider is not configured.")
+        try:
+            async with httpx.AsyncClient(timeout=90) as client:
+                response = await client.post(
+                    self.base_url.rstrip("/") + "/v1/chat/completions",
+                    json={
+                        "model": self.model,
+                        "temperature": 0.2,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are the AI service for an expense tracker. "
+                                    "Return only valid JSON. Do not include markdown. "
+                                    f"Schema version: {self.schema_version}. {instructions}"
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": json.dumps(context, default=str),
+                            },
+                        ],
+                    },
+                )
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+                return normalize_structured_ai_response(task, parse_model_json(content), fallback)
+        except Exception as exc:  # pragma: no cover - network path is covered by integration tests
+            return with_ai_warning(fallback, f"Local llama-server provider unavailable: {exc}")
+
 
 def parse_model_json(content: Any) -> dict[str, Any]:
     if isinstance(content, dict):
@@ -461,6 +572,128 @@ def parse_model_json(content: Any) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("model response must be a JSON object")
     return parsed
+
+
+def ai_base_response(task: str) -> dict[str, Any]:
+    return {"task": task, "schemaVersion": LocalGemmaBillExtractor.schema_version, "generatedAt": iso(now())}
+
+
+def with_ai_warning(payload: dict[str, Any], warning: str) -> dict[str, Any]:
+    warnings = [str(item) for item in payload.get("warnings", []) if str(item).strip()]
+    warnings.append(warning)
+    return {**payload, "warnings": warnings}
+
+
+def normalize_ai_tone(value: Any) -> str:
+    tone = str(value or "neutral").strip().lower()
+    return tone if tone in {"positive", "warning", "critical", "neutral"} else "neutral"
+
+
+def normalize_ai_actions(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    actions = []
+    for item in raw[:2]:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        prompt = str(item.get("prompt") or item.get("question") or "").strip()
+        if label:
+            actions.append({"label": label[:40], "prompt": prompt[:160]})
+    return actions
+
+
+def normalize_structured_ai_response(task: str, raw: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    if task == "dashboard_summary":
+        cards = []
+        for item in raw.get("cards", []) if isinstance(raw.get("cards"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            message = str(item.get("message") or item.get("summary") or "").strip()
+            if not message:
+                continue
+            cards.append({
+                "label": str(item.get("label") or "AI summary").strip()[:40],
+                "message": message[:240],
+                "tone": normalize_ai_tone(item.get("tone")),
+                "actions": normalize_ai_actions(item.get("actions")),
+            })
+        if not cards:
+            cards = fallback.get("cards", [])
+        return {**ai_base_response(task), "cards": cards[:2], "warnings": [str(item) for item in raw.get("warnings", []) if str(item).strip()]}
+    if task == "finance_chat":
+        steps = [str(item).strip() for item in raw.get("steps", []) if str(item).strip()] if isinstance(raw.get("steps"), list) else []
+        suggestions = [str(item).strip() for item in raw.get("suggestions", []) if str(item).strip()] if isinstance(raw.get("suggestions"), list) else []
+        answer = str(raw.get("answer") or "").strip()
+        if not answer:
+            answer = str(fallback.get("answer") or "")
+        return {
+            **ai_base_response(task),
+            "question": str(raw.get("question") or fallback.get("question") or "").strip(),
+            "title": str(raw.get("title") or fallback.get("title") or "AI plan").strip()[:80],
+            "answer": answer[:600],
+            "steps": (steps or fallback.get("steps", []))[:5],
+            "suggestions": (suggestions or fallback.get("suggestions", []))[:4],
+            "warnings": [str(item) for item in raw.get("warnings", []) if str(item).strip()],
+        }
+    return fallback
+
+
+def fallback_ai_dashboard_summary(context: dict[str, Any]) -> dict[str, Any]:
+    overall = context.get("overall") if isinstance(context.get("overall"), dict) else {}
+    plan = context.get("monthlyPlan") if isinstance(context.get("monthlyPlan"), dict) else {}
+    action_items = context.get("actionItems") if isinstance(context.get("actionItems"), list) else []
+    currency = str(plan.get("currency") or "INR")
+    total_budget = float(plan.get("totalBudget") or 0)
+    total_actual = float(plan.get("totalActual") or 0)
+    total_remaining = float(plan.get("totalRemaining") or 0)
+    budget_message = (
+        f"{format_currency_amount(currency, total_actual)} spent so far of your "
+        f"{format_currency_amount(currency, total_budget)} planned budget this month."
+        if total_budget > 0
+        else f"{overall.get('overallLabel') or 'Summary'}. {overall.get('overallAmountText') or 'No spend yet'}."
+    )
+    if total_budget > 0 and total_remaining >= 0:
+        budget_message += f" {format_currency_amount(currency, total_remaining)} remains."
+    attention_message = (
+        "No follow-ups are waiting. Your receipts, recurring reminders, and shared balances are quiet."
+        if not action_items
+        else f"{len(action_items)} {'item needs' if len(action_items) == 1 else 'items need'} attention. Start with {action_items[0].get('title') or 'the first item'}."
+    )
+    return {
+        **ai_base_response("dashboard_summary"),
+        "cards": [
+            {"label": "AI summary", "message": budget_message, "tone": "positive", "actions": [{"label": "Regenerate", "prompt": "Refresh my monthly summary"}]},
+            {"label": "AI summary", "message": attention_message, "tone": "neutral" if not action_items else "warning", "actions": [{"label": "Ask a follow-up", "prompt": "What should I handle first?"}]},
+        ],
+        "warnings": [],
+    }
+
+
+def fallback_ai_finance_chat(context: dict[str, Any], question: str) -> dict[str, Any]:
+    plan = context.get("monthlyPlan") if isinstance(context.get("monthlyPlan"), dict) else {}
+    currency = str(plan.get("currency") or "INR")
+    remaining = float(plan.get("totalRemaining") or 0)
+    categories = [item for item in plan.get("categories", []) if isinstance(item, dict)] if isinstance(plan.get("categories"), list) else []
+    largest = max(categories, key=lambda item: float(item.get("budget") or 0), default={})
+    steps = [
+        f"Use your current surplus of {format_currency_amount(currency, max(remaining, 0))} as the planning limit.",
+        "Keep required bills and recurring commitments funded before adding new goals.",
+        f"Review {largest.get('category') or 'your largest category'} first if you need to free up cash.",
+    ]
+    return {
+        **ai_base_response("finance_chat"),
+        "question": question,
+        "title": "AI plan",
+        "answer": "Here is a conservative plan based on your current budget, expenses, and open follow-ups.",
+        "steps": steps,
+        "suggestions": [
+            "Save NOK 50,000 by December",
+            "Can I afford a NOK 30,000 laptop?",
+            "Cut my monthly spending",
+        ],
+        "warnings": [],
+    }
 
 
 def build_ai_provider() -> LocalGemmaBillExtractor:
@@ -1322,17 +1555,30 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         return monthly_plan_out(app.state.db, owner_uid, plan_month, group_id=group_id)
 
     @app.get("/api/v1/dashboard/snapshot")
-    def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         docs = [expense_out(doc) for doc in app.state.db.expenses.find({"uid": user["uid"]}).sort("date", -1).limit(20)]
         overall_summary = dashboard_overall_summary(app.state.db, user["uid"])
+        action_items = dashboard_action_items(app.state.db, user["uid"])
+        ai_summary = await generate_ai_dashboard_summary(
+            app.state.ai_provider,
+            dashboard_ai_context(
+                app.state.db,
+                user["uid"],
+                overall_summary=overall_summary,
+                action_items=action_items,
+                activity_items=docs,
+            ),
+        )
         return {
             **overall_summary,
             "friendItems": friend_balance_items(app.state.db, user["uid"]),
             "groupItems": group_balance_items(app.state.db, user["uid"]),
-            "actionItems": dashboard_action_items(app.state.db, user["uid"]),
+            "actionItems": action_items,
             "activityItems": [personal_dashboard_activity_item(doc) for doc in docs],
             "accountName": user.get("displayName") or "User",
             "accountEmail": user.get("email") or "",
+            "aiInsights": ai_summary.get("cards", []),
+            "aiSummary": ai_summary,
         }
 
     @app.get("/api/v1/friends")
@@ -1884,18 +2130,41 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"expenseId": expense["id"], "updatedAt": now()}})
         return expense_out(expense)
 
+    @app.post("/api/v1/ai/chat")
+    async def ai_chat(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        question = str(body.get("question") or "").strip()
+        if not question:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "question is required"))
+        context = dashboard_ai_context(app.state.db, user["uid"])
+        result = await generate_ai_finance_chat(app.state.ai_provider, context, question)
+        app.state.db.ai_suggestions.insert_one({
+            "id": uuid.uuid4().hex,
+            "uid": user["uid"],
+            "task": "finance_chat",
+            "question": question,
+            "result": result,
+            "createdAt": now(),
+        })
+        return json_ready(result)
+
     @app.post("/api/v1/ai/summaries/{period}")
-    def generate_summary(period: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async def generate_summary(period: str, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         if period not in {"daily", "monthly"}:
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "period must be daily or monthly"))
         docs = list(app.state.db.expenses.find({"uid": user["uid"]}))
         total = sum(float(doc.get("amount") or 0) for doc in docs)
+        ai_summary = await generate_ai_dashboard_summary(app.state.ai_provider, dashboard_ai_context(app.state.db, user["uid"]))
+        primary_card = (ai_summary.get("cards") or [{}])[0]
         summary = {
             "id": uuid.uuid4().hex,
             "uid": user["uid"],
             "period": period,
-            "summary": f"{period.title()} total: INR {total:.2f} across {len(docs)} expenses.",
-            "suggestions": ["Review uncategorized expenses."] if docs else ["Add your first expense to unlock summaries."],
+            "task": "dashboard_summary",
+            "schemaVersion": LocalGemmaBillExtractor.schema_version,
+            "summary": primary_card.get("message") or f"{period.title()} total: INR {total:.2f} across {len(docs)} expenses.",
+            "suggestions": [card.get("message") for card in ai_summary.get("cards", []) if card.get("message")] or (["Review uncategorized expenses."] if docs else ["Add your first expense to unlock summaries."]),
+            "cards": ai_summary.get("cards", []),
+            "warnings": ai_summary.get("warnings", []),
             "createdAt": now(),
         }
         app.state.db.ai_suggestions.insert_one(summary)
@@ -3922,6 +4191,62 @@ def personal_dashboard_activity_item(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def dashboard_ai_context(
+    db: Any,
+    uid: str,
+    *,
+    overall_summary: dict[str, Any] | None = None,
+    action_items: list[dict[str, Any]] | None = None,
+    activity_items: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    period = current_month()
+    plan = monthly_plan_out(db, uid, period)
+    raw_categories = plan.get("categories") if isinstance(plan.get("categories"), list) else []
+    categories = [
+        {
+            "category": str(item.get("category") or "Personal"),
+            "budget": float(item.get("budget") or 0),
+            "actual": float(item.get("actual") or 0),
+            "remaining": float(item.get("remaining") or 0),
+            "overBudget": bool(item.get("overBudget")),
+        }
+        for item in raw_categories
+        if isinstance(item, dict)
+    ]
+    categories.sort(key=lambda item: abs(float(item.get("budget") or item.get("actual") or 0)), reverse=True)
+    activities = activity_items
+    if activities is None:
+        activities = [expense_out(doc) for doc in db.expenses.find({"uid": uid}).sort("date", -1).limit(10)]
+    return {
+        "month": period,
+        "overall": overall_summary or dashboard_overall_summary(db, uid),
+        "monthlyPlan": {
+            "month": plan.get("month"),
+            "currency": plan.get("currency"),
+            "totalBudget": plan.get("totalBudget"),
+            "totalActual": plan.get("totalActual"),
+            "totalRemaining": plan.get("totalRemaining"),
+            "categories": categories[:8],
+        },
+        "actionItems": action_items if action_items is not None else dashboard_action_items(db, uid),
+        "friendItems": friend_balance_items(db, uid)[:4],
+        "groupItems": group_balance_items(db, uid)[:4],
+        "recentActivity": [personal_dashboard_activity_item(item) for item in activities[:8]],
+    }
+
+
+async def generate_ai_dashboard_summary(provider: Any, context: dict[str, Any]) -> dict[str, Any]:
+    if hasattr(provider, "dashboard_summary"):
+        return await provider.dashboard_summary(context)
+    return fallback_ai_dashboard_summary(context)
+
+
+async def generate_ai_finance_chat(provider: Any, context: dict[str, Any], question: str) -> dict[str, Any]:
+    if hasattr(provider, "finance_chat"):
+        return await provider.finance_chat(context, question)
+    return fallback_ai_finance_chat(context, question)
+
+
 def format_currency_amounts(amounts: dict[str, float]) -> str:
     non_zero = [(currency, amount) for currency, amount in amounts.items() if abs(amount) > 0.005]
     if not non_zero:
@@ -4917,6 +5242,8 @@ async def run_bill_extraction(app: FastAPI, job_id: str) -> None:
     try:
         file_path = upload_path_from_url(app, job["fileUrl"])
         result = await app.state.ai_provider.extract(file_path, job.get("fileName") or "bill")
+        if isinstance(result, dict) and result.get("task") != "receipt_extraction":
+            result = LocalGemmaBillExtractor(None, "")._normalize(result, job.get("fileName") or "bill", [])
         app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"status": "completed", "result": result, "updatedAt": now()}})
     except Exception as exc:
         app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"status": "failed", "error": str(exc), "updatedAt": now()}})

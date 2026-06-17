@@ -790,8 +790,12 @@ def test_bill_upload_extraction_and_create_expense(tmp_path):
     job = client.get(f"/api/v1/bills/{job_id}", headers=headers)
     assert job.status_code == 200
     assert job.json()["status"] == "completed"
+    assert job.json()["result"]["task"] == "receipt_extraction"
+    assert job.json()["result"]["schemaVersion"] == "finance-ai-v1"
     assert job.json()["result"]["merchant"] == "Cafe Oslo"
     assert job.json()["result"]["date"] == "2026-05-30T10:00:00Z"
+    assert job.json()["result"]["expenseDraft"]["description"] == "Cafe Oslo"
+    assert job.json()["result"]["expenseDraft"]["amount"] == 42.5
 
     expense = client.post(f"/api/v1/bills/{job_id}/create-expense", headers=headers)
     assert expense.status_code == 201
@@ -809,6 +813,53 @@ def test_bill_upload_extraction_and_create_expense(tmp_path):
     assert summary["currency"] == "INR"
     assert summary["unit"] == "l"
     assert summary["bestMerchant"] == "Cafe Oslo"
+
+
+def test_dashboard_snapshot_includes_ai_summary_cards(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+    month = current_month()
+
+    plan = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers,
+        json={"month": month, "currency": "NOK", "budgets": {"Rent and housing": 8000, "Loans / EMI": 4294}},
+    )
+    assert plan.status_code == 200, plan.text
+
+    dashboard = client.get("/api/v1/dashboard/snapshot", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    payload = dashboard.json()
+    assert payload["aiSummary"]["task"] == "dashboard_summary"
+    assert payload["aiSummary"]["schemaVersion"] == "finance-ai-v1"
+    assert len(payload["aiInsights"]) == 2
+    assert payload["aiInsights"][0]["label"] == "AI summary"
+    assert "planned budget" in payload["aiInsights"][0]["message"]
+
+
+def test_ai_chat_returns_structured_plan(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+    month = current_month()
+    plan = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers,
+        json={"month": month, "currency": "NOK", "budgets": {"Housing": 8000, "Groceries": 4200}},
+    )
+    assert plan.status_code == 200, plan.text
+
+    response = client.post(
+        "/api/v1/ai/chat",
+        headers=headers,
+        json={"question": "Save NOK 50,000 by December"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["task"] == "finance_chat"
+    assert payload["schemaVersion"] == "finance-ai-v1"
+    assert payload["question"] == "Save NOK 50,000 by December"
+    assert payload["steps"]
 
 
 def test_receipt_items_can_be_saved_with_personal_expense(tmp_path):

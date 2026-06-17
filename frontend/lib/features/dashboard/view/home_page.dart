@@ -8,6 +8,7 @@ import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
 import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
+import 'package:expense_tracker/features/dashboard/repositories/ai_assistant_repository.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/planning/repositories/monthly_plan_repository.dart';
 import 'package:flutter/material.dart';
@@ -361,8 +362,58 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _PlanningAssistantCard extends StatelessWidget {
+class _PlanningAssistantCard extends StatefulWidget {
   const _PlanningAssistantCard();
+
+  @override
+  State<_PlanningAssistantCard> createState() => _PlanningAssistantCardState();
+}
+
+class _PlanningAssistantCardState extends State<_PlanningAssistantCard> {
+  final TextEditingController _controller = TextEditingController();
+  late final AiAssistantRepository _repository = AiAssistantRepository();
+  AiPlanResult? _result;
+  bool _loading = false;
+  String? _error;
+
+  static const _defaultPrompt = 'Save NOK 50,000 by December';
+  static const _defaultSteps = [
+    'Set aside NOK 8,334/month - well within your current surplus.',
+    'Reduce discretionary spend by NOK 2,000/month to accelerate the goal.',
+    'After loan EMIs clear, redirect that amount toward savings.',
+  ];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _ask([String? prompt]) async {
+    final question = (prompt ?? _controller.text).trim();
+    if (question.isEmpty || _loading) {
+      return;
+    }
+    _controller.text = question;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await _repository.ask(question);
+      if (!mounted) return;
+      setState(() {
+        _result = result;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'AI is unavailable right now. Try again in a moment.';
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -373,6 +424,12 @@ class _PlanningAssistantCard extends StatelessWidget {
       'Save NOK 50,000 by December',
       'Cut my monthly spending',
     ];
+    final currentQuestion = _result?.question.trim().isNotEmpty == true
+        ? _result!.question
+        : _defaultPrompt;
+    final steps = _result?.steps.isNotEmpty == true
+        ? _result!.steps
+        : _defaultSteps;
     return _HybridCard(
       child: Material(
         type: MaterialType.transparency,
@@ -423,7 +480,8 @@ class _PlanningAssistantCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: TextField(
-                    readOnly: true,
+                    controller: _controller,
+                    onSubmitted: _ask,
                     cursorColor: _hybridAccentStrong,
                     decoration: InputDecoration(
                       hintText:
@@ -448,9 +506,14 @@ class _PlanningAssistantCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 FilledButton.icon(
-                  onPressed: () {},
-                  icon: const Icon(Icons.auto_awesome, size: 16),
-                  label: const Text('Ask AI'),
+                  onPressed: _loading ? null : () => _ask(),
+                  icon: _loading
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.auto_awesome, size: 16),
+                  label: Text(_loading ? 'Asking' : 'Ask AI'),
                   style: FilledButton.styleFrom(
                     backgroundColor: _hybridAccent,
                     foregroundColor: Colors.white,
@@ -467,7 +530,7 @@ class _PlanningAssistantCard extends StatelessWidget {
                   .map(
                     (prompt) => ActionChip(
                       label: Text(prompt),
-                      onPressed: () {},
+                      onPressed: _loading ? null : () => _ask(prompt),
                       backgroundColor: AppPalette.appBackground,
                       side: const BorderSide(color: AppPalette.border),
                       visualDensity: VisualDensity.compact,
@@ -490,7 +553,7 @@ class _PlanningAssistantCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '"Save NOK 50,000 by December"',
+                      '"$currentQuestion"',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colors.onSurfaceVariant,
                         fontStyle: FontStyle.italic,
@@ -498,28 +561,29 @@ class _PlanningAssistantCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'AI PLAN',
+                      (_result?.title.trim().isNotEmpty == true
+                              ? _result!.title
+                              : 'AI PLAN')
+                          .toUpperCase(),
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: AppMoney.positiveColor,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const _AiPlanLine(
-                      index: 1,
-                      text:
-                          'Set aside NOK 8,334/month - well within your current surplus.',
-                    ),
-                    const _AiPlanLine(
-                      index: 2,
-                      text:
-                          'Reduce discretionary spend by NOK 2,000/month to accelerate the goal.',
-                    ),
-                    const _AiPlanLine(
-                      index: 3,
-                      text:
-                          'After loan EMIs clear, redirect that amount toward savings.',
-                    ),
+                    if (_result?.answer.trim().isNotEmpty == true) ...[
+                      Text(_result!.answer),
+                      const SizedBox(height: 8),
+                    ],
+                    for (var index = 0; index < steps.length; index++)
+                      _AiPlanLine(index: index + 1, text: steps[index]),
+                    if (_error != null)
+                      Text(
+                        _error!,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: colors.error),
+                      ),
                   ],
                 ),
               ),
@@ -570,6 +634,25 @@ class _InsightStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (snapshot.aiInsights.isNotEmpty) {
+      return _AdaptiveColumns(
+        breakpoint: 720,
+        spacing: 12,
+        children: snapshot.aiInsights
+            .take(2)
+            .map((insight) {
+              return _InsightBanner(
+                icon: insight.tone == 'neutral'
+                    ? Icons.task_alt_outlined
+                    : Icons.auto_awesome_outlined,
+                label: insight.label,
+                message: insight.message,
+                tone: _insightToneFromAi(insight.tone),
+              );
+            })
+            .toList(growable: false),
+      );
+    }
     final actionCount = snapshot.actionItems.length;
     final firstAction = snapshot.actionItems.isEmpty
         ? null
@@ -610,6 +693,19 @@ class _InsightStrip extends StatelessWidget {
 }
 
 enum _InsightTone { positive, warning, critical, neutral }
+
+_InsightTone _insightToneFromAi(String tone) {
+  switch (tone.toLowerCase()) {
+    case 'positive':
+      return _InsightTone.positive;
+    case 'warning':
+      return _InsightTone.warning;
+    case 'critical':
+      return _InsightTone.critical;
+    default:
+      return _InsightTone.neutral;
+  }
+}
 
 class _InsightBanner extends StatelessWidget {
   const _InsightBanner({

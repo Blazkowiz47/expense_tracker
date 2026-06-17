@@ -65,6 +65,7 @@ class MockDashboardSnapshotRepository implements DashboardSnapshotRepository {
           positive: true,
         ),
       ],
+      aiInsights: [],
       accountName: 'Sushrut Patwardhan',
       accountEmail: 'sushrutpatwardhan@gmail.com',
     );
