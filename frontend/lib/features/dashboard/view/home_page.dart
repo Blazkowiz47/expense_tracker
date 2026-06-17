@@ -2248,7 +2248,6 @@ class _CategorySlice {
 List<_CategorySlice> _plannedCategories(MonthlyPlan? plan) {
   final source = plan?.categories
       .where((category) => category.budget.abs() > 0.005)
-      .take(6)
       .toList(growable: false);
   if (source == null || source.isEmpty) {
     return const [

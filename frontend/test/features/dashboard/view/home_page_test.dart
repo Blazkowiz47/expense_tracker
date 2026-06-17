@@ -177,6 +177,114 @@ void main() {
     );
   });
 
+  testWidgets('home page shows all planned setup categories', (tester) async {
+    final cubit = DashboardSnapshotCubit(
+      repository: const _EmptySnapshotRepository(),
+    );
+    await cubit.load();
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(
+                plan: const MonthlyPlan(
+                  month: '2026-06',
+                  currency: 'NOK',
+                  totalBudget: 28625,
+                  totalActual: 0,
+                  totalRemaining: 28625,
+                  income: 36000,
+                  surplus: 7375,
+                  categories: [
+                    MonthlyPlanCategory(
+                      category: 'Rent and housing',
+                      budget: 8000,
+                      actual: 0,
+                      remaining: 8000,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Loans / EMI',
+                      budget: 4294,
+                      actual: 0,
+                      remaining: 4294,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Insurance',
+                      budget: 1600,
+                      actual: 0,
+                      remaining: 1600,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Groceries',
+                      budget: 4200,
+                      actual: 0,
+                      remaining: 4200,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Utilities',
+                      budget: 1200,
+                      actual: 0,
+                      remaining: 1200,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Subscriptions',
+                      budget: 600,
+                      actual: 0,
+                      remaining: 600,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Memberships',
+                      budget: 900,
+                      actual: 0,
+                      remaining: 900,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Transport',
+                      budget: 1800,
+                      actual: 0,
+                      remaining: 1800,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Planned costs by category'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Insurance'), findsOneWidget);
+    expect(find.text('Memberships'), findsOneWidget);
+    expect(find.text('Transport'), findsOneWidget);
+  });
+
   testWidgets('home page shows complete onboarding in needs attention', (
     tester,
   ) async {

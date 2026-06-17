@@ -349,6 +349,14 @@ class _HomeShellPageState extends State<HomeShellPage>
     }
   }
 
+  bool _isOnboardingCompleted(BuildContext context) {
+    try {
+      return context.watch<AuthCubit>().state.user?.onboardingCompleted == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _openPriceBookPage() {
     Navigator.of(
       context,
@@ -496,11 +504,14 @@ class _HomeShellPageState extends State<HomeShellPage>
   Widget _pageForDestination(_ShellDestination destination, int index) {
     final autoRefresh = index == _selectedIndex;
     if (destination.label == 'Home') {
+      final onboardingCompleted = _isOnboardingCompleted(context);
       final onboardingIncomplete = _isOnboardingIncomplete(context);
       return HomePage(
         autoRefresh: autoRefresh,
-        showContinueSetup: onboardingIncomplete || _hasOnboardingDraft,
-        inferIncompleteSetup: true,
+        showContinueSetup:
+            !onboardingCompleted &&
+            (onboardingIncomplete || _hasOnboardingDraft),
+        inferIncompleteSetup: !onboardingCompleted && onboardingIncomplete,
         onOpenFriends: _openFriendsPage,
         onOpenGroups: () => _openSharedSpace(GroupType.split),
         onOpenFamily: () => _onDestinationSelected(1),
