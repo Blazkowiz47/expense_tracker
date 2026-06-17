@@ -33,6 +33,7 @@ abstract class OnboardingSetupWriter {
     required double amount,
     required String category,
     required String currency,
+    required String frequency,
     required int dayOfMonth,
   });
 
@@ -43,6 +44,7 @@ abstract class OnboardingSetupWriter {
     required double amount,
     required String category,
     required String currency,
+    required String frequency,
     required int dayOfMonth,
   });
 
@@ -211,6 +213,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     required double amount,
     required String category,
     required String currency,
+    required String frequency,
     required int dayOfMonth,
   }) async {
     await _recurringRepository.createTemplate(
@@ -219,7 +222,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
       amount: amount,
       category: category,
       currency: currency,
-      frequency: 'monthly',
+      frequency: frequency,
       dayOfMonth: dayOfMonth,
       startDate: DateTime.now(),
     );
@@ -233,6 +236,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     required double amount,
     required String category,
     required String currency,
+    required String frequency,
     required int dayOfMonth,
   }) async {
     await _recurringRepository.updateTemplate(
@@ -242,7 +246,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
       amount: amount,
       category: category,
       currency: currency,
-      frequency: 'monthly',
+      frequency: frequency,
       dayOfMonth: dayOfMonth,
       startDate: DateTime.now(),
     );

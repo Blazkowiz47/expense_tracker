@@ -127,6 +127,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
     required double amount,
     required String category,
     required String currency,
+    required String frequency,
     required int dayOfMonth,
   }) async {
     recurringTemplates.add(
@@ -136,6 +137,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
         amount: amount,
         category: category,
         currency: currency,
+        frequency: frequency,
         dayOfMonth: dayOfMonth,
       ),
     );
@@ -149,6 +151,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
     required double amount,
     required String category,
     required String currency,
+    required String frequency,
     required int dayOfMonth,
   }) async {
     updatedRecurringTemplates.add(
@@ -159,6 +162,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
         amount: amount,
         category: category,
         currency: currency,
+        frequency: frequency,
         dayOfMonth: dayOfMonth,
       ),
     );
@@ -393,6 +397,21 @@ void main() {
         find.widgetWithText(TextField, 'Months left'),
         '46',
       );
+      await tester.enterText(
+        find.byKey(const ValueKey('insurance-0-name')),
+        'Car insurance',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('insurance-0-amount')),
+        '9000',
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('insurance-0-frequency')),
+      );
+      await tester.tap(find.byKey(const ValueKey('insurance-0-frequency')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Yearly').last);
+      await tester.pumpAndSettle();
       await _advance(tester);
 
       final firstGroceryItem = tester.widget<TextField>(
@@ -480,7 +499,22 @@ void main() {
       expect(setupWriter.savingsGoals.single.familyVisibility, 'private');
       expect(
         setupWriter.recurringTemplates.map((item) => item.title),
-        containsAll(<String>['Power', 'Netflix', 'Spotify', 'Gym']),
+        containsAll(<String>[
+          'Car insurance',
+          'Power',
+          'Netflix',
+          'Spotify',
+          'Gym',
+        ]),
+      );
+      final insurance = setupWriter.recurringTemplates.singleWhere(
+        (item) => item.title == 'Car insurance',
+      );
+      expect(insurance.category, 'Insurance');
+      expect(insurance.frequency, 'yearly');
+      expect(
+        setupWriter.monthlyPlans.single.budgets,
+        containsPair('Insurance', 9000),
       );
       expect(setupWriter.monthlyPlans.single.currency, 'NOK');
       expect(
@@ -763,6 +797,15 @@ void main() {
           day: 5,
           now: now,
         ),
+        _template(
+          id: 'rec-insurance',
+          title: 'Car insurance',
+          amount: 9000,
+          category: 'Insurance',
+          frequency: 'yearly',
+          day: 12,
+          now: now,
+        ),
       ],
       existingLoans: [
         Loan(
@@ -856,6 +899,9 @@ void main() {
     expect(find.text('DNB'), findsOneWidget);
     expect(find.text('146087.67'), findsOneWidget);
     expect(find.text('3733'), findsOneWidget);
+    expect(find.text('Car insurance'), findsAtLeastNWidgets(1));
+    expect(find.text('9000'), findsOneWidget);
+    expect(find.text('Yearly'), findsOneWidget);
     await _advance(tester);
     expect(find.text('6000'), findsOneWidget);
     await _advance(tester);
@@ -885,6 +931,7 @@ void main() {
         'rec-power',
         'rec-netflix',
         'rec-gym',
+        'rec-insurance',
       ]),
     );
     expect(setupWriter.loans, isEmpty);
@@ -1091,6 +1138,7 @@ RecurringTemplate _template({
   String kind = 'expense',
   required double amount,
   required String category,
+  String frequency = 'monthly',
   required int day,
   required DateTime now,
 }) {
@@ -1101,7 +1149,7 @@ RecurringTemplate _template({
     amount: amount,
     currency: 'NOK',
     category: category,
-    frequency: 'monthly',
+    frequency: frequency,
     dayOfMonth: day,
     startDate: now,
     nextDueDate: now,
@@ -1129,6 +1177,7 @@ class _SavedRecurring {
     required this.amount,
     required this.category,
     required this.currency,
+    required this.frequency,
     required this.dayOfMonth,
   });
 
@@ -1138,6 +1187,7 @@ class _SavedRecurring {
   final double amount;
   final String category;
   final String currency;
+  final String frequency;
   final int dayOfMonth;
 }
 

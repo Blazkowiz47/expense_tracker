@@ -31,6 +31,12 @@ const _accountTypeLabels = <String, String>{
   'cash': 'Cash',
   'other': 'Other',
 };
+const _frequencyOptions = <String>[
+  'monthly',
+  'bimonthly',
+  'quarterly',
+  'yearly',
+];
 const _setupDraftBoxName = 'monthly_setup_draft_v1';
 const _accountDraftsKey = 'accountDrafts';
 const _setupSteps = <_SetupStep>[
@@ -81,6 +87,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   final _utilities = <_CommitmentDraftController>[];
   final _subscriptions = <_CommitmentDraftController>[];
   final _memberships = <_CommitmentDraftController>[];
+  final _insurances = <_CommitmentDraftController>[];
   final _loans = <_LoanDraftController>[];
   final _groceryItems = <_NamedBudgetDraftController>[];
   final _transportItems = <_NamedBudgetDraftController>[];
@@ -110,6 +117,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _resetCommitmentDrafts(_utilities);
     _resetCommitmentDrafts(_subscriptions);
     _resetCommitmentDrafts(_memberships);
+    _resetCommitmentDrafts(_insurances);
     _loans.add(_LoanDraftController());
     _groceryItems.add(_NamedBudgetDraftController());
     _transportItems.add(_NamedBudgetDraftController());
@@ -143,6 +151,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       draft.dispose();
     }
     for (final draft in _memberships) {
+      draft.dispose();
+    }
+    for (final draft in _insurances) {
       draft.dispose();
     }
     for (final item in _transportItems) {
@@ -194,6 +205,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           amount: salaryAmount,
           category: 'Salary',
           currency: _currency,
+          frequency: 'monthly',
           dayOfMonth: _dayValue(_salaryDayController, 'Salary day'),
         );
       }
@@ -208,6 +220,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           amount: rentAmount,
           category: 'Rent and housing',
           currency: _currency,
+          frequency: 'monthly',
           dayOfMonth: _dayValue(_rentDayController, 'Housing due day'),
         );
       }
@@ -261,6 +274,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           );
         }
       }
+
+      await _addCommitments(
+        budgets,
+        category: 'Insurance',
+        drafts: _insurances,
+        fallbackTitle: 'Insurance',
+      );
 
       _addNamedBudgets(
         budgets,
@@ -363,6 +383,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     required double amount,
     required String category,
     required String currency,
+    required String frequency,
     required int dayOfMonth,
   }) {
     if (id == null) {
@@ -372,6 +393,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         amount: amount,
         category: category,
         currency: currency,
+        frequency: frequency,
         dayOfMonth: dayOfMonth,
       );
     }
@@ -382,6 +404,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       amount: amount,
       category: category,
       currency: currency,
+      frequency: frequency,
       dayOfMonth: dayOfMonth,
     );
   }
@@ -408,6 +431,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         amount: amount,
         category: category,
         currency: _currency,
+        frequency: draft.frequency,
         dayOfMonth: _dayValue(draft.dayController, '$title due day'),
       );
     }
@@ -709,6 +733,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   }
 
   void _applyExistingRecurringTemplates(List<RecurringTemplate> templates) {
+    final active = templates
+        .where((template) => template.active)
+        .toList(growable: false);
     final activeMonthly = templates
         .where(
           (template) =>
@@ -754,6 +781,11 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       category: 'Memberships',
       drafts: _memberships,
     );
+    _applyCommitmentTemplates(
+      active,
+      category: 'Insurance',
+      drafts: _insurances,
+    );
   }
 
   RecurringTemplate? _firstTemplate(
@@ -794,6 +826,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           draft.nameController.text = template.title;
           draft.amountController.text = _formatAmount(template.amount);
           draft.dayController.text = template.dayOfMonth.toString();
+          draft.frequency = _normalizedFrequency(template.frequency);
           _applyCurrencyIfKnown(template.currency);
           return draft;
         }),
@@ -950,6 +983,16 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     return options.contains(normalized) ? normalized : 'unknown';
   }
 
+  String _normalizedFrequency(String value) {
+    final normalized = value.toLowerCase().replaceAll('-', '_');
+    if (normalized == 'bi_monthly' ||
+        normalized == 'every_2_months' ||
+        normalized == 'every_two_months') {
+      return 'bimonthly';
+    }
+    return _frequencyOptions.contains(normalized) ? normalized : 'monthly';
+  }
+
   void _nextStep() {
     if (_stepIndex >= _setupSteps.length - 1) {
       _finish();
@@ -1000,6 +1043,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         break;
       case _SetupStep.loans:
         _resetLoanDrafts();
+        _resetCommitmentDrafts(_insurances);
         break;
       case _SetupStep.groceries:
         _resetNamedBudgetDrafts(_groceryItems);
@@ -1229,7 +1273,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       _SetupStep.accounts => 'Bank accounts',
       _SetupStep.salary => 'Salary',
       _SetupStep.housing => 'Rent and housing',
-      _SetupStep.loans => 'Loans',
+      _SetupStep.loans => 'Loans and insurances',
       _SetupStep.groceries => 'Groceries',
       _SetupStep.commitments => 'Bills and subscriptions',
       _SetupStep.transport => 'Transport',
@@ -1249,7 +1293,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       _SetupStep.housing =>
         'Add rent, mortgage, or any regular housing payment for this month.',
       _SetupStep.loans =>
-        'Use the remaining principal, EMI, and current rate from your lender. You can edit the details later.',
+        'Add loans, EMIs, and insurance premiums. You can edit the details later.',
       _SetupStep.groceries => 'Set a simple grocery budget for the month.',
       _SetupStep.commitments =>
         'Add each utility, subscription, and membership separately so you can track them one by one.',
@@ -1580,6 +1624,23 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           icon: const Icon(Icons.add),
           label: const Text('Add another loan'),
         ),
+        const SizedBox(height: AppSpacing.lg),
+        _InsuranceSection(
+          title: 'Insurance premiums',
+          description:
+              'Add car, home, health, travel, or other insurance payments.',
+          icon: Icons.verified_user_outlined,
+          itemLabel: 'Insurance name',
+          itemHint: 'Car insurance',
+          addLabel: 'Add insurance',
+          currency: _currency,
+          drafts: _insurances,
+          enabled: !_saving,
+          sectionKeyPrefix: 'insurance',
+          onAdd: () => _addCommitmentDraft(_insurances),
+          onRemove: (index) => _removeCommitmentDraft(_insurances, index),
+          onChanged: () => setState(() {}),
+        ),
       ],
     );
   }
@@ -1761,6 +1822,17 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           Icons.request_quote_outlined,
           count > 1 ? 'Loan EMI ($count)' : 'Loan EMI',
           '$_currency ${loanEmi.toStringAsFixed(0)}',
+        ),
+      );
+    }
+    final insurance = _commitmentTotal(_insurances);
+    if (insurance > 0) {
+      final count = _filledCommitmentCount(_insurances);
+      rows.add(
+        _ReviewItem(
+          Icons.verified_user_outlined,
+          count > 1 ? 'Insurance ($count)' : 'Insurance',
+          '$_currency ${insurance.toStringAsFixed(0)}',
         ),
       );
     }
@@ -2566,11 +2638,200 @@ class _CommitmentDraftController {
   final TextEditingController nameController;
   final TextEditingController amountController;
   final TextEditingController dayController;
+  String frequency = 'monthly';
 
   void dispose() {
     nameController.dispose();
     amountController.dispose();
     dayController.dispose();
+  }
+}
+
+class _InsuranceSection extends StatelessWidget {
+  const _InsuranceSection({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.itemLabel,
+    required this.itemHint,
+    required this.addLabel,
+    required this.currency,
+    required this.drafts,
+    required this.enabled,
+    required this.sectionKeyPrefix,
+    required this.onAdd,
+    required this.onRemove,
+    required this.onChanged,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final String itemLabel;
+  final String itemHint;
+  final String addLabel;
+  final String currency;
+  final List<_CommitmentDraftController> drafts;
+  final bool enabled;
+  final String sectionKeyPrefix;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+            TextButton.icon(
+              key: ValueKey('$sectionKeyPrefix-add'),
+              onPressed: enabled ? onAdd : null,
+              icon: const Icon(Icons.add),
+              label: Text(addLabel),
+            ),
+          ],
+        ),
+        Text(
+          description,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (var index = 0; index < drafts.length; index++) ...[
+          _InsuranceDraftEditor(
+            controller: drafts[index],
+            currency: currency,
+            itemLabel: itemLabel,
+            itemHint: itemHint,
+            enabled: enabled,
+            canRemove: drafts.length > 1,
+            fieldKeyPrefix: '$sectionKeyPrefix-$index',
+            onChanged: onChanged,
+            onRemove: () => onRemove(index),
+          ),
+          if (index < drafts.length - 1) const SizedBox(height: AppSpacing.sm),
+        ],
+      ],
+    );
+  }
+}
+
+class _InsuranceDraftEditor extends StatelessWidget {
+  const _InsuranceDraftEditor({
+    required this.controller,
+    required this.currency,
+    required this.itemLabel,
+    required this.itemHint,
+    required this.enabled,
+    required this.canRemove,
+    required this.fieldKeyPrefix,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final _CommitmentDraftController controller;
+  final String currency;
+  final String itemLabel;
+  final String itemHint;
+  final bool enabled;
+  final bool canRemove;
+  final String fieldKeyPrefix;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: ValueKey('$fieldKeyPrefix-name'),
+                    controller: controller.nameController,
+                    enabled: enabled,
+                    onChanged: (_) => onChanged(),
+                    decoration: InputDecoration(
+                      labelText: itemLabel,
+                      hintText: itemHint,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                IconButton(
+                  tooltip: 'Remove insurance',
+                  onPressed: enabled && canRemove ? onRemove : null,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MoneyField(
+              fieldKey: ValueKey('$fieldKeyPrefix-amount'),
+              controller: controller.amountController,
+              currency: currency,
+              label: 'Premium amount',
+              enabled: enabled,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: _DayField(
+                    fieldKey: ValueKey('$fieldKeyPrefix-day'),
+                    controller: controller.dayController,
+                    label: 'Due day',
+                    enabled: enabled,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('$fieldKeyPrefix-frequency'),
+                    initialValue: controller.frequency,
+                    decoration: const InputDecoration(
+                      labelText: 'Frequency',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _frequencyOptions
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(_frequencyLabel(item)),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: enabled
+                        ? (value) {
+                            if (value == null) return;
+                            controller.frequency = value;
+                            onChanged();
+                          }
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -2807,6 +3068,15 @@ String _titleCase(String value) {
       .where((part) => part.isNotEmpty)
       .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
       .join(' ');
+}
+
+String _frequencyLabel(String value) {
+  return switch (value) {
+    'bimonthly' => 'Every 2 months',
+    'quarterly' => 'Quarterly',
+    'yearly' => 'Yearly',
+    _ => 'Monthly',
+  };
 }
 
 double? _parseAmount(String value) {
