@@ -111,8 +111,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _resetCommitmentDrafts(_subscriptions);
     _resetCommitmentDrafts(_memberships);
     _loans.add(_LoanDraftController());
-    _groceryItems.add(_NamedBudgetDraftController(name: 'Groceries'));
-    _transportItems.add(_NamedBudgetDraftController(name: 'Transport'));
+    _groceryItems.add(_NamedBudgetDraftController());
+    _transportItems.add(_NamedBudgetDraftController());
     _savingsGoals.add(_SavingsDraftController(targetCurrency: _currency));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -1002,7 +1002,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         _resetLoanDrafts();
         break;
       case _SetupStep.groceries:
-        _resetNamedBudgetDrafts(_groceryItems, name: 'Groceries');
+        _resetNamedBudgetDrafts(_groceryItems);
         break;
       case _SetupStep.commitments:
         _resetCommitmentDrafts(_utilities);
@@ -1010,7 +1010,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         _resetCommitmentDrafts(_memberships);
         break;
       case _SetupStep.transport:
-        _resetNamedBudgetDrafts(_transportItems, name: 'Transport');
+        _resetNamedBudgetDrafts(_transportItems);
         break;
       case _SetupStep.savings:
         _resetSavingsDrafts();
@@ -1099,16 +1099,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       ..add(_LoanDraftController());
   }
 
-  void _resetNamedBudgetDrafts(
-    List<_NamedBudgetDraftController> drafts, {
-    required String name,
-  }) {
+  void _resetNamedBudgetDrafts(List<_NamedBudgetDraftController> drafts) {
     for (final draft in drafts) {
       draft.dispose();
     }
     drafts
       ..clear()
-      ..add(_NamedBudgetDraftController(name: name));
+      ..add(_NamedBudgetDraftController());
   }
 
   void _resetSavingsDrafts() {
@@ -1134,22 +1131,18 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     });
   }
 
-  void _addNamedBudgetDraft(
-    List<_NamedBudgetDraftController> drafts, {
-    required String name,
-  }) {
-    setState(() => drafts.add(_NamedBudgetDraftController(name: name)));
+  void _addNamedBudgetDraft(List<_NamedBudgetDraftController> drafts) {
+    setState(() => drafts.add(_NamedBudgetDraftController()));
   }
 
   void _removeNamedBudgetDraft(
     List<_NamedBudgetDraftController> drafts,
-    int index, {
-    required String name,
-  }) {
+    int index,
+  ) {
     setState(() {
       drafts.removeAt(index).dispose();
       if (drafts.isEmpty) {
-        drafts.add(_NamedBudgetDraftController(name: name));
+        drafts.add(_NamedBudgetDraftController());
       }
     });
   }
@@ -1603,9 +1596,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       drafts: _groceryItems,
       enabled: !_saving,
       sectionKeyPrefix: 'groceries',
-      onAdd: () => _addNamedBudgetDraft(_groceryItems, name: 'Groceries'),
-      onRemove: (index) =>
-          _removeNamedBudgetDraft(_groceryItems, index, name: 'Groceries'),
+      onAdd: () => _addNamedBudgetDraft(_groceryItems),
+      onRemove: (index) => _removeNamedBudgetDraft(_groceryItems, index),
     );
   }
 
@@ -1621,9 +1613,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       drafts: _transportItems,
       enabled: !_saving,
       sectionKeyPrefix: 'transport',
-      onAdd: () => _addNamedBudgetDraft(_transportItems, name: 'Transport'),
-      onRemove: (index) =>
-          _removeNamedBudgetDraft(_transportItems, index, name: 'Transport'),
+      onAdd: () => _addNamedBudgetDraft(_transportItems),
+      onRemove: (index) => _removeNamedBudgetDraft(_transportItems, index),
     );
   }
 
@@ -1861,7 +1852,7 @@ class _LoanDraftController {
 }
 
 class _NamedBudgetDraftController {
-  _NamedBudgetDraftController({required String name, String amount = ''})
+  _NamedBudgetDraftController({String name = '', String amount = ''})
     : nameController = TextEditingController(text: name),
       amountController = TextEditingController(text: amount);
 
@@ -2758,11 +2749,23 @@ class _ReviewRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: theme.colorScheme.primary),
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, color: theme.colorScheme.primary),
+        ),
         const SizedBox(width: AppSpacing.sm),
-        Expanded(child: Text(label, style: theme.textTheme.bodyLarge)),
-        Text(value, style: theme.textTheme.bodyMedium),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: theme.textTheme.bodyLarge),
+              const SizedBox(height: AppSpacing.xs),
+              Text(value, style: theme.textTheme.bodyMedium, softWrap: true),
+            ],
+          ),
+        ),
       ],
     );
   }

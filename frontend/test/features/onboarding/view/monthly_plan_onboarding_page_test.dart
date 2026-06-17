@@ -395,6 +395,10 @@ void main() {
       );
       await _advance(tester);
 
+      final firstGroceryItem = tester.widget<TextField>(
+        find.byKey(const ValueKey('groceries-0-name')),
+      );
+      expect(firstGroceryItem.controller?.text, isEmpty);
       await tester.enterText(
         find.byKey(const ValueKey('groceries-0-amount')),
         '5000',
