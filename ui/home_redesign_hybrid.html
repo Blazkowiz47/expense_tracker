@@ -1,0 +1,3530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Home screen redesign — Hybrid (insights + needs attention)</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root {
+  --accent:          #26A17B;
+  --accent-strong:   #1A8F6C;
+  --accent-soft:     rgba(38,161,123,0.14);
+  --accent-soft-hc:  rgba(38,161,123,0.22);
+  --accent-on:       #FFFFFF;
+
+  --bg-light:        #F7F8F9;
+  --surface-light:   #FFFFFF;
+
+  --fg1:  #1A1C1E;
+  --fg2:  #45474A;
+  --fg3:  #58646F;
+
+  --positive:      #1B8C67;
+  --positive-soft: #E6F4EE;
+  --negative:      #BA1A1A;
+  --negative-soft: #FDE7E7;
+  --neutral:       #58646F;
+  --neutral-soft:  #F0F2F4;
+
+  --border-light:  #E2E4E8;
+  --border-subtle: #EEF0F3;
+  --divider:       rgba(0,0,0,0.10);
+
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  --sp-xl: 32px;
+
+  --radius-sm:   8px;
+  --radius-md:   14px;
+  --radius-pill: 16px;
+  --radius-full: 999px;
+
+  --shadow-card: 0 1px 0 rgba(0,0,0,0.04);
+  --shadow-fab:  0 6px 16px rgba(0,0,0,0.18);
+  --shadow-nav:  0 -1px 0 rgba(0,0,0,0.06);
+
+  --font-sans: "Roboto", -apple-system, "SF Pro Text", BlinkMacSystemFont,
+               "Segoe UI", system-ui, sans-serif;
+
+  --fs-title-lg:    22px;
+  --fs-title-md:    16px;
+  --fs-title-sm:    14px;
+  --fs-body-lg:     16px;
+  --fs-body-md:     14px;
+  --fs-body-sm:     12px;
+  --fs-label-lg:    14px;
+  --fs-label-md:    12px;
+  --fs-label-sm:    11px;
+
+  --lh-tight:  1.15;
+  --lh-normal: 1.4;
+  --lh-loose:  1.55;
+
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semibold:600;
+  --fw-bold:    700;
+
+  /* Category palette */
+  --cat-loans:    #26A17B;
+  --cat-rent:     #1A8F6C;
+  --cat-groceries:#3FBF9B;
+  --cat-transport:#7AA2F7;
+  --cat-utilities:#E8A317;
+  --cat-subs:     #9D7CFF;
+}
+
+/* ============================================================
+   RESET / BASE
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  font-family: var(--font-sans);
+  background: #DDDFE3;
+  color: var(--fg1);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "tnum" 1;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   STAGE
+   ============================================================ */
+.stage {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 48px;
+  padding: 48px 32px 80px;
+  flex-wrap: wrap;
+}
+.frame-label {
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #666;
+  margin-bottom: 12px;
+}
+
+/* ============================================================
+   CARD PRIMITIVE
+   ============================================================ */
+.card {
+  background: var(--surface-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+.card--section { padding: var(--sp-md); }
+
+/* ============================================================
+   SECTION HEADER
+   ============================================================ */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-md);
+}
+.section-header__title {
+  font-size: var(--fs-title-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--fg1);
+}
+.section-header__action {
+  font-size: var(--fs-body-sm);
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  text-decoration: none;
+}
+.section-header__badge {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: var(--negative-soft);
+  color: var(--negative);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+}
+
+/* ============================================================
+   MONEY
+   ============================================================ */
+.money { font-feature-settings: "tnum" 1; }
+.money--pos { color: var(--positive); }
+.money--neg { color: var(--negative); }
+.money--neu { color: var(--neutral); }
+.money--warn { color: #C47B00; }
+
+/* ============================================================
+   PROGRESS BAR
+   ============================================================ */
+.prog-track {
+  height: 6px;
+  background: var(--border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.prog-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.6s ease;
+}
+
+/* ============================================================
+   CHIP / PILL
+   ============================================================ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  padding: 5px 10px;
+  background: var(--accent-soft);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-label-md);
+  font-weight: var(--fw-medium);
+  color: var(--accent-strong);
+  white-space: nowrap;
+}
+.chip--neutral {
+  background: var(--border-subtle);
+  color: var(--fg3);
+}
+
+/* ============================================================
+   INSIGHT BANNER — AI Summary
+   ============================================================ */
+.insight-banner {
+  background: var(--positive-soft);
+  border: 1px solid #C3E6D9;
+  border-radius: var(--radius-md);
+  padding: 12px var(--sp-md);
+  font-size: var(--fs-body-md);
+  color: var(--positive);
+  line-height: var(--lh-loose);
+}
+.insight-banner--warn {
+  background: #FFF8E6;
+  border-color: #F5DFA0;
+  color: #8A5E00;
+}
+.insight-banner__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+}
+.insight-banner__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.insight-banner__label svg { width: 12px; height: 12px; flex-shrink: 0; }
+.insight-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  margin-top: 10px;
+}
+.insight-banner__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-full);
+  padding: 4px 11px;
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: inherit;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+.insight-banner__btn:hover { opacity: 1; }
+.insight-banner__btn svg { width: 11px; height: 11px; }
+
+/* ============================================================
+   AI PLANNING CARD
+   ============================================================ */
+.ai-plan-card {
+  background: var(--surface-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  /* Subtle AI accent: very faint green tint at the top edge */
+  background: linear-gradient(
+    to bottom,
+    rgba(38,161,123,0.04) 0%,
+    var(--surface-light) 56px
+  );
+  padding: var(--sp-md);
+}
+.ai-plan-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+.ai-plan-card__icon {
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.ai-plan-card__icon svg { width: 16px; height: 16px; color: var(--accent-strong); }
+.ai-plan-card__title {
+  font-size: var(--fs-title-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--fg1);
+  line-height: var(--lh-normal);
+}
+.ai-plan-card__sub {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  margin-top: 1px;
+}
+.ai-plan-input-row {
+  display: flex;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+.ai-plan-input {
+  flex: 1;
+  height: 38px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--sp-md);
+  font-size: var(--fs-body-md);
+  font-family: var(--font-sans);
+  color: var(--fg1);
+  background: var(--bg-light);
+  outline: none;
+  min-width: 0;
+}
+.ai-plan-input:focus {
+  border-color: var(--accent);
+  background: var(--surface-light);
+  box-shadow: 0 0 0 3px rgba(38,161,123,0.12);
+}
+.ai-plan-input::placeholder { color: var(--fg3); }
+.ai-plan-btn {
+  height: 38px;
+  padding: 0 18px;
+  background: var(--accent);
+  color: var(--accent-on);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-label-lg);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  display: flex; align-items: center; gap: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ai-plan-btn svg { width: 14px; height: 14px; }
+.ai-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+  margin-bottom: var(--sp-md);
+}
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  background: var(--bg-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  color: var(--fg2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.ai-chip:hover {
+  background: var(--accent-soft);
+  border-color: rgba(38,161,123,0.3);
+  color: var(--accent-strong);
+}
+
+/* AI Response preview */
+.ai-response-preview {
+  background: var(--bg-light);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-sm) var(--sp-md);
+}
+.ai-response-preview__prompt {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  margin-bottom: var(--sp-sm);
+  font-style: italic;
+}
+.ai-response-preview__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-label-sm);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin-bottom: 8px;
+}
+.ai-response-preview__label svg { width: 11px; height: 11px; }
+.ai-response-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ai-plan-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ai-plan-step__num {
+  width: 20px; height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.ai-plan-step__text {
+  font-size: var(--fs-body-sm);
+  color: var(--fg2);
+  line-height: var(--lh-normal);
+  flex: 1;
+}
+.ai-plan-step__text strong { color: var(--fg1); font-weight: var(--fw-semibold); }
+
+/* ============================================================
+   STAT GRID
+   ============================================================ */
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--sp-sm);
+}
+.stat-box {
+  background: var(--bg-light);
+  border-radius: var(--radius-sm);
+  padding: 12px var(--sp-sm);
+  text-align: center;
+}
+.stat-box__label {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  margin-bottom: 4px;
+}
+.stat-box__value {
+  font-size: 15px;
+  font-weight: var(--fw-bold);
+  font-feature-settings: "tnum" 1;
+  color: var(--fg1);
+}
+
+/* ============================================================
+   CASHFLOW BARS
+   ============================================================ */
+.cashflow-bar-wrap { display: flex; flex-direction: column; gap: 10px; }
+.cfbar-row { display: flex; align-items: center; gap: var(--sp-sm); }
+.cfbar-label {
+  width: 90px;
+  font-size: var(--fs-body-sm);
+  color: var(--fg2);
+  flex-shrink: 0;
+}
+.cfbar-track {
+  flex: 1;
+  height: 22px;
+  background: var(--bg-light);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.cfbar-fill {
+  height: 100%;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+  color: var(--accent-on);
+  white-space: nowrap;
+}
+
+/* ============================================================
+   CATEGORY ROW
+   ============================================================ */
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.cat-row:last-child { border-bottom: none; padding-bottom: 0; }
+.cat-row:first-child { padding-top: 0; }
+.cat-dot {
+  width: 10px; height: 10px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.cat-row__name {
+  flex: 1;
+  font-size: var(--fs-body-md);
+  color: var(--fg1);
+  font-weight: var(--fw-medium);
+}
+.cat-row__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.cat-row__amount {
+  font-size: var(--fs-label-lg);
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+}
+
+/* ============================================================
+   DONUT CHART
+   ============================================================ */
+.donut-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  flex-shrink: 0;
+}
+.donut-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+.donut-center__val {
+  font-size: 18px;
+  font-weight: var(--fw-bold);
+  color: var(--fg1);
+  line-height: 1.15;
+  font-feature-settings: "tnum" 1;
+}
+.donut-center__label {
+  font-size: 10px;
+  color: var(--fg3);
+  font-weight: var(--fw-medium);
+}
+
+/* ============================================================
+   LEGEND
+   ============================================================ */
+.legend { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.legend-label {
+  flex: 1;
+  font-size: var(--fs-body-sm);
+  color: var(--fg2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.legend-pct {
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+  color: var(--fg1);
+}
+
+/* ============================================================
+   GOAL ITEM
+   ============================================================ */
+.goal-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.goal-item:last-child { border-bottom: none; padding-bottom: 0; }
+.goal-item:first-child { padding-top: 0; }
+.goal-item__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.goal-item__name {
+  font-size: var(--fs-body-md);
+  font-weight: var(--fw-medium);
+  color: var(--fg1);
+}
+.goal-item__amounts {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  font-feature-settings: "tnum" 1;
+}
+
+/* ============================================================
+   ACTIVITY ROW
+   ============================================================ */
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.activity-row:last-child { border-bottom: none; padding-bottom: 0; }
+.activity-row:first-child { padding-top: 0; }
+.activity-row__info { flex: 1; min-width: 0; }
+.activity-row__desc {
+  font-size: var(--fs-body-md);
+  color: var(--fg1);
+  font-weight: var(--fw-medium);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.activity-row__meta {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  margin-top: 1px;
+}
+.activity-row__amount {
+  font-size: var(--fs-label-lg);
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   AVATAR
+   ============================================================ */
+.avatar {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: var(--fw-semibold);
+}
+.avatar svg { width: 16px; height: 16px; }
+
+/* ============================================================
+   PERSON / BALANCE ITEM
+   ============================================================ */
+.person-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.person-item:last-child { border-bottom: none; }
+.person-item__name {
+  flex: 1;
+  font-size: var(--fs-body-md);
+  font-weight: var(--fw-medium);
+  color: var(--fg1);
+}
+.person-item__desc {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  margin-top: 1px;
+}
+.person-item__balance {
+  font-size: var(--fs-label-lg);
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+}
+
+/* ============================================================
+   NEEDS ATTENTION CARDS  (from action-first design)
+   ============================================================ */
+.attention-card {
+  background: var(--surface-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 14px var(--sp-md);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.attn-icon {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.attn-icon svg { width: 18px; height: 18px; }
+.attn-icon.urgent  { background: var(--negative-soft); }
+.attn-icon.urgent svg { color: var(--negative); }
+.attn-icon.warning { background: #FFF4E0; }
+.attn-icon.warning svg { color: #E8A317; }
+.attn-icon.info    { background: var(--accent-soft); }
+.attn-icon.info svg { color: var(--accent-strong); }
+.attn-icon.friend  { background: #EEF0FF; }
+.attn-icon.friend svg { color: #4E6AEB; }
+.attn-icon.receipt { background: #F4F0FF; }
+.attn-icon.receipt svg { color: #7C5CFF; }
+
+.attn-body { flex: 1; min-width: 0; }
+.attn-title {
+  font-size: var(--fs-title-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--fg1);
+  line-height: var(--lh-normal);
+}
+.attn-sub {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  margin-top: 2px;
+  line-height: var(--lh-normal);
+}
+.attn-amount {
+  font-size: var(--fs-label-lg);
+  font-weight: var(--fw-semibold);
+  font-feature-settings: "tnum" 1;
+  margin-top: 3px;
+}
+.attn-actions {
+  display: flex;
+  gap: var(--sp-xs);
+  margin-top: 10px;
+}
+.attn-btn-primary {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+.attn-btn-primary svg { width: 13px; height: 13px; }
+.attn-btn-secondary {
+  display: flex; align-items: center; gap: 5px;
+  background: transparent;
+  color: var(--fg2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font-size: var(--fs-body-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+.attn-trailing {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-top: 2px;
+}
+.badge-urgent {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: var(--negative-soft);
+  color: var(--negative);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+}
+.badge-due {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: #FFF4E0;
+  color: #C47B00;
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+}
+.badge-info {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+}
+.badge-owed {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: var(--positive-soft);
+  color: var(--positive);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+}
+
+/* ============================================================
+   FAB
+   ============================================================ */
+.fab {
+  position: absolute;
+  right: 20px;
+  bottom: 74px;
+  width: 52px; height: 52px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-on);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-fab);
+  cursor: pointer;
+  border: none;
+}
+.fab svg { width: 24px; height: 24px; }
+
+/* ============================================================
+   MOBILE BOTTOM NAV
+   ============================================================ */
+.bottom-nav {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 64px;
+  background: var(--surface-light);
+  border-top: 1px solid var(--border-light);
+  box-shadow: var(--shadow-nav);
+  display: flex;
+  align-items: stretch;
+  z-index: 30;
+}
+.bnav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  position: relative;
+  padding-top: 6px;
+}
+.bnav-item__label {
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  color: var(--fg3);
+}
+.bnav-item.active .bnav-item__label { color: var(--accent); font-weight: var(--fw-semibold); }
+.bnav-item__indicator {
+  position: absolute;
+  top: 8px;
+  width: 60px; height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  left: 50%; transform: translateX(-50%);
+}
+.bnav-item svg { width: 22px; height: 22px; position: relative; z-index: 1; }
+.bnav-item.active svg { color: var(--accent); }
+.bnav-item:not(.active) svg { color: var(--fg3); }
+
+/* ============================================================
+   DESKTOP NAV (sidebar variant from insights file)
+   ============================================================ */
+.desktop-topbar {
+  height: 56px;
+  background: var(--surface-light);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-lg);
+  gap: var(--sp-md);
+  flex-shrink: 0;
+}
+.desktop-topbar__wordmark {
+  font-size: var(--fs-title-md);
+  font-weight: var(--fw-bold);
+  color: var(--accent);
+  letter-spacing: -0.01em;
+  margin-right: auto;
+}
+.desktop-topbar__greeting {
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+}
+.desktop-topbar__nav {
+  display: flex;
+  gap: var(--sp-xs);
+}
+.desktop-nav-item {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-body-md);
+  font-weight: var(--fw-medium);
+  color: var(--fg2);
+  cursor: pointer;
+  text-decoration: none;
+}
+.desktop-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: var(--fw-semibold);
+}
+.desktop-add-btn {
+  padding: 8px 18px;
+  background: var(--accent);
+  color: var(--accent-on);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-label-lg);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  border: none;
+  display: flex; align-items: center; gap: 6px;
+  margin-left: var(--sp-sm);
+  font-family: var(--font-sans);
+}
+.desktop-add-btn svg { width: 16px; height: 16px; }
+.icon-btn {
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-full);
+  border: none; background: transparent; cursor: pointer;
+  color: var(--fg2);
+}
+.icon-btn svg { width: 20px; height: 20px; }
+
+/* ============================================================
+   DESKTOP FRAME
+   ============================================================ */
+.frame-desktop {
+  width: 1280px;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+  background: var(--bg-light);
+  display: flex;
+  flex-direction: column;
+}
+.desktop-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.desktop-sidenav {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface-light);
+  border-right: 1px solid var(--border-light);
+  padding: var(--sp-lg) var(--sp-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+.sidenav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 10px var(--sp-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-body-md);
+  font-weight: var(--fw-medium);
+  color: var(--fg2);
+  cursor: pointer;
+}
+.sidenav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: var(--fw-semibold);
+}
+.sidenav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+.sidenav-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--sp-sm) 0;
+}
+
+/* Desktop main scroll */
+.desktop-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-lg) var(--sp-lg) var(--sp-xl);
+  min-width: 0;
+  max-height: 780px;
+}
+.desktop-main::-webkit-scrollbar { width: 6px; }
+.desktop-main::-webkit-scrollbar-track { background: transparent; }
+.desktop-main::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+
+/* Desktop grid helpers */
+.d-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-md);
+}
+.d-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-md);
+}
+.d-grid-mid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-md);
+}
+
+/* Needs attention grid — 2 column on desktop */
+.attn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-sm);
+}
+
+/* Hero metric */
+.hero-metric__progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-body-sm);
+  color: var(--fg3);
+  margin-bottom: 6px;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ============================================================
+   MOBILE FRAME
+   ============================================================ */
+.frame-mobile {
+  width: 390px;
+  height: 844px;
+  border-radius: 44px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+  background: var(--bg-light);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Mobile status bar */
+.mobile-statusbar {
+  height: 44px;
+  background: var(--surface-light);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+.msb-time {
+  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  color: var(--fg1);
+}
+.msb-icons {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--fg1);
+}
+
+/* Mobile top bar */
+.mobile-topbar {
+  height: 52px;
+  background: var(--surface-light);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-md);
+  flex-shrink: 0;
+}
+.mobile-topbar__wordmark {
+  font-size: var(--fs-title-md);
+  font-weight: var(--fw-bold);
+  color: var(--accent);
+  flex: 1;
+}
+.mobile-topbar__actions {
+  display: flex;
+  gap: var(--sp-sm);
+  color: var(--fg2);
+}
+.mobile-topbar__actions svg { width: 22px; height: 22px; }
+
+/* Mobile scroll */
+.mobile-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-md) var(--sp-md) 80px;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.mobile-scroll::-webkit-scrollbar { display: none; }
+
+/* Needs attention — stacked on mobile */
+.attn-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+/* ============================================================
+   ONBOARDING FLOW — section divider
+   ============================================================ */
+.ob-section-divider {
+  width: 100%;
+  padding: 56px 32px 20px;
+}
+.ob-section-divider::before {
+  content: '';
+  display: block;
+  height: 2px;
+  background: rgba(0,0,0,0.10);
+  margin-bottom: 32px;
+}
+.ob-section-divider__heading {
+  font-size: 20px;
+  font-weight: var(--fw-bold);
+  color: var(--fg1);
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+.ob-section-divider__sub {
+  font-size: 14px;
+  color: var(--fg3);
+}
+
+/* Onboarding stage wrapper (block-stacked, not flex) */
+.ob-stage {
+  padding: 0 32px 80px;
+}
+.ob-stage-section {
+  margin-bottom: 64px;
+}
+.ob-stage-section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #555; margin-bottom: 20px;
+}
+.ob-screen-row {
+  display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start;
+}
+.ob-screen-col { display: flex; flex-direction: column; gap: 8px; }
+.ob-screen-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: #666;
+}
+
+/* Desktop wizard frame */
+.frame-desktop-wizard {
+  width: 720px;
+  background: var(--bg-light);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+}
+
+/* Wizard chrome */
+.wiz-topbar {
+  height: 52px; background: var(--surface-light);
+  border-bottom: 1px solid var(--border-light);
+  display: flex; align-items: center;
+  padding: 0 var(--sp-md); gap: var(--sp-sm); flex-shrink: 0;
+}
+.wiz-back-btn {
+  width: 36px; height: 36px; border-radius: var(--radius-full);
+  border: none; background: transparent; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: var(--fg2);
+}
+.wiz-back-btn svg { width: 20px; height: 20px; }
+.wiz-step-label {
+  flex: 1; font-size: 13px; font-weight: 500; color: var(--fg3);
+  text-align: center;
+}
+.wiz-close-btn {
+  font-size: 12px; font-weight: 500; color: var(--fg3);
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-sans); padding: 6px 4px;
+}
+
+/* Wizard progress bar */
+.wiz-progress-wrap {
+  background: var(--surface-light);
+  padding: 0 var(--sp-md) 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.wiz-progress-track {
+  height: 4px; background: var(--border-subtle); border-radius: var(--radius-full); overflow: hidden;
+}
+.wiz-progress-fill {
+  height: 100%; border-radius: var(--radius-full); background: var(--accent);
+  transition: width 0.5s ease;
+}
+
+/* Wizard scroll body */
+.wiz-body {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: var(--sp-lg) var(--sp-md) 100px;
+  scrollbar-width: none;
+}
+.wiz-body::-webkit-scrollbar { display: none; }
+.wiz-body--desktop { padding: var(--sp-xl) 64px 100px; }
+
+/* Step header */
+.wiz-step-icon {
+  width: 56px; height: 56px; border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: var(--sp-md);
+}
+.wiz-step-icon svg { width: 28px; height: 28px; color: var(--accent-strong); }
+.wiz-step-icon--ai {
+  background: linear-gradient(135deg, rgba(38,161,123,0.18) 0%, rgba(38,161,123,0.08) 100%);
+}
+.wiz-step-title {
+  font-size: 22px; font-weight: 700; color: var(--fg1);
+  line-height: 1.2; letter-spacing: -0.01em; margin-bottom: 6px;
+}
+.wiz-step-desc {
+  font-size: 14px; color: var(--fg3); line-height: 1.55; margin-bottom: var(--sp-lg);
+}
+
+/* Onboarding form elements (no collision with target — target does not define these) */
+.field-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: var(--sp-md); }
+.field-label {
+  font-size: 12px; font-weight: 600; color: var(--fg2); letter-spacing: 0.02em;
+}
+.field-input {
+  height: 44px; border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+  padding: 0 var(--sp-md); font-size: 14px; font-family: var(--font-sans);
+  color: var(--fg1); background: var(--surface-light); outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(38,161,123,0.12);
+}
+.field-input::placeholder { color: var(--fg3); }
+.field-select {
+  height: 44px; border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+  padding: 0 36px 0 var(--sp-md); font-size: 14px; font-family: var(--font-sans);
+  color: var(--fg1); background: var(--surface-light);
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2358646F' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+  outline: none; cursor: pointer;
+}
+.field-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(38,161,123,0.12); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-sm); }
+.field-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--sp-sm); }
+
+/* Currency option cards */
+.currency-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-sm);
+  margin-bottom: var(--sp-lg);
+}
+.currency-card {
+  border: 2px solid var(--border-light); border-radius: var(--radius-sm);
+  padding: 12px 8px; text-align: center; cursor: pointer;
+  background: var(--surface-light); transition: border-color 0.15s, background 0.15s;
+}
+.currency-card.selected {
+  border-color: var(--accent); background: var(--accent-soft);
+}
+.currency-card__code { font-size: 15px; font-weight: 700; color: var(--fg1); }
+.currency-card__symbol { font-size: 11px; color: var(--fg3); margin-top: 2px; }
+.currency-grid--mobile { grid-template-columns: repeat(3, 1fr); }
+
+/* Item card (loan, bill, savings goal) */
+.item-card {
+  background: var(--surface-light); border: 1px solid var(--border-light);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-card);
+  padding: var(--sp-md); margin-bottom: var(--sp-sm);
+}
+.item-card__header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--sp-md);
+}
+.item-card__title { font-size: 13px; font-weight: 600; color: var(--fg1); }
+.item-card__remove {
+  width: 28px; height: 28px; border-radius: var(--radius-full);
+  border: none; background: var(--border-subtle); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: var(--fg3);
+}
+.item-card__remove svg { width: 14px; height: 14px; }
+
+/* Add item button */
+.add-item-btn {
+  display: flex; align-items: center; gap: var(--sp-sm);
+  width: 100%; padding: 12px var(--sp-md);
+  background: var(--surface-light); border: 1.5px dashed var(--border-light);
+  border-radius: var(--radius-md); cursor: pointer;
+  font-size: 14px; font-weight: 500; color: var(--accent);
+  font-family: var(--font-sans); margin-top: var(--sp-xs);
+  transition: background 0.15s, border-color 0.15s;
+}
+.add-item-btn svg { width: 16px; height: 16px; }
+
+/* Toggle */
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-top: 1px solid var(--border-subtle);
+}
+.toggle-label { font-size: 14px; color: var(--fg1); }
+.toggle-sub { font-size: 12px; color: var(--fg3); margin-top: 1px; }
+.toggle-track {
+  width: 44px; height: 26px; border-radius: var(--radius-full);
+  background: var(--accent); position: relative; cursor: pointer; flex-shrink: 0;
+}
+.toggle-track--off { background: var(--border-light); }
+.toggle-thumb {
+  width: 20px; height: 20px; border-radius: var(--radius-full);
+  background: white; position: absolute; top: 3px; right: 3px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.toggle-thumb--off { right: auto; left: 3px; }
+
+/* Wizard bottom action bar */
+.wiz-actions {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--surface-light); border-top: 1px solid var(--border-light);
+  padding: 12px var(--sp-md) 20px;
+}
+.wiz-actions--desktop {
+  padding: 16px 64px 24px;
+}
+.btn-primary {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; height: 48px; background: var(--accent); color: white;
+  border: none; border-radius: var(--radius-full); font-size: 15px;
+  font-weight: 600; cursor: pointer; font-family: var(--font-sans);
+  transition: background 0.15s;
+}
+.btn-primary svg { width: 16px; height: 16px; }
+.btn-primary:hover { background: var(--accent-strong); }
+.btn-primary--outline {
+  background: transparent; color: var(--fg2);
+  border: 1.5px solid var(--border-light); margin-top: 8px;
+}
+.btn-primary--outline:hover { background: var(--bg-light); }
+.btn-skip {
+  display: block; width: 100%; text-align: center;
+  font-size: 13px; color: var(--fg3); background: none; border: none;
+  cursor: pointer; font-family: var(--font-sans); margin-top: 10px; padding: 4px;
+}
+
+/* AI surface treatment (onboarding) */
+.ai-surface {
+  background: linear-gradient(to bottom, rgba(38,161,123,0.06) 0%, var(--surface-light) 80px);
+  border: 1px solid #C3DFD5;
+  border-radius: var(--radius-md);
+  padding: var(--sp-md);
+}
+.ai-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--accent-strong); opacity: 0.85;
+  margin-bottom: 10px;
+}
+.ai-label svg { width: 11px; height: 11px; }
+
+/* Review rows */
+.review-row {
+  display: flex; align-items: center; gap: var(--sp-sm);
+  padding: 12px 0; border-bottom: 1px solid var(--border-subtle);
+}
+.review-row:last-child { border-bottom: none; }
+.review-icon {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  background: var(--accent-soft); display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.review-icon svg { width: 15px; height: 15px; color: var(--accent-strong); }
+.review-label { flex: 1; font-size: 14px; color: var(--fg2); }
+.review-value {
+  font-size: 14px; font-weight: 600; color: var(--fg1);
+  font-feature-settings: "tnum" 1;
+}
+.review-edit {
+  font-size: 12px; color: var(--accent); font-weight: 500;
+  background: none; border: none; cursor: pointer; font-family: var(--font-sans);
+  padding: 0 0 0 8px;
+}
+
+/* Welcome split buttons */
+.welcome-actions { display: flex; flex-direction: column; gap: var(--sp-sm); margin-top: var(--sp-xl); }
+.welcome-btn-ai {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 16px var(--sp-md);
+  background: linear-gradient(to right, rgba(38,161,123,0.10) 0%, rgba(38,161,123,0.04) 100%);
+  border: 1.5px solid #C3DFD5; border-radius: var(--radius-md);
+  cursor: pointer; font-family: var(--font-sans); text-align: left;
+  transition: background 0.15s;
+}
+.welcome-btn-manual {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 16px var(--sp-md);
+  background: var(--surface-light); border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-md); cursor: pointer; font-family: var(--font-sans);
+  text-align: left; transition: background 0.15s;
+}
+.wb-icon {
+  width: 40px; height: 40px; border-radius: var(--radius-sm); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.wb-icon--ai { background: var(--accent-soft); }
+.wb-icon--manual { background: var(--border-subtle); }
+.wb-icon svg { width: 20px; height: 20px; }
+.wb-icon--ai svg { color: var(--accent-strong); }
+.wb-icon--manual svg { color: var(--fg3); }
+.wb-text__title { font-size: 15px; font-weight: 600; color: var(--fg1); }
+.wb-text__sub { font-size: 12px; color: var(--fg3); margin-top: 2px; }
+.wb-arrow { margin-left: auto; color: var(--fg3); }
+.wb-arrow svg { width: 16px; height: 16px; }
+
+/* AI input textarea (onboarding) */
+.ai-input-area {
+  width: 100%; min-height: 88px; border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-sm); padding: var(--sp-sm) var(--sp-md);
+  font-size: 14px; font-family: var(--font-sans); color: var(--fg1);
+  background: var(--surface-light); resize: none; outline: none;
+  line-height: 1.55;
+}
+.ai-input-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(38,161,123,0.12); }
+
+/* AI plan rows (onboarding drafted plan) */
+.ai-plan-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid var(--border-subtle);
+}
+.ai-plan-row:last-child { border-bottom: none; }
+.ai-plan-row__label { font-size: 14px; color: var(--fg2); }
+.ai-plan-row__amount { font-size: 14px; font-weight: 600; color: var(--fg1); font-feature-settings: "tnum" 1; }
+.ai-plan-total {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 12px 0 0;
+}
+.ai-plan-total__label { font-size: 13px; color: var(--fg3); font-weight: 500; }
+.ai-plan-total__amount { font-size: 20px; font-weight: 700; color: var(--fg1); font-feature-settings: "tnum" 1; }
+
+/* Desktop 2-col for wizard body */
+.d-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-md); }
+
+/* Wordmark on welcome */
+.wordmark {
+  font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.01em;
+  margin-bottom: var(--sp-sm);
+}
+
+/* Badge new (onboarding) */
+.badge-new {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--accent-soft); color: var(--accent-strong);
+  border-radius: var(--radius-full); padding: 3px 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+}
+.badge-new svg { width: 10px; height: 10px; }
+
+/* Onboarding divider line */
+.divider { height: 1px; background: var(--border-subtle); margin: var(--sp-md) 0; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <!-- ======================================================
+       DESKTOP FRAME
+       ====================================================== -->
+  <div>
+    <div class="frame-label">Desktop / Web — 1280 px</div>
+    <div class="frame-desktop">
+
+      <!-- Top bar -->
+      <div class="desktop-topbar">
+        <div class="desktop-topbar__wordmark">Expense tracker</div>
+        <span class="desktop-topbar__greeting">Good morning, Sushrut — Tuesday 17 June 2026</span>
+        <div class="desktop-topbar__nav">
+          <a class="desktop-nav-item active">Home</a>
+          <a class="desktop-nav-item">Family</a>
+          <a class="desktop-nav-item">Activity</a>
+          <a class="desktop-nav-item">Account</a>
+        </div>
+        <button class="icon-btn" title="Search">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <button class="icon-btn" title="Notifications">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </button>
+        <button class="desktop-add-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add expense
+        </button>
+      </div>
+
+      <div class="desktop-body">
+
+        <!-- Side nav -->
+        <div class="desktop-sidenav">
+          <div class="sidenav-item active">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Overview
+          </div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            Scan bill
+          </div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            Groceries
+          </div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Price book
+          </div>
+          <div class="sidenav-divider"></div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            Recurring
+          </div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 12a11.05 11.05 0 0 0-22 0zm-5 7a3 3 0 0 1-6 0v-7"/></svg>
+            Loans
+          </div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Credit cards
+          </div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Savings
+          </div>
+          <div class="sidenav-divider"></div>
+          <div class="sidenav-item">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Friend balances
+          </div>
+        </div>
+
+        <!-- Main scroll -->
+        <div class="desktop-main">
+
+          <!-- AI Insight banners -->
+          <div style="display:flex;gap:var(--sp-sm);margin-bottom:var(--sp-md);flex-wrap:wrap;">
+            <div class="insight-banner" style="flex:1;min-width:260px;">
+              <div class="insight-banner__header">
+                <span class="insight-banner__label">
+                  <!-- Sparkles icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                  AI summary
+                </span>
+              </div>
+              <strong>NOK 0</strong> spent so far of your <strong>NOK 12,294</strong> planned budget this month. You are off to a clean start — housing is your largest cost at 65%.
+              <div class="insight-banner__actions">
+                <button class="insight-banner__btn">
+                  <!-- Refresh icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                  Regenerate
+                </button>
+                <button class="insight-banner__btn">Ask a follow-up</button>
+              </div>
+            </div>
+            <div class="insight-banner insight-banner--warn" style="flex:1;min-width:260px;">
+              <div class="insight-banner__header">
+                <span class="insight-banner__label">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                  AI summary
+                </span>
+              </div>
+              <strong>NOK 4,294</strong> in loan EMIs are due this month — that is 35% of your total planned costs. Mark paid before 20 June to avoid late fees.
+              <div class="insight-banner__actions">
+                <button class="insight-banner__btn">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                  Regenerate
+                </button>
+                <button class="insight-banner__btn">Ask a follow-up</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI PLANNING CARD (desktop) -->
+          <div class="ai-plan-card" style="margin-bottom:var(--sp-md);">
+            <div class="ai-plan-card__header">
+              <div class="ai-plan-card__icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              </div>
+              <div>
+                <div class="ai-plan-card__title">Plan with AI</div>
+                <div class="ai-plan-card__sub">Ask anything about your finances — trips, purchases, savings goals, or spending cuts.</div>
+              </div>
+            </div>
+            <div class="ai-plan-input-row">
+              <input class="ai-plan-input" type="text" placeholder="Ask anything — plan a trip, afford a big purchase, save for a goal..." />
+              <button class="ai-plan-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                Ask AI
+              </button>
+            </div>
+            <div class="ai-chips">
+              <span class="ai-chip">Plan a trip to Lofoten</span>
+              <span class="ai-chip">Can I afford a NOK 30,000 laptop?</span>
+              <span class="ai-chip">Save NOK 50,000 by December</span>
+              <span class="ai-chip">Cut my monthly spending</span>
+            </div>
+            <!-- Example AI response -->
+            <div class="ai-response-preview">
+              <div class="ai-response-preview__prompt">"Save NOK 50,000 by December"</div>
+              <div class="ai-response-preview__label">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+                AI plan
+              </div>
+              <div class="ai-response-plan">
+                <div class="ai-plan-step">
+                  <div class="ai-plan-step__num">1</div>
+                  <div class="ai-plan-step__text">You have <strong>6 months</strong> until December. Set aside <strong class="money money--pos">NOK 8,334/month</strong> — well within your current surplus of NOK 23,706 after planned costs.</div>
+                </div>
+                <div class="ai-plan-step">
+                  <div class="ai-plan-step__num">2</div>
+                  <div class="ai-plan-step__text">Reduce discretionary spend by <strong>NOK 2,000/month</strong>: trim subscriptions (NOK 600 planned) and transport by one bus pass cycle. That accelerates the goal to <strong>month 5</strong>.</div>
+                </div>
+                <div class="ai-plan-step">
+                  <div class="ai-plan-step__num">3</div>
+                  <div class="ai-plan-step__text">After the home loan EMI (NOK 4,294) clears this month, redirect that amount in July to boost your savings. You would hit <strong>NOK 50,000 by October</strong> instead.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- NEEDS ATTENTION (desktop: 2-column grid) -->
+          <div style="margin-bottom:var(--sp-md);">
+            <div class="section-header">
+              <span class="section-header__title">Needs attention</span>
+              <span class="section-header__badge">5 items</span>
+            </div>
+            <div class="attn-grid">
+
+              <!-- EMI due -->
+              <div class="attention-card">
+                <div class="attn-icon urgent">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <div class="attn-body">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+                    <div class="attn-title">EMI due in 3 days</div>
+                    <span class="badge-urgent">3 days</span>
+                  </div>
+                  <div class="attn-sub">Home loan — SBI Bank</div>
+                  <div class="attn-amount money--neg">NOK 4,294</div>
+                  <div class="attn-actions">
+                    <button class="attn-btn-primary">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      Mark paid
+                    </button>
+                    <button class="attn-btn-secondary">View</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Receipts to review -->
+              <div class="attention-card">
+                <div class="attn-icon receipt">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                </div>
+                <div class="attn-body">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+                    <div class="attn-title">2 receipts to review</div>
+                    <span class="badge-info">New</span>
+                  </div>
+                  <div class="attn-sub">Scanned but not categorised</div>
+                  <div class="attn-actions">
+                    <button class="attn-btn-primary">Review now</button>
+                    <button class="attn-btn-secondary">Later</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Confirm rent -->
+              <div class="attention-card">
+                <div class="attn-icon warning">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                </div>
+                <div class="attn-body">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+                    <div class="attn-title">Confirm rent payment</div>
+                    <span class="badge-due">June</span>
+                  </div>
+                  <div class="attn-sub">Rent and housing — planned for June</div>
+                  <div class="attn-amount money--warn">NOK 8,000</div>
+                  <div class="attn-actions">
+                    <button class="attn-btn-primary">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      Confirm paid
+                    </button>
+                    <button class="attn-btn-secondary">Add expense</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Aksel owes -->
+              <div class="attention-card">
+                <div class="attn-icon friend">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div class="attn-body">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+                    <div class="attn-title">Aksel owes you</div>
+                    <span class="badge-owed">Owed</span>
+                  </div>
+                  <div class="attn-sub">Dinner split — Maaemo, last Friday</div>
+                  <div class="attn-amount money--pos">NOK 420</div>
+                  <div class="attn-actions">
+                    <button class="attn-btn-primary">Remind</button>
+                    <button class="attn-btn-secondary">Settle</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Price book update — spans full width -->
+              <div class="attention-card" style="grid-column:1/-1;">
+                <div class="attn-icon info">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                </div>
+                <div class="attn-body">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">
+                    <div class="attn-title">Price book: 3 items updated</div>
+                    <span class="badge-info">New</span>
+                  </div>
+                  <div class="attn-sub">Oat milk, eggs, sourdough at Rema 1000 — prices changed since last visit</div>
+                  <div class="attn-actions">
+                    <button class="attn-btn-primary">View changes</button>
+                    <button class="attn-btn-secondary">Dismiss</button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- HERO: Budget burndown + Cashflow -->
+          <div class="d-grid-2">
+
+            <!-- Budget burndown -->
+            <div class="card card--section">
+              <div class="section-header">
+                <span class="section-header__title">Monthly budget — June 2026</span>
+                <a class="section-header__action">All months</a>
+              </div>
+              <div style="height:190px;position:relative;">
+                <canvas id="burndownChart"></canvas>
+              </div>
+              <div class="stat-grid" style="margin-top:var(--sp-md);">
+                <div class="stat-box">
+                  <div class="stat-box__label">Planned</div>
+                  <div class="stat-box__value money">12,294</div>
+                </div>
+                <div class="stat-box">
+                  <div class="stat-box__label">Spent</div>
+                  <div class="stat-box__value money money--neu">0</div>
+                </div>
+                <div class="stat-box">
+                  <div class="stat-box__label">Remaining</div>
+                  <div class="stat-box__value money money--pos">12,294</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cashflow -->
+            <div class="card card--section">
+              <div class="section-header">
+                <span class="section-header__title">Cashflow — June</span>
+              </div>
+              <div class="cashflow-bar-wrap" style="margin-bottom:var(--sp-md);">
+                <div class="cfbar-row">
+                  <div class="cfbar-label">Income</div>
+                  <div class="cfbar-track">
+                    <div class="cfbar-fill" style="width:100%;background:var(--positive);">NOK 36,000</div>
+                  </div>
+                </div>
+                <div class="cfbar-row">
+                  <div class="cfbar-label">Planned costs</div>
+                  <div class="cfbar-track">
+                    <div class="cfbar-fill" style="width:34%;background:var(--accent);">NOK 12,294</div>
+                  </div>
+                </div>
+                <div class="cfbar-row">
+                  <div class="cfbar-label">Loan EMIs</div>
+                  <div class="cfbar-track">
+                    <div class="cfbar-fill" style="width:12%;background:#7AA2F7;">NOK 4,294</div>
+                  </div>
+                </div>
+                <div class="cfbar-row">
+                  <div class="cfbar-label">Discretionary</div>
+                  <div class="cfbar-track">
+                    <div class="cfbar-fill" style="width:22%;background:#E8A317;">NOK 8,000</div>
+                  </div>
+                </div>
+                <div class="cfbar-row">
+                  <div class="cfbar-label">Surplus</div>
+                  <div class="cfbar-track">
+                    <div class="cfbar-fill" style="width:66%;background:var(--positive-soft);color:var(--positive);">NOK 23,706</div>
+                  </div>
+                </div>
+              </div>
+              <div style="border-top:1px solid var(--border-subtle);padding-top:var(--sp-sm);">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                  <span style="font-size:var(--fs-body-sm);color:var(--fg3);">Net surplus after all planned costs</span>
+                  <span style="font-size:18px;font-weight:var(--fw-bold);color:var(--positive);font-feature-settings:'tnum' 1;">NOK 23,706</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MID: Category donut + Spend trend -->
+          <div class="d-grid-mid">
+
+            <!-- Category breakdown -->
+            <div class="card card--section">
+              <div class="section-header">
+                <span class="section-header__title">Planned costs by category</span>
+              </div>
+              <div style="display:flex;gap:var(--sp-md);align-items:center;">
+                <div class="donut-wrap" style="width:160px;height:160px;">
+                  <canvas id="donutChart"></canvas>
+                  <div class="donut-center">
+                    <div class="donut-center__val">12,294</div>
+                    <div class="donut-center__label">NOK total</div>
+                  </div>
+                </div>
+                <div style="flex:1;">
+                  <div class="cat-row">
+                    <div class="cat-dot" style="background:var(--cat-rent);"></div>
+                    <div class="cat-row__name">Rent and housing</div>
+                    <div class="cat-row__meta">
+                      <span class="cat-row__amount money">8,000</span>
+                      <span style="font-size:10px;color:var(--fg3);">65%</span>
+                    </div>
+                  </div>
+                  <div class="cat-row">
+                    <div class="cat-dot" style="background:var(--cat-loans);"></div>
+                    <div class="cat-row__name">Loans / EMI</div>
+                    <div class="cat-row__meta">
+                      <span class="cat-row__amount money money--neg">4,294</span>
+                      <span style="font-size:10px;color:var(--fg3);">35%</span>
+                    </div>
+                  </div>
+                  <div class="cat-row">
+                    <div class="cat-dot" style="background:var(--cat-groceries);"></div>
+                    <div class="cat-row__name">Groceries</div>
+                    <div class="cat-row__meta">
+                      <span class="cat-row__amount money money--neu">4,200</span>
+                      <span style="font-size:10px;color:var(--fg3);">planned</span>
+                    </div>
+                  </div>
+                  <div class="cat-row">
+                    <div class="cat-dot" style="background:var(--cat-transport);"></div>
+                    <div class="cat-row__name">Transport</div>
+                    <div class="cat-row__meta">
+                      <span class="cat-row__amount money money--neu">1,800</span>
+                      <span style="font-size:10px;color:var(--fg3);">planned</span>
+                    </div>
+                  </div>
+                  <div class="cat-row">
+                    <div class="cat-dot" style="background:var(--cat-utilities);"></div>
+                    <div class="cat-row__name">Utilities</div>
+                    <div class="cat-row__meta">
+                      <span class="cat-row__amount money money--neu">1,200</span>
+                      <span style="font-size:10px;color:var(--fg3);">planned</span>
+                    </div>
+                  </div>
+                  <div class="cat-row">
+                    <div class="cat-dot" style="background:var(--cat-subs);"></div>
+                    <div class="cat-row__name">Subscriptions</div>
+                    <div class="cat-row__meta">
+                      <span class="cat-row__amount money money--neu">600</span>
+                      <span style="font-size:10px;color:var(--fg3);">planned</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Spend trend -->
+            <div class="card card--section">
+              <div class="section-header">
+                <span class="section-header__title">6-month spend trend</span>
+              </div>
+              <div style="height:160px;position:relative;">
+                <canvas id="trendChart"></canvas>
+              </div>
+              <div style="margin-top:var(--sp-sm);display:flex;justify-content:space-between;font-size:var(--fs-body-sm);color:var(--fg3);font-feature-settings:'tnum' 1;">
+                <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span>
+              </div>
+              <div style="margin-top:var(--sp-sm);padding-top:var(--sp-sm);border-top:1px solid var(--border-subtle);">
+                <div style="font-size:var(--fs-body-sm);color:var(--fg3);">Monthly average</div>
+                <div style="font-size:18px;font-weight:var(--fw-bold);font-feature-settings:'tnum' 1;color:var(--fg1);">NOK 9,840</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BOTTOM: Shared balances + Savings goals + Recent activity -->
+          <div class="d-grid-3">
+
+            <!-- Shared balances -->
+            <div class="card card--section">
+              <div class="section-header">
+                <span class="section-header__title">Shared balances</span>
+                <a class="section-header__action">See all</a>
+              </div>
+              <div class="person-item" style="border-radius:var(--radius-sm);border:1px solid var(--border-subtle);margin-bottom:var(--sp-xs);">
+                <div class="avatar" style="background:#EEF0FF;color:#4E6AEB;">AK</div>
+                <div style="flex:1;">
+                  <div style="font-size:var(--fs-body-md);font-weight:var(--fw-medium);">Aksel</div>
+                  <div style="font-size:var(--fs-body-sm);color:var(--fg3);">Owes you</div>
+                </div>
+                <div class="person-item__balance money money--pos">NOK 420</div>
+              </div>
+              <div class="person-item" style="border-radius:var(--radius-sm);border:1px solid var(--border-subtle);margin-bottom:var(--sp-xs);">
+                <div class="avatar" style="background:#EEF0F3;color:var(--fg3);">RO</div>
+                <div style="flex:1;">
+                  <div style="font-size:var(--fs-body-md);font-weight:var(--fw-medium);">Rohan</div>
+                  <div style="font-size:var(--fs-body-sm);color:var(--fg3);">You owe</div>
+                </div>
+                <div class="person-item__balance money money--neg">-NOK 840</div>
+              </div>
+              <div class="person-item" style="border-radius:var(--radius-sm);border:1px solid var(--border-subtle);">
+                <div class="avatar" style="background:#F3EEFF;color:#7D5CE8;">HS</div>
+                <div style="flex:1;">
+                  <div style="font-size:var(--fs-body-md);font-weight:var(--fw-medium);">Household Q2</div>
+                  <div style="font-size:var(--fs-body-sm);color:var(--fg3);">Group</div>
+                </div>
+                <div class="person-item__balance money money--neu">Settled</div>
+              </div>
+            </div>
+
+            <!-- Savings goals -->
+            <div class="card card--section">
+              <div class="section-header">
+                <span class="section-header__title">Savings goals</span>
+                <a class="section-header__action">Add goal</a>
+              </div>
+              <div class="goal-item">
+                <div class="goal-item__header">
+                  <span class="goal-item__name">Emergency fund</span>
+                  <span class="goal-item__amounts">NOK 28,000 / 50,000</span>
+                </div>
+                <div class="prog-track">
+                  <div class="prog-fill" style="width:56%;background:var(--accent);"></div>
+                </div>
+                <div style="font-size:10px;color:var(--fg3);margin-top:3px;">56% — on track</div>
+              </div>
+              <div class="goal-item">
+                <div class="goal-item__header">
+                  <span class="goal-item__name">Norway trip</span>
+                  <span class="goal-item__amounts">NOK 7,200 / 18,000</span>
+                </div>
+                <div class="prog-track">
+                  <div class="prog-fill" style="width:40%;background:#7AA2F7;"></div>
+                </div>
+                <div style="font-size:10px;color:var(--fg3);margin-top:3px;">40% — 4 months remaining</div>
+              </div>
+              <div class="goal-item">
+                <div class="goal-item__header">
+                  <span class="goal-item__name">New laptop</span>
+                  <span class="goal-item__amounts">NOK 4,000 / 14,000</span>
+                </div>
+                <div class="prog-track">
+                  <div class="prog-fill" style="width:29%;background:#E8A317;"></div>
+                </div>
+                <div style="font-size:10px;color:var(--fg3);margin-top:3px;">29% — saving NOK 1,000/mo</div>
+              </div>
+            </div>
+
+            <!-- Recent activity -->
+            <div class="card card--section">
+              <div class="section-header">
+                <span class="section-header__title">Recent activity</span>
+                <a class="section-header__action">See all</a>
+              </div>
+              <div class="activity-row">
+                <div class="avatar" style="background:#FFF0F0;color:var(--negative);">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                </div>
+                <div class="activity-row__info">
+                  <div class="activity-row__desc">Rema 1000</div>
+                  <div class="activity-row__meta">Groceries · Today</div>
+                </div>
+                <div class="activity-row__amount money money--neg">-NOK 342</div>
+              </div>
+              <div class="activity-row">
+                <div class="avatar" style="background:#EEF5FF;color:#4A7AE0;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11V9a2 2 0 0 0-2-2H4"/><path d="M18 22 6 22"/></svg>
+                </div>
+                <div class="activity-row__info">
+                  <div class="activity-row__desc">Ruter monthly pass</div>
+                  <div class="activity-row__meta">Transport · Yesterday</div>
+                </div>
+                <div class="activity-row__amount money money--neg">-NOK 820</div>
+              </div>
+              <div class="activity-row">
+                <div class="avatar" style="background:var(--positive-soft);color:var(--positive);">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
+                </div>
+                <div class="activity-row__info">
+                  <div class="activity-row__desc">June salary</div>
+                  <div class="activity-row__meta">Income · Jun 1</div>
+                </div>
+                <div class="activity-row__amount money money--pos">+NOK 36,000</div>
+              </div>
+              <div class="activity-row">
+                <div class="avatar" style="background:#F3EEFF;color:#7D5CE8;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+                </div>
+                <div class="activity-row__info">
+                  <div class="activity-row__desc">Telenor internet</div>
+                  <div class="activity-row__meta">Utilities · Jun 1</div>
+                </div>
+                <div class="activity-row__amount money money--neg">-NOK 449</div>
+              </div>
+              <div class="activity-row">
+                <div class="avatar" style="background:#FFFBEE;color:#8A5E00;">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                </div>
+                <div class="activity-row__info">
+                  <div class="activity-row__desc">Hafslund Strom</div>
+                  <div class="activity-row__meta">Utilities · Jun 1</div>
+                </div>
+                <div class="activity-row__amount money money--neg">-NOK 612</div>
+              </div>
+            </div>
+
+          </div>
+
+        </div><!-- /desktop-main -->
+      </div><!-- /desktop-body -->
+    </div><!-- /frame-desktop -->
+  </div>
+
+  <!-- ======================================================
+       MOBILE FRAME
+       ====================================================== -->
+  <div>
+    <div class="frame-label">Mobile / iOS — 390 px</div>
+    <div class="frame-mobile">
+
+      <!-- Status bar -->
+      <div class="mobile-statusbar">
+        <span class="msb-time">9:41</span>
+        <div class="msb-icons">
+          <!-- Signal bars -->
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+            <rect x="0" y="4" width="3" height="8" rx="1" fill="currentColor" opacity="0.4"/>
+            <rect x="4.5" y="2.5" width="3" height="9.5" rx="1" fill="currentColor" opacity="0.6"/>
+            <rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="currentColor"/>
+          </svg>
+          <!-- Wifi -->
+          <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 2.5C10.5 2.5 12.7 3.6 14.2 5.4L15.5 4C13.6 1.8 10.9 0.5 8 0.5C5.1 0.5 2.4 1.8 0.5 4L1.8 5.4C3.3 3.6 5.5 2.5 8 2.5Z" fill="currentColor"/><path d="M8 6C9.7 6 11.2 6.7 12.3 7.9L13.6 6.5C12.1 4.9 10.2 4 8 4C5.8 4 3.9 4.9 2.4 6.5L3.7 7.9C4.8 6.7 6.3 6 8 6Z" fill="currentColor"/><circle cx="8" cy="10.5" r="1.5" fill="currentColor"/></svg>
+          <!-- Battery -->
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="currentColor" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 000-4z" fill="currentColor" opacity="0.4"/></svg>
+        </div>
+      </div>
+
+      <!-- Top bar -->
+      <div class="mobile-topbar">
+        <div class="mobile-topbar__wordmark">Expense tracker</div>
+        <div class="mobile-topbar__actions">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+      </div>
+
+      <!-- Scroll content -->
+      <div class="mobile-scroll">
+
+        <!-- AI Insight banner -->
+        <div class="insight-banner" style="font-size:13px;">
+          <div class="insight-banner__header">
+            <span class="insight-banner__label">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              AI summary
+            </span>
+          </div>
+          NOK 0 of NOK 12,294 spent this month. Loan EMIs account for 35% of your plan — due 20 June.
+          <div class="insight-banner__actions">
+            <button class="insight-banner__btn">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+              Regenerate
+            </button>
+            <button class="insight-banner__btn">Ask a follow-up</button>
+          </div>
+        </div>
+
+        <!-- Budget hero card -->
+        <div class="card card--section">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:var(--sp-sm);">
+            <div>
+              <div style="font-size:var(--fs-body-sm);color:var(--fg3);margin-bottom:2px;font-weight:var(--fw-medium);">Planned — June 2026</div>
+              <div style="font-size:28px;font-weight:var(--fw-bold);color:var(--fg1);letter-spacing:-0.02em;font-feature-settings:'tnum' 1;line-height:1.1;">NOK 12,294</div>
+            </div>
+            <div class="chip">0% spent</div>
+          </div>
+          <div class="hero-metric__progress-label">
+            <span>NOK 0 spent</span>
+            <span>NOK 12,294 remaining</span>
+          </div>
+          <div class="prog-track" style="height:8px;">
+            <div class="prog-fill" style="width:0.5%;background:var(--accent);min-width:4px;"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-sm);margin-top:var(--sp-sm);">
+            <div style="background:var(--bg-light);border-radius:var(--radius-sm);padding:10px var(--sp-sm);">
+              <div style="font-size:10px;color:var(--fg3);margin-bottom:2px;">Loan EMIs due</div>
+              <div style="font-size:15px;font-weight:var(--fw-bold);color:var(--negative);font-feature-settings:'tnum' 1;">4,294</div>
+            </div>
+            <div style="background:var(--bg-light);border-radius:var(--radius-sm);padding:10px var(--sp-sm);">
+              <div style="font-size:10px;color:var(--fg3);margin-bottom:2px;">Housing</div>
+              <div style="font-size:15px;font-weight:var(--fw-bold);color:var(--fg1);font-feature-settings:'tnum' 1;">8,000</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NEEDS ATTENTION (mobile: stacked list) -->
+        <div>
+          <div class="section-header" style="margin-bottom:var(--sp-sm);">
+            <span class="section-header__title">Needs attention</span>
+            <span class="section-header__badge">5 items</span>
+          </div>
+          <div class="attn-stack">
+
+            <!-- EMI due -->
+            <div class="attention-card">
+              <div class="attn-icon urgent">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div class="attn-body">
+                <div class="attn-title">EMI due in 3 days</div>
+                <div class="attn-sub">Home loan — SBI Bank</div>
+                <div class="attn-amount money--neg">NOK 4,294</div>
+                <div class="attn-actions">
+                  <button class="attn-btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Mark paid
+                  </button>
+                  <button class="attn-btn-secondary">View</button>
+                </div>
+              </div>
+              <div class="attn-trailing">
+                <span class="badge-urgent">3 days</span>
+              </div>
+            </div>
+
+            <!-- Receipts -->
+            <div class="attention-card">
+              <div class="attn-icon receipt">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              </div>
+              <div class="attn-body">
+                <div class="attn-title">2 receipts to review</div>
+                <div class="attn-sub">Scanned but not categorised</div>
+                <div class="attn-actions">
+                  <button class="attn-btn-primary">Review now</button>
+                  <button class="attn-btn-secondary">Later</button>
+                </div>
+              </div>
+              <div class="attn-trailing">
+                <span class="badge-info">New</span>
+              </div>
+            </div>
+
+            <!-- Confirm rent -->
+            <div class="attention-card">
+              <div class="attn-icon warning">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              </div>
+              <div class="attn-body">
+                <div class="attn-title">Confirm rent payment</div>
+                <div class="attn-sub">Rent and housing — planned for June</div>
+                <div class="attn-amount money--warn">NOK 8,000</div>
+                <div class="attn-actions">
+                  <button class="attn-btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Confirm paid
+                  </button>
+                  <button class="attn-btn-secondary">Add expense</button>
+                </div>
+              </div>
+              <div class="attn-trailing">
+                <span class="badge-due">June</span>
+              </div>
+            </div>
+
+            <!-- Aksel owes -->
+            <div class="attention-card">
+              <div class="attn-icon friend">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </div>
+              <div class="attn-body">
+                <div class="attn-title">Aksel owes you</div>
+                <div class="attn-sub">Dinner split — Maaemo, last Friday</div>
+                <div class="attn-amount money--pos">NOK 420</div>
+                <div class="attn-actions">
+                  <button class="attn-btn-primary">Remind</button>
+                  <button class="attn-btn-secondary">Settle</button>
+                </div>
+              </div>
+              <div class="attn-trailing">
+                <span class="badge-owed">Owed</span>
+              </div>
+            </div>
+
+            <!-- Price book -->
+            <div class="attention-card">
+              <div class="attn-icon info">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              </div>
+              <div class="attn-body">
+                <div class="attn-title">Price book: 3 items updated</div>
+                <div class="attn-sub">Oat milk, eggs, sourdough at Rema 1000</div>
+                <div class="attn-actions">
+                  <button class="attn-btn-primary">View changes</button>
+                </div>
+              </div>
+              <div class="attn-trailing">
+                <span class="badge-info">New</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- AI PLANNING CARD (mobile) -->
+        <div class="ai-plan-card">
+          <div class="ai-plan-card__header">
+            <div class="ai-plan-card__icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+            </div>
+            <div>
+              <div class="ai-plan-card__title">Plan with AI</div>
+              <div class="ai-plan-card__sub">Ask about trips, big purchases, savings goals, or spending cuts.</div>
+            </div>
+          </div>
+          <div class="ai-plan-input-row">
+            <input class="ai-plan-input" type="text" placeholder="Ask anything — plan a trip, save for a goal..." />
+            <button class="ai-plan-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              Ask
+            </button>
+          </div>
+          <div class="ai-chips">
+            <span class="ai-chip">Plan a trip to Lofoten</span>
+            <span class="ai-chip">Can I afford a NOK 30,000 laptop?</span>
+            <span class="ai-chip">Save NOK 50,000 by December</span>
+          </div>
+          <!-- Example AI response (mobile) -->
+          <div class="ai-response-preview">
+            <div class="ai-response-preview__prompt">"Save NOK 50,000 by December"</div>
+            <div class="ai-response-preview__label">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              AI plan
+            </div>
+            <div class="ai-response-plan">
+              <div class="ai-plan-step">
+                <div class="ai-plan-step__num">1</div>
+                <div class="ai-plan-step__text">Set aside <strong class="money money--pos">NOK 8,334/month</strong> for 6 months — within your surplus of NOK 23,706.</div>
+              </div>
+              <div class="ai-plan-step">
+                <div class="ai-plan-step__num">2</div>
+                <div class="ai-plan-step__text">Trim subscriptions and discretionary spend by <strong>NOK 2,000/month</strong> to hit the goal by <strong>October</strong>.</div>
+              </div>
+              <div class="ai-plan-step">
+                <div class="ai-plan-step__num">3</div>
+                <div class="ai-plan-step__text">After the home loan EMI clears, redirect <strong>NOK 4,294</strong> to savings from July onward.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Category breakdown -->
+        <div class="card card--section">
+          <div class="section-header">
+            <span class="section-header__title">Category breakdown</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--sp-md);">
+            <div class="donut-wrap">
+              <canvas id="mobileDonutChart"></canvas>
+              <div class="donut-center">
+                <div class="donut-center__val">12,294</div>
+                <div class="donut-center__label">NOK planned</div>
+              </div>
+            </div>
+            <div class="legend">
+              <div class="legend-item">
+                <div class="legend-dot" style="background:var(--cat-rent);"></div>
+                <div class="legend-label">Rent &amp; housing</div>
+                <div class="legend-pct">65%</div>
+              </div>
+              <div class="legend-item">
+                <div class="legend-dot" style="background:var(--cat-loans);"></div>
+                <div class="legend-label">Loans / EMI</div>
+                <div class="legend-pct">35%</div>
+              </div>
+              <div class="legend-item">
+                <div class="legend-dot" style="background:var(--cat-groceries);"></div>
+                <div class="legend-label">Groceries</div>
+                <div class="legend-pct">34%</div>
+              </div>
+              <div class="legend-item">
+                <div class="legend-dot" style="background:var(--cat-transport);"></div>
+                <div class="legend-label">Transport</div>
+                <div class="legend-pct">15%</div>
+              </div>
+              <div class="legend-item">
+                <div class="legend-dot" style="background:var(--cat-utilities);"></div>
+                <div class="legend-label">Utilities</div>
+                <div class="legend-pct">10%</div>
+              </div>
+              <div class="legend-item">
+                <div class="legend-dot" style="background:var(--cat-subs);"></div>
+                <div class="legend-label">Subscriptions</div>
+                <div class="legend-pct">5%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Spend trend -->
+        <div class="card card--section">
+          <div class="section-header">
+            <span class="section-header__title">6-month spend trend</span>
+            <span style="font-size:var(--fs-body-sm);color:var(--positive);font-weight:var(--fw-medium);">-8% vs last month</span>
+          </div>
+          <div style="height:80px;position:relative;">
+            <canvas id="mobileTrendChart"></canvas>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--fg3);margin-top:4px;font-feature-settings:'tnum' 1;">
+            <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span>
+          </div>
+        </div>
+
+        <!-- Savings goals -->
+        <div class="card card--section">
+          <div class="section-header">
+            <span class="section-header__title">Savings goals</span>
+            <a class="section-header__action">Add goal</a>
+          </div>
+          <div class="goal-item">
+            <div class="goal-item__header">
+              <span class="goal-item__name">Emergency fund</span>
+              <span class="goal-item__amounts">NOK 28,000 / 50,000</span>
+            </div>
+            <div class="prog-track">
+              <div class="prog-fill" style="width:56%;background:var(--accent);"></div>
+            </div>
+          </div>
+          <div class="goal-item">
+            <div class="goal-item__header">
+              <span class="goal-item__name">Norway trip</span>
+              <span class="goal-item__amounts">NOK 7,200 / 18,000</span>
+            </div>
+            <div class="prog-track">
+              <div class="prog-fill" style="width:40%;background:#7AA2F7;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Shared balances -->
+        <div class="card card--section">
+          <div class="section-header">
+            <span class="section-header__title">Shared balances</span>
+            <a class="section-header__action">See all</a>
+          </div>
+          <div class="person-item" style="padding-left:0;padding-right:0;border-bottom:1px solid var(--border-subtle);">
+            <div class="avatar" style="background:#EEF0FF;color:#4E6AEB;">AK</div>
+            <div style="flex:1;">
+              <div style="font-size:var(--fs-body-md);font-weight:var(--fw-medium);">Aksel</div>
+              <div style="font-size:var(--fs-body-sm);color:var(--fg3);">Owes you</div>
+            </div>
+            <div class="person-item__balance money money--pos">NOK 420</div>
+          </div>
+          <div class="person-item" style="padding-left:0;padding-right:0;">
+            <div class="avatar" style="background:#EEF0F3;color:var(--fg3);">RO</div>
+            <div style="flex:1;">
+              <div style="font-size:var(--fs-body-md);font-weight:var(--fw-medium);">Rohan</div>
+              <div style="font-size:var(--fs-body-sm);color:var(--fg3);">You owe</div>
+            </div>
+            <div class="person-item__balance money money--neg">-NOK 840</div>
+          </div>
+        </div>
+
+        <!-- Recent activity -->
+        <div class="card card--section">
+          <div class="section-header">
+            <span class="section-header__title">Recent activity</span>
+            <a class="section-header__action">See all</a>
+          </div>
+          <div class="activity-row">
+            <div class="avatar" style="background:#FFF0F0;color:var(--negative);">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            </div>
+            <div class="activity-row__info">
+              <div class="activity-row__desc">Rema 1000</div>
+              <div class="activity-row__meta">Groceries · Today</div>
+            </div>
+            <div class="activity-row__amount money money--neg">-NOK 342</div>
+          </div>
+          <div class="activity-row">
+            <div class="avatar" style="background:#EEF5FF;color:#4A7AE0;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11V9a2 2 0 0 0-2-2H4"/><path d="M18 22 6 22"/></svg>
+            </div>
+            <div class="activity-row__info">
+              <div class="activity-row__desc">Ruter monthly pass</div>
+              <div class="activity-row__meta">Transport · Yesterday</div>
+            </div>
+            <div class="activity-row__amount money money--neg">-NOK 820</div>
+          </div>
+          <div class="activity-row">
+            <div class="avatar" style="background:var(--positive-soft);color:var(--positive);">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
+            </div>
+            <div class="activity-row__info">
+              <div class="activity-row__desc">June salary</div>
+              <div class="activity-row__meta">Income · Jun 1</div>
+            </div>
+            <div class="activity-row__amount money money--pos">+NOK 36,000</div>
+          </div>
+        </div>
+
+      </div><!-- /mobile-scroll -->
+
+      <!-- FAB -->
+      <button class="fab">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+
+      <!-- Bottom nav -->
+      <div class="bottom-nav">
+        <div class="bnav-item active">
+          <div class="bnav-item__indicator"></div>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span class="bnav-item__label">Home</span>
+        </div>
+        <div class="bnav-item">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="bnav-item__label">Family</span>
+        </div>
+        <div class="bnav-item">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span class="bnav-item__label">Activity</span>
+        </div>
+        <div class="bnav-item">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span class="bnav-item__label">Account</span>
+        </div>
+      </div>
+
+    </div><!-- /frame-mobile -->
+  </div>
+
+</div><!-- /stage -->
+
+<!-- ══════════════════════════════════════════════════════════
+     ONBOARDING FLOW
+     ══════════════════════════════════════════════════════════ -->
+<div class="ob-section-divider">
+  <div class="ob-section-divider__heading">Onboarding flow</div>
+  <div class="ob-section-divider__sub">Setup wizard — manual path and AI path, desktop and mobile</div>
+</div>
+
+<div class="ob-stage">
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 1 — DESKTOP / WEB
+     ════════════════════════════════════════════════════ -->
+<div class="ob-stage-section">
+  <div class="ob-stage-section-label">Desktop / Web — 720 px wizard centered on page</div>
+
+  <div class="ob-screen-row">
+
+    <!-- Screen A: Welcome -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Welcome</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:32px;">
+          <div class="wordmark">Expense tracker</div>
+          <div style="margin-bottom:var(--sp-sm);">
+            <span class="badge-new">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              Now with AI planning
+            </span>
+          </div>
+          <div style="font-size:28px;font-weight:700;color:var(--fg1);line-height:1.2;letter-spacing:-0.01em;margin-bottom:10px;">Set up your monthly plan</div>
+          <div style="font-size:15px;color:var(--fg3);line-height:1.55;max-width:480px;">
+            Tell the app about your income, fixed costs, and goals — and you will get a clear picture of your finances every month. Takes about 5 minutes.
+          </div>
+
+          <div class="welcome-actions">
+            <button class="welcome-btn-ai">
+              <div class="wb-icon wb-icon--ai">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              </div>
+              <div class="wb-text">
+                <div class="wb-text__title">Start with AI</div>
+                <div class="wb-text__sub">Describe your situation and AI drafts a starting plan in seconds</div>
+              </div>
+              <div class="wb-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </button>
+            <button class="welcome-btn-manual">
+              <div class="wb-icon wb-icon--manual">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </div>
+              <div class="wb-text">
+                <div class="wb-text__title">Set up manually</div>
+                <div class="wb-text__sub">Step-by-step wizard — 10 short steps, skip any you do not need</div>
+              </div>
+              <div class="wb-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </button>
+          </div>
+
+          <div style="margin-top:20px;text-align:center;">
+            <button style="font-size:13px;color:var(--fg3);background:none;border:none;cursor:pointer;font-family:var(--font-sans);">Skip for now — I will set up later</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen B: Currency (Step 1) -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 1 — Currency</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 1 of 10</span>
+          <button class="wiz-close-btn">Set up later</button>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:10%;"></div></div>
+        </div>
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:110px;">
+          <div class="wiz-step-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <div class="wiz-step-title">Primary currency</div>
+          <div class="wiz-step-desc">Choose the main currency for your monthly plan. You can still log expenses in other currencies later.</div>
+
+          <div class="currency-grid">
+            <div class="currency-card selected">
+              <div class="currency-card__code">NOK</div>
+              <div class="currency-card__symbol">kr</div>
+            </div>
+            <div class="currency-card">
+              <div class="currency-card__code">INR</div>
+              <div class="currency-card__symbol">&#8377;</div>
+            </div>
+            <div class="currency-card">
+              <div class="currency-card__code">USD</div>
+              <div class="currency-card__symbol">$</div>
+            </div>
+            <div class="currency-card">
+              <div class="currency-card__code">EUR</div>
+              <div class="currency-card__symbol">&#8364;</div>
+            </div>
+            <div class="currency-card">
+              <div class="currency-card__code">GBP</div>
+              <div class="currency-card__symbol">&#163;</div>
+            </div>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">Or search for a currency</label>
+            <input class="field-input" type="text" placeholder="Search by name or code..." />
+          </div>
+        </div>
+        <div class="wiz-actions wiz-actions--desktop">
+          <button class="btn-primary">Next <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /ob-screen-row -->
+
+  <!-- Second desktop row -->
+  <div class="ob-screen-row" style="margin-top:32px;">
+
+    <!-- Screen C: Housing (Step 4) -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 4 — Rent and housing</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 4 of 10</span>
+          <button class="wiz-close-btn">Set up later</button>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:40%;"></div></div>
+        </div>
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:110px;">
+          <div class="wiz-step-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </div>
+          <div class="wiz-step-title">Rent and housing</div>
+          <div class="wiz-step-desc">Enter your monthly rent or mortgage payment. This will appear as a fixed cost in your plan.</div>
+
+          <div class="d-field-row" style="margin-bottom:var(--sp-md);">
+            <div class="field-group" style="margin-bottom:0;">
+              <label class="field-label">Monthly amount (NOK)</label>
+              <input class="field-input" type="text" value="8 000" style="font-feature-settings:'tnum' 1;font-weight:600;" />
+            </div>
+            <div class="field-group" style="margin-bottom:0;">
+              <label class="field-label">Payment type</label>
+              <select class="field-select">
+                <option>Rent</option>
+                <option>Mortgage</option>
+                <option>Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="d-field-row">
+            <div class="field-group" style="margin-bottom:0;">
+              <label class="field-label">Due day of month</label>
+              <select class="field-select">
+                <option>1st</option>
+                <option selected>5th</option>
+                <option>10th</option>
+                <option>15th</option>
+                <option>Last day</option>
+              </select>
+            </div>
+            <div class="field-group" style="margin-bottom:0;">
+              <label class="field-label">Linked account</label>
+              <select class="field-select">
+                <option>DNB Brukskonto</option>
+                <option>Spare konto</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="wiz-actions wiz-actions--desktop">
+          <button class="btn-primary">Next</button>
+          <button class="btn-skip">Skip this step</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen D: Loans/Insurances (Step 5) -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 5 — Loans and insurances</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 5 of 10</span>
+          <button class="wiz-close-btn">Set up later</button>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:50%;"></div></div>
+        </div>
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:110px;">
+          <div class="wiz-step-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 12a11.05 11.05 0 0 0-22 0zm-5 7a3 3 0 0 1-6 0v-7"/></svg>
+          </div>
+          <div class="wiz-step-title">Loans and insurances</div>
+          <div class="wiz-step-desc">Add any outstanding loans and insurance premiums. Each becomes a fixed monthly commitment in your plan.</div>
+
+          <div class="item-card">
+            <div class="item-card__header">
+              <span class="item-card__title">Loan 1</span>
+              <button class="item-card__remove"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+            <div class="d-field-row" style="margin-bottom:var(--sp-sm);">
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Loan name</label>
+                <input class="field-input" value="Car loan" />
+              </div>
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Type</label>
+                <select class="field-select"><option selected>Car loan</option><option>Home loan</option><option>Personal loan</option><option>Consumer loan</option><option>Education</option><option>Other</option></select>
+              </div>
+            </div>
+            <div class="d-field-row" style="margin-bottom:var(--sp-sm);">
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Monthly EMI (NOK)</label>
+                <input class="field-input" value="4 294" style="font-feature-settings:'tnum' 1;font-weight:600;" />
+              </div>
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Due day</label>
+                <select class="field-select"><option>15th</option><option selected>20th</option><option>25th</option></select>
+              </div>
+            </div>
+            <div class="d-field-row">
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Remaining principal (NOK)</label>
+                <input class="field-input" value="186 000" style="font-feature-settings:'tnum' 1;" />
+              </div>
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Months remaining</label>
+                <input class="field-input" type="number" value="44" />
+              </div>
+            </div>
+          </div>
+
+          <button class="add-item-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add another loan
+          </button>
+        </div>
+        <div class="wiz-actions wiz-actions--desktop">
+          <button class="btn-primary">Next</button>
+          <button class="btn-skip">Skip this step</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /ob-screen-row -->
+
+  <!-- Third desktop row -->
+  <div class="ob-screen-row" style="margin-top:32px;">
+
+    <!-- Screen E: Savings (Step 9) -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 9 — Savings</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 9 of 10</span>
+          <button class="wiz-close-btn">Set up later</button>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:90%;"></div></div>
+        </div>
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:110px;">
+          <div class="wiz-step-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <div class="wiz-step-title">Savings goals</div>
+          <div class="wiz-step-desc">Set up goals you are saving towards. The app will track progress and show you how close you are each month.</div>
+
+          <div class="item-card">
+            <div class="item-card__header">
+              <span class="item-card__title">Goal 1</span>
+              <button class="item-card__remove"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+            <div class="d-field-row" style="margin-bottom:var(--sp-sm);">
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Goal name</label>
+                <input class="field-input" value="Emergency fund" />
+              </div>
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Linked account</label>
+                <select class="field-select"><option selected>DNB Sparekonto</option><option>Ny konto</option></select>
+              </div>
+            </div>
+            <div class="d-field-row" style="margin-bottom:var(--sp-sm);">
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Monthly contribution (NOK)</label>
+                <input class="field-input" value="2 000" style="font-feature-settings:'tnum' 1;font-weight:600;" />
+              </div>
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Target amount (NOK)</label>
+                <input class="field-input" value="50 000" style="font-feature-settings:'tnum' 1;" />
+              </div>
+            </div>
+            <div class="toggle-row">
+              <div>
+                <div class="toggle-label">Show in family view</div>
+                <div class="toggle-sub">Other household members will see this goal</div>
+              </div>
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </div>
+          </div>
+
+          <button class="add-item-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add savings goal
+          </button>
+        </div>
+        <div class="wiz-actions wiz-actions--desktop">
+          <button class="btn-primary">Review and complete</button>
+          <button class="btn-skip">Skip this step</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen F: Review (Step 10) -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 10 — Review</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 10 of 10 — Review</span>
+          <button class="wiz-close-btn" style="opacity:0;pointer-events:none;">.</button>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:100%;"></div></div>
+        </div>
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:110px;">
+          <div class="wiz-step-icon" style="background:var(--positive-soft);">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#1B8C67" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="wiz-step-title">Review your plan</div>
+          <div class="wiz-step-desc">Check everything looks right. You can edit any step after setup from the settings page.</div>
+
+          <div class="item-card" style="margin-bottom:var(--sp-sm);">
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+              <div class="review-label">Currency</div>
+              <div class="review-value">NOK</div>
+              <button class="review-edit">Edit</button>
+            </div>
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div>
+              <div class="review-label">Accounts</div>
+              <div class="review-value">2 accounts</div>
+              <button class="review-edit">Edit</button>
+            </div>
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+              <div class="review-label">Salary</div>
+              <div class="review-value">NOK 36,000 / mo</div>
+              <button class="review-edit">Edit</button>
+            </div>
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+              <div class="review-label">Housing</div>
+              <div class="review-value">NOK 8,000 / mo</div>
+              <button class="review-edit">Edit</button>
+            </div>
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 12a11.05 11.05 0 0 0-22 0zm-5 7a3 3 0 0 1-6 0v-7"/></svg></div>
+              <div class="review-label">Loan EMI</div>
+              <div class="review-value">NOK 4,294 / mo</div>
+              <button class="review-edit">Edit</button>
+            </div>
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
+              <div class="review-label">Groceries</div>
+              <div class="review-value">NOK 4,200 / mo</div>
+              <button class="review-edit">Edit</button>
+            </div>
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11V9a2 2 0 0 0-2-2H4"/><path d="M18 22 6 22"/></svg></div>
+              <div class="review-label">Transport</div>
+              <div class="review-value">NOK 1,800 / mo</div>
+              <button class="review-edit">Edit</button>
+            </div>
+            <div class="review-row">
+              <div class="review-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+              <div class="review-label">Savings</div>
+              <div class="review-value">NOK 2,000 / mo</div>
+              <button class="review-edit">Edit</button>
+            </div>
+          </div>
+
+          <div style="background:var(--bg-light);border-radius:var(--radius-sm);padding:12px var(--sp-md);display:flex;justify-content:space-between;align-items:baseline;">
+            <span style="font-size:13px;color:var(--fg3);">Total planned monthly costs</span>
+            <span style="font-size:20px;font-weight:700;color:var(--fg1);font-feature-settings:'tnum' 1;">NOK 20,294</span>
+          </div>
+          <div style="font-size:12px;color:var(--positive);text-align:right;margin-top:4px;">NOK 15,706 projected surplus</div>
+        </div>
+        <div class="wiz-actions wiz-actions--desktop">
+          <button class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Complete setup
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /ob-screen-row -->
+
+</div><!-- /ob-stage-section desktop -->
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 2 — AI PATH DESKTOP
+     ════════════════════════════════════════════════════ -->
+<div class="ob-stage-section">
+  <div class="ob-stage-section-label">AI path — Desktop</div>
+  <div class="ob-screen-row">
+
+    <!-- AI Input -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Start with AI — Input</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">AI setup</span>
+          <button class="wiz-close-btn">Set up later</button>
+        </div>
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:110px;">
+          <div class="wiz-step-icon wiz-step-icon--ai">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+          </div>
+          <div class="wiz-step-title">Describe your situation</div>
+          <div class="wiz-step-desc">Write a short summary of your income and regular costs. AI will draft a starting monthly plan you can review and adjust.</div>
+
+          <div class="ai-surface" style="margin-bottom:var(--sp-md);">
+            <div class="ai-label">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              Tell AI about your finances
+            </div>
+            <textarea class="ai-input-area" style="height:110px;">I earn NOK 45,000 per month, salary on the 1st. I pay NOK 8,000 rent and have a car loan EMI of NOK 4,294 due on the 20th. Groceries are about NOK 4,200 and I commute by Ruter bus pass (NOK 820/month).</textarea>
+            <div style="display:flex;gap:var(--sp-sm);margin-top:var(--sp-sm);flex-wrap:wrap;">
+              <span style="font-size:12px;color:var(--fg3);">Suggestions:</span>
+              <button style="font-size:12px;color:var(--accent-strong);background:var(--accent-soft);border:none;border-radius:var(--radius-full);padding:3px 10px;cursor:pointer;font-family:var(--font-sans);">Add salary day</button>
+              <button style="font-size:12px;color:var(--accent-strong);background:var(--accent-soft);border:none;border-radius:var(--radius-full);padding:3px 10px;cursor:pointer;font-family:var(--font-sans);">Mention subscriptions</button>
+              <button style="font-size:12px;color:var(--accent-strong);background:var(--accent-soft);border:none;border-radius:var(--radius-full);padding:3px 10px;cursor:pointer;font-family:var(--font-sans);">Add savings goal</button>
+            </div>
+          </div>
+        </div>
+        <div class="wiz-actions wiz-actions--desktop">
+          <button class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+            Draft my plan
+          </button>
+          <button class="btn-primary btn-primary--outline">Set up manually instead</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Draft Result -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Start with AI — Drafted plan</div>
+      <div class="frame-desktop-wizard" style="position:relative;">
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">AI setup — Review draft</span>
+          <button class="wiz-close-btn">Set up later</button>
+        </div>
+        <div class="wiz-body wiz-body--desktop" style="padding-bottom:110px;">
+          <div class="wiz-step-icon wiz-step-icon--ai">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+          </div>
+          <div class="wiz-step-title">Your AI-drafted plan</div>
+          <div class="wiz-step-desc">Based on what you shared, here is a suggested monthly plan. Tap any row to adjust.</div>
+
+          <div class="ai-surface" style="margin-bottom:var(--sp-md);">
+            <div class="ai-label">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              AI suggestion
+            </div>
+            <div style="font-size:13px;color:var(--fg3);font-style:italic;margin-bottom:var(--sp-md);border-left:3px solid #C3DFD5;padding-left:10px;">
+              "I earn NOK 45,000 per month... car loan EMI of NOK 4,294... groceries about NOK 4,200..."
+            </div>
+
+            <div class="ai-plan-row">
+              <span class="ai-plan-row__label">Salary (1st of month)</span>
+              <span class="ai-plan-row__amount" style="color:var(--positive);">+ NOK 45,000</span>
+            </div>
+            <div class="ai-plan-row">
+              <span class="ai-plan-row__label">Rent and housing</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="ai-plan-row__amount">NOK 8,000</span>
+                <button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:var(--font-sans);">Edit</button>
+              </div>
+            </div>
+            <div class="ai-plan-row">
+              <span class="ai-plan-row__label">Car loan EMI (due 20th)</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="ai-plan-row__amount">NOK 4,294</span>
+                <button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:var(--font-sans);">Edit</button>
+              </div>
+            </div>
+            <div class="ai-plan-row">
+              <span class="ai-plan-row__label">Groceries</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="ai-plan-row__amount">NOK 4,200</span>
+                <button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:var(--font-sans);">Edit</button>
+              </div>
+            </div>
+            <div class="ai-plan-row">
+              <span class="ai-plan-row__label">Transport (Ruter pass)</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="ai-plan-row__amount">NOK 820</span>
+                <button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:var(--font-sans);">Edit</button>
+              </div>
+            </div>
+            <div class="ai-plan-row">
+              <span class="ai-plan-row__label" style="color:var(--fg3);font-size:13px;">Utilities (estimated)</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="ai-plan-row__amount" style="color:var(--fg3);">NOK 1,200</span>
+                <button style="font-size:11px;color:var(--accent);background:none;border:none;cursor:pointer;font-family:var(--font-sans);">Edit</button>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+            <div class="ai-plan-total">
+              <span class="ai-plan-total__label">Total planned costs</span>
+              <span class="ai-plan-total__amount">NOK 18,514</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:4px;">
+              <span style="font-size:12px;color:var(--fg3);">Projected surplus</span>
+              <span style="font-size:13px;font-weight:600;color:var(--positive);font-feature-settings:'tnum' 1;">NOK 26,486</span>
+            </div>
+          </div>
+
+          <div style="font-size:12px;color:var(--fg3);text-align:center;">
+            You can refine these figures or add more categories after setup.
+          </div>
+        </div>
+        <div class="wiz-actions wiz-actions--desktop">
+          <button class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Accept this plan
+          </button>
+          <button class="btn-primary btn-primary--outline">Adjust further</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /ob-screen-row -->
+</div><!-- /ob-stage-section AI desktop -->
+
+<!-- ════════════════════════════════════════════════════
+     SECTION 3 — MOBILE FRAMES
+     ════════════════════════════════════════════════════ -->
+<div class="ob-stage-section">
+  <div class="ob-stage-section-label">Mobile / iOS — 390 px</div>
+  <div class="ob-screen-row">
+
+    <!-- Mobile: Welcome -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Welcome</div>
+      <div class="frame-mobile">
+        <div class="mobile-statusbar">
+          <span class="msb-time">9:41</span>
+          <div class="msb-icons">
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="4" width="3" height="8" rx="1" fill="currentColor" opacity="0.4"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1" fill="currentColor" opacity="0.6"/><rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="currentColor"/></svg>
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 2.5C10.5 2.5 12.7 3.6 14.2 5.4L15.5 4C13.6 1.8 10.9 0.5 8 0.5C5.1 0.5 2.4 1.8 0.5 4L1.8 5.4C3.3 3.6 5.5 2.5 8 2.5Z" fill="currentColor"/><path d="M8 6C9.7 6 11.2 6.7 12.3 7.9L13.6 6.5C12.1 4.9 10.2 4 8 4C5.8 4 3.9 4.9 2.4 6.5L3.7 7.9C4.8 6.7 6.3 6 8 6Z" fill="currentColor"/><circle cx="8" cy="10.5" r="1.5" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="currentColor" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 000-4z" fill="currentColor" opacity="0.4"/></svg>
+          </div>
+        </div>
+        <div class="wiz-body" style="padding-bottom:32px;">
+          <div class="wordmark" style="margin-top:var(--sp-sm);">Expense tracker</div>
+          <div style="margin-bottom:var(--sp-sm);">
+            <span class="badge-new" style="font-size:10px;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              Now with AI planning
+            </span>
+          </div>
+          <div style="font-size:24px;font-weight:700;color:var(--fg1);line-height:1.2;letter-spacing:-0.01em;margin-bottom:8px;">Set up your monthly plan</div>
+          <div style="font-size:14px;color:var(--fg3);line-height:1.55;">
+            Tell the app about your income, fixed costs, and goals for a clear financial picture each month.
+          </div>
+          <div class="welcome-actions">
+            <button class="welcome-btn-ai">
+              <div class="wb-icon wb-icon--ai" style="width:36px;height:36px;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              </div>
+              <div class="wb-text">
+                <div class="wb-text__title" style="font-size:14px;">Start with AI</div>
+                <div class="wb-text__sub">Describe your situation, AI drafts a plan</div>
+              </div>
+              <div class="wb-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </button>
+            <button class="welcome-btn-manual">
+              <div class="wb-icon wb-icon--manual" style="width:36px;height:36px;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </div>
+              <div class="wb-text">
+                <div class="wb-text__title" style="font-size:14px;">Set up manually</div>
+                <div class="wb-text__sub">10 short steps, skip any you do not need</div>
+              </div>
+              <div class="wb-arrow"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </button>
+          </div>
+          <button style="display:block;width:100%;text-align:center;font-size:13px;color:var(--fg3);background:none;border:none;cursor:pointer;font-family:var(--font-sans);margin-top:16px;padding:4px;">Skip for now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile: Currency -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 1 — Currency</div>
+      <div class="frame-mobile">
+        <div class="mobile-statusbar">
+          <span class="msb-time">9:41</span>
+          <div class="msb-icons">
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="4" width="3" height="8" rx="1" fill="currentColor" opacity="0.4"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1" fill="currentColor" opacity="0.6"/><rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="currentColor" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 000-4z" fill="currentColor" opacity="0.4"/></svg>
+          </div>
+        </div>
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 1 of 10</span>
+          <button class="wiz-close-btn">Later</button>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:10%;"></div></div>
+        </div>
+        <div class="wiz-body" style="padding-bottom:100px;">
+          <div class="wiz-step-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <div class="wiz-step-title">Primary currency</div>
+          <div class="wiz-step-desc">Choose the main currency for your monthly plan. You can still log expenses in other currencies later.</div>
+          <div class="currency-grid currency-grid--mobile" style="margin-bottom:var(--sp-md);">
+            <div class="currency-card selected"><div class="currency-card__code">NOK</div><div class="currency-card__symbol">kr</div></div>
+            <div class="currency-card"><div class="currency-card__code">INR</div><div class="currency-card__symbol">&#8377;</div></div>
+            <div class="currency-card"><div class="currency-card__code">USD</div><div class="currency-card__symbol">$</div></div>
+            <div class="currency-card"><div class="currency-card__code">EUR</div><div class="currency-card__symbol">&#8364;</div></div>
+            <div class="currency-card"><div class="currency-card__code">GBP</div><div class="currency-card__symbol">&#163;</div></div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Or search for a currency</label>
+            <input class="field-input" type="text" placeholder="Search..." />
+          </div>
+        </div>
+        <div class="wiz-actions">
+          <button class="btn-primary">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile: AI Draft -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">AI path — Drafted plan</div>
+      <div class="frame-mobile">
+        <div class="mobile-statusbar">
+          <span class="msb-time">9:41</span>
+          <div class="msb-icons">
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="4" width="3" height="8" rx="1" fill="currentColor" opacity="0.4"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1" fill="currentColor" opacity="0.6"/><rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="currentColor" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 000-4z" fill="currentColor" opacity="0.4"/></svg>
+          </div>
+        </div>
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">AI setup</span>
+          <button class="wiz-close-btn">Later</button>
+        </div>
+        <div class="wiz-body" style="padding-bottom:110px;">
+          <div class="wiz-step-icon wiz-step-icon--ai">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+          </div>
+          <div class="wiz-step-title" style="font-size:20px;">Your AI-drafted plan</div>
+          <div class="wiz-step-desc">Tap any row to adjust before accepting.</div>
+
+          <div class="ai-surface">
+            <div class="ai-label" style="font-size:10px;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+              AI suggestion
+            </div>
+            <div class="ai-plan-row"><span class="ai-plan-row__label" style="font-size:13px;">Salary</span><span class="ai-plan-row__amount" style="font-size:13px;color:var(--positive);">+ NOK 45,000</span></div>
+            <div class="ai-plan-row"><span class="ai-plan-row__label" style="font-size:13px;">Housing</span><span class="ai-plan-row__amount" style="font-size:13px;">NOK 8,000</span></div>
+            <div class="ai-plan-row"><span class="ai-plan-row__label" style="font-size:13px;">Car loan EMI</span><span class="ai-plan-row__amount" style="font-size:13px;">NOK 4,294</span></div>
+            <div class="ai-plan-row"><span class="ai-plan-row__label" style="font-size:13px;">Groceries</span><span class="ai-plan-row__amount" style="font-size:13px;">NOK 4,200</span></div>
+            <div class="ai-plan-row"><span class="ai-plan-row__label" style="font-size:13px;">Transport</span><span class="ai-plan-row__amount" style="font-size:13px;">NOK 820</span></div>
+            <div class="ai-plan-row"><span class="ai-plan-row__label" style="font-size:13px;color:var(--fg3);">Utilities (est.)</span><span class="ai-plan-row__amount" style="font-size:13px;color:var(--fg3);">NOK 1,200</span></div>
+            <div class="divider"></div>
+            <div class="ai-plan-total">
+              <span class="ai-plan-total__label">Total costs</span>
+              <span class="ai-plan-total__amount" style="font-size:17px;">NOK 18,514</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:3px;">
+              <span style="font-size:11px;color:var(--fg3);">Projected surplus</span>
+              <span style="font-size:12px;font-weight:600;color:var(--positive);font-feature-settings:'tnum' 1;">NOK 26,486</span>
+            </div>
+          </div>
+        </div>
+        <div class="wiz-actions">
+          <button class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Accept this plan
+          </button>
+          <button class="btn-primary btn-primary--outline" style="margin-top:8px;">Adjust further</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile: Loans -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 5 — Loans</div>
+      <div class="frame-mobile">
+        <div class="mobile-statusbar">
+          <span class="msb-time">9:41</span>
+          <div class="msb-icons">
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="4" width="3" height="8" rx="1" fill="currentColor" opacity="0.4"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1" fill="currentColor" opacity="0.6"/><rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="currentColor" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 000-4z" fill="currentColor" opacity="0.4"/></svg>
+          </div>
+        </div>
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 5 of 10</span>
+          <button class="wiz-close-btn">Later</button>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:50%;"></div></div>
+        </div>
+        <div class="wiz-body" style="padding-bottom:110px;">
+          <div class="wiz-step-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 12a11.05 11.05 0 0 0-22 0zm-5 7a3 3 0 0 1-6 0v-7"/></svg>
+          </div>
+          <div class="wiz-step-title">Loans and insurances</div>
+          <div class="wiz-step-desc">Add loans and insurance premiums as fixed monthly costs.</div>
+          <div class="item-card">
+            <div class="item-card__header">
+              <span class="item-card__title">Loan 1</span>
+              <button class="item-card__remove"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Loan name</label>
+              <input class="field-input" value="Car loan" />
+            </div>
+            <div class="field-row" style="margin-bottom:var(--sp-md);">
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Type</label>
+                <select class="field-select" style="font-size:13px;"><option>Car loan</option><option>Home loan</option><option>Personal</option></select>
+              </div>
+              <div class="field-group" style="margin-bottom:0;">
+                <label class="field-label">Due day</label>
+                <select class="field-select" style="font-size:13px;"><option>20th</option></select>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Monthly EMI (NOK)</label>
+              <input class="field-input" value="4 294" style="font-feature-settings:'tnum' 1;font-weight:600;font-size:16px;" />
+            </div>
+          </div>
+          <button class="add-item-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add another loan
+          </button>
+        </div>
+        <div class="wiz-actions">
+          <button class="btn-primary">Next</button>
+          <button class="btn-skip">Skip this step</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile: Review -->
+    <div class="ob-screen-col">
+      <div class="ob-screen-label">Step 10 — Review</div>
+      <div class="frame-mobile">
+        <div class="mobile-statusbar">
+          <span class="msb-time">9:41</span>
+          <div class="msb-icons">
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><rect x="0" y="4" width="3" height="8" rx="1" fill="currentColor" opacity="0.4"/><rect x="4.5" y="2.5" width="3" height="9.5" rx="1" fill="currentColor" opacity="0.6"/><rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="currentColor" stroke-opacity="0.35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><path d="M23 4v4a2 2 0 000-4z" fill="currentColor" opacity="0.4"/></svg>
+          </div>
+        </div>
+        <div class="wiz-topbar">
+          <button class="wiz-back-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+          <span class="wiz-step-label">Step 10 of 10</span>
+          <span></span>
+        </div>
+        <div class="wiz-progress-wrap">
+          <div class="wiz-progress-track"><div class="wiz-progress-fill" style="width:100%;"></div></div>
+        </div>
+        <div class="wiz-body" style="padding-bottom:110px;">
+          <div class="wiz-step-icon" style="background:var(--positive-soft);">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#1B8C67" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="wiz-step-title" style="font-size:20px;">Review your plan</div>
+          <div class="wiz-step-desc" style="margin-bottom:var(--sp-md);">Check everything looks right. You can edit any step after setup.</div>
+
+          <div class="item-card">
+            <div class="review-row" style="padding:9px 0;">
+              <div class="review-icon" style="width:28px;height:28px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;color:var(--accent-strong);"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+              <div class="review-label" style="font-size:13px;">Currency</div>
+              <div class="review-value" style="font-size:13px;">NOK</div>
+              <button class="review-edit" style="font-size:11px;">Edit</button>
+            </div>
+            <div class="review-row" style="padding:9px 0;">
+              <div class="review-icon" style="width:28px;height:28px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;color:var(--accent-strong);"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+              <div class="review-label" style="font-size:13px;">Salary</div>
+              <div class="review-value" style="font-size:13px;">NOK 36,000</div>
+              <button class="review-edit" style="font-size:11px;">Edit</button>
+            </div>
+            <div class="review-row" style="padding:9px 0;">
+              <div class="review-icon" style="width:28px;height:28px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;color:var(--accent-strong);"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+              <div class="review-label" style="font-size:13px;">Housing</div>
+              <div class="review-value" style="font-size:13px;">NOK 8,000</div>
+              <button class="review-edit" style="font-size:11px;">Edit</button>
+            </div>
+            <div class="review-row" style="padding:9px 0;">
+              <div class="review-icon" style="width:28px;height:28px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;color:var(--accent-strong);"><path d="M23 12a11.05 11.05 0 0 0-22 0zm-5 7a3 3 0 0 1-6 0v-7"/></svg></div>
+              <div class="review-label" style="font-size:13px;">Loan EMI</div>
+              <div class="review-value" style="font-size:13px;">NOK 4,294</div>
+              <button class="review-edit" style="font-size:11px;">Edit</button>
+            </div>
+            <div class="review-row" style="padding:9px 0;">
+              <div class="review-icon" style="width:28px;height:28px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;color:var(--accent-strong);"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
+              <div class="review-label" style="font-size:13px;">Groceries</div>
+              <div class="review-value" style="font-size:13px;">NOK 4,200</div>
+              <button class="review-edit" style="font-size:11px;">Edit</button>
+            </div>
+            <div class="review-row" style="padding:9px 0;">
+              <div class="review-icon" style="width:28px;height:28px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;color:var(--accent-strong);"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11V9a2 2 0 0 0-2-2H4"/></svg></div>
+              <div class="review-label" style="font-size:13px;">Transport</div>
+              <div class="review-value" style="font-size:13px;">NOK 1,800</div>
+              <button class="review-edit" style="font-size:11px;">Edit</button>
+            </div>
+            <div class="review-row" style="padding:9px 0;border-bottom:none;">
+              <div class="review-icon" style="width:28px;height:28px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;color:var(--accent-strong);"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+              <div class="review-label" style="font-size:13px;">Savings</div>
+              <div class="review-value" style="font-size:13px;">NOK 2,000</div>
+              <button class="review-edit" style="font-size:11px;">Edit</button>
+            </div>
+          </div>
+
+          <div style="background:var(--bg-light);border-radius:var(--radius-sm);padding:10px var(--sp-md);display:flex;justify-content:space-between;align-items:baseline;margin-top:var(--sp-sm);">
+            <span style="font-size:12px;color:var(--fg3);">Total planned costs</span>
+            <span style="font-size:18px;font-weight:700;color:var(--fg1);font-feature-settings:'tnum' 1;">NOK 20,294</span>
+          </div>
+          <div style="font-size:11px;color:var(--positive);text-align:right;margin-top:3px;">NOK 15,706 projected surplus</div>
+        </div>
+        <div class="wiz-actions">
+          <button class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            Complete setup
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /ob-screen-row mobile -->
+</div><!-- /ob-stage-section mobile -->
+
+</div><!-- /ob-stage -->
+
+<script>
+// ============================================================
+// CHART.JS SHARED DEFAULTS
+// ============================================================
+Chart.defaults.font.family = "'Roboto', -apple-system, 'SF Pro Text', system-ui, sans-serif";
+Chart.defaults.color = '#58646F';
+
+const TOKEN = {
+  accent:    '#26A17B',
+  accentStr: '#1A8F6C',
+  accentSoft:'rgba(38,161,123,0.12)',
+  positive:  '#1B8C67',
+  negative:  '#BA1A1A',
+  neutral:   '#58646F',
+  border:    '#E2E4E8',
+  bgLight:   '#F7F8F9',
+  fg1:       '#1A1C1E',
+  fg2:       '#45474A',
+  fg3:       '#58646F',
+  cats: ['#1A8F6C','#26A17B','#3FBF9B','#7AA2F7','#E8A317','#9D7CFF'],
+};
+
+// ============================================================
+// 1. DESKTOP — Budget burndown
+// ============================================================
+(function() {
+  const ctx = document.getElementById('burndownChart');
+  if (!ctx) return;
+  const days = Array.from({length: 30}, (_, i) => i + 1);
+  const projected = days.map(d => Math.max(0, 12294 - (d - 1) * (12294 / 30)));
+  const actual = [12294, 11952, ...new Array(28).fill(null)];
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: days,
+      datasets: [
+        {
+          label: 'Planned budget remaining',
+          data: projected,
+          fill: true,
+          backgroundColor: 'rgba(38,161,123,0.08)',
+          borderColor: TOKEN.accentStr,
+          borderWidth: 2,
+          borderDash: [6,4],
+          pointRadius: 0,
+          tension: 0.3,
+        },
+        {
+          label: 'Actual remaining',
+          data: actual,
+          fill: false,
+          borderColor: TOKEN.accent,
+          backgroundColor: TOKEN.accent,
+          borderWidth: 2.5,
+          pointRadius: (ctx) => ctx.dataIndex === 1 ? 5 : 0,
+          pointBackgroundColor: TOKEN.accent,
+          tension: 0.2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 800, easing: 'easeOutCubic' },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 12, boxHeight: 2, padding: 12, font: { size: 11 }, color: TOKEN.fg3 }
+        },
+        tooltip: {
+          backgroundColor: '#FFFFFF', borderColor: TOKEN.border, borderWidth: 1,
+          titleColor: TOKEN.fg1, bodyColor: TOKEN.fg2, padding: 10,
+          callbacks: { label: (c) => `${c.dataset.label}: NOK ${Number(c.parsed.y).toLocaleString('nb-NO')}` }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, border: { display: false }, ticks: { maxTicksLimit: 8, color: TOKEN.fg3, font: { size: 11 } } },
+        y: {
+          grid: { color: 'rgba(0,0,0,0.05)' }, border: { display: false, dash: [4,4] },
+          ticks: { color: TOKEN.fg3, font: { size: 11 }, callback: (v) => 'NOK ' + (v/1000).toFixed(0) + 'k' },
+          min: 0, max: 14000
+        }
+      }
+    }
+  });
+})();
+
+// ============================================================
+// 2. DONUT CHARTS
+// ============================================================
+function buildDonut(canvasId, size) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Rent & housing', 'Loans / EMI', 'Groceries', 'Transport', 'Utilities', 'Subscriptions'],
+      datasets: [{
+        data: [8000, 4294, 4200, 1800, 1200, 600],
+        backgroundColor: TOKEN.cats,
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+        hoverBorderWidth: 3,
+        hoverOffset: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: size === 'small' ? '68%' : '70%',
+      animation: { duration: 900, easing: 'easeOutCubic' },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#FFFFFF', borderColor: TOKEN.border, borderWidth: 1,
+          titleColor: TOKEN.fg1, bodyColor: TOKEN.fg2, padding: 10,
+          callbacks: {
+            label: (c) => {
+              const total = c.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = ((c.parsed / total) * 100).toFixed(0);
+              return `NOK ${Number(c.parsed).toLocaleString('nb-NO')} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+buildDonut('donutChart', 'large');
+buildDonut('mobileDonutChart', 'small');
+
+// ============================================================
+// 3. TREND CHARTS
+// ============================================================
+const trendData = {
+  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+  values: [11200, 10800, 9600, 10400, 9900, 0],
+};
+
+function buildTrend(canvasId, isMini) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: trendData.labels,
+      datasets: [
+        {
+          label: 'Actual spend',
+          data: trendData.values,
+          fill: true,
+          backgroundColor: (context) => {
+            const chart = context.chart;
+            const { ctx: c, chartArea } = chart;
+            if (!chartArea) return TOKEN.accentSoft;
+            const gradient = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+            gradient.addColorStop(0, 'rgba(38,161,123,0.18)');
+            gradient.addColorStop(1, 'rgba(38,161,123,0.01)');
+            return gradient;
+          },
+          borderColor: TOKEN.accent,
+          borderWidth: isMini ? 2 : 2.5,
+          pointRadius: isMini ? 0 : 3,
+          pointBackgroundColor: TOKEN.accent,
+          pointBorderColor: '#FFFFFF',
+          pointBorderWidth: 2,
+          tension: 0.4,
+          spanGaps: false,
+        },
+        {
+          label: 'Planned',
+          data: [12294, 12294, 12294, 12294, 12294, 12294],
+          fill: false,
+          borderColor: 'rgba(0,0,0,0.12)',
+          borderWidth: 1,
+          borderDash: [4,4],
+          pointRadius: 0,
+          tension: 0,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 700 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#FFFFFF', borderColor: TOKEN.border, borderWidth: 1,
+          titleColor: TOKEN.fg1, bodyColor: TOKEN.fg2, padding: 10,
+          filter: (item) => item.datasetIndex === 0,
+          callbacks: { label: (c) => `Spent: NOK ${Number(c.parsed.y).toLocaleString('nb-NO')}` }
+        }
+      },
+      scales: {
+        x: {
+          display: !isMini,
+          grid: { display: false }, border: { display: false },
+          ticks: { color: TOKEN.fg3, font: { size: 11 } }
+        },
+        y: {
+          display: !isMini,
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false, dash: [4,4] },
+          ticks: { color: TOKEN.fg3, font: { size: 11 }, callback: (v) => v === 0 ? '' : (v/1000).toFixed(0) + 'k', maxTicksLimit: 4 },
+          min: 0, max: 14000
+        }
+      }
+    }
+  });
+}
+buildTrend('trendChart', false);
+buildTrend('mobileTrendChart', true);
+</script>
+</body>
+</html>
