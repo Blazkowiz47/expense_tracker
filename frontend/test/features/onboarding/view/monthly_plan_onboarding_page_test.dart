@@ -1190,8 +1190,20 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Skip this step'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Skip this step'));
-    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-0-name')),
+      'Emergency fund',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-0-monthly')),
+      '2000',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-0-target')),
+      '24000',
+    );
+    await _advance(tester);
 
     await tester.tap(find.byKey(const ValueKey('onboarding-complete-setup')));
     await tester.pump();
@@ -1202,6 +1214,7 @@ void main() {
       containsAll(<String>['Salary', 'Rent and housing']),
     );
     expect(setupWriter.loans, hasLength(2));
+    expect(setupWriter.savingsGoals.single.name, 'Emergency fund');
     expect(setupWriter.monthlyPlans.single.budgets, isNot(contains('Salary')));
     expect(
       setupWriter.monthlyPlans.single.budgets,
@@ -1210,6 +1223,10 @@ void main() {
     expect(
       setupWriter.monthlyPlans.single.budgets,
       containsPair('Loans / EMI', 1000),
+    );
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      isNot(contains('Savings - Emergency fund')),
     );
   });
 }

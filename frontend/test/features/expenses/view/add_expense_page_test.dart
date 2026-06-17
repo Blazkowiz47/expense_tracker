@@ -1,6 +1,10 @@
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
+import 'package:expense_tracker/features/accounts/models/financial_account.dart';
+import 'package:expense_tracker/features/accounts/repositories/api_accounts_repository.dart';
+import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
+import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:flutter/cupertino.dart';
@@ -17,6 +21,12 @@ class _FakeExpenseRepository extends ExpenseRepository {
   Expense expense;
   Expense? createdExpense;
   Expense? updatedExpense;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> refresh() async {}
 
   @override
   Future<void> createExpense(
@@ -38,6 +48,58 @@ class _FakeExpenseRepository extends ExpenseRepository {
 
   @override
   List<Expense> getExpenses() => [expense];
+}
+
+class _FakeAccountsRepository extends ApiAccountsRepository {
+  _FakeAccountsRepository([this.accounts = const []])
+    : super(client: MockClient((_) async => http.Response('{}', 200)));
+
+  final List<FinancialAccount> accounts;
+
+  @override
+  Future<List<FinancialAccount>> fetchAccounts({
+    bool includeArchived = false,
+  }) async {
+    return accounts;
+  }
+}
+
+class _FakeCreditCardsRepository extends ApiCreditCardsRepository {
+  _FakeCreditCardsRepository([this.cards = const []])
+    : super(client: MockClient((_) async => http.Response('{}', 200)));
+
+  final List<CreditCardAccount> cards;
+  String? loggedCardId;
+  double? loggedAmount;
+  String? loggedCategory;
+  String? loggedDescription;
+  DateTime? loggedDate;
+
+  @override
+  Future<List<CreditCardAccount>> fetchCards({
+    bool includeArchived = false,
+  }) async {
+    return cards;
+  }
+
+  @override
+  Future<CreditCardSpendResult> logSpend({
+    required String cardId,
+    required double amount,
+    required String category,
+    required String description,
+    required DateTime date,
+  }) async {
+    loggedCardId = cardId;
+    loggedAmount = amount;
+    loggedCategory = category;
+    loggedDescription = description;
+    loggedDate = date;
+    return CreditCardSpendResult(
+      card: cards.firstWhere((card) => card.id == cardId),
+      expense: const <String, dynamic>{'id': 'expense-card'},
+    );
+  }
 }
 
 void main() {
@@ -64,12 +126,14 @@ void main() {
         theme: ThemeData(splashFactory: InkRipple.splashFactory),
         home: BlocProvider.value(
           value: bloc,
-          child: const AddExpensePage(
+          child: AddExpensePage(
             initialCategory: 'Rent and housing',
             initialDescription: 'Rent and housing',
             initialAmount: 8000,
             initialCurrency: 'NOK',
             initialPaymentMethod: 'paid_previously',
+            accountsRepository: _FakeAccountsRepository(),
+            creditCardsRepository: _FakeCreditCardsRepository(),
           ),
         ),
       ),
@@ -121,7 +185,11 @@ void main() {
         theme: ThemeData(splashFactory: InkRipple.splashFactory),
         home: BlocProvider.value(
           value: bloc,
-          child: AddExpensePage(expense: existing),
+          child: AddExpensePage(
+            expense: existing,
+            accountsRepository: _FakeAccountsRepository(),
+            creditCardsRepository: _FakeCreditCardsRepository(),
+          ),
         ),
       ),
     );
@@ -175,7 +243,11 @@ void main() {
         theme: ThemeData(splashFactory: InkRipple.splashFactory),
         home: BlocProvider.value(
           value: bloc,
-          child: AddExpensePage(expense: existing),
+          child: AddExpensePage(
+            expense: existing,
+            accountsRepository: _FakeAccountsRepository(),
+            creditCardsRepository: _FakeCreditCardsRepository(),
+          ),
         ),
       ),
     );
@@ -211,7 +283,11 @@ void main() {
         MaterialApp(
           home: BlocProvider.value(
             value: bloc,
-            child: AddExpensePage(expense: existing),
+            child: AddExpensePage(
+              expense: existing,
+              accountsRepository: _FakeAccountsRepository(),
+              creditCardsRepository: _FakeCreditCardsRepository(),
+            ),
           ),
         ),
       );
@@ -245,5 +321,111 @@ void main() {
       expect(repository.updatedExpense!.paymentMethod, 'bank_transfer');
     },
     variant: const TargetPlatformVariant(<TargetPlatform>{TargetPlatform.iOS}),
+  );
+
+  testWidgets('payment dropdown includes accounts and logs card spend', (
+    tester,
+  ) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+    final cardRepository = _FakeCreditCardsRepository([
+      _card(id: 'card-1', name: 'SAS Mastercard', issuer: 'DNB', last4: '1234'),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            accountsRepository: _FakeAccountsRepository([
+              _account(id: 'account-1', name: 'DNB current'),
+            ]),
+            creditCardsRepository: cardRepository,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Cash'));
+    await tester.pumpAndSettle();
+    expect(find.text('DNB current - DNB'), findsOneWidget);
+    await tester.tap(find.text('SAS Mastercard - DNB · •••• 1234'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'Coffee');
+    await tester.enterText(find.byType(TextField).at(1), '59');
+    await tester.tap(find.text('Save expense'));
+    await tester.pumpAndSettle();
+
+    expect(repository.createdExpense, isNull);
+    expect(cardRepository.loggedCardId, 'card-1');
+    expect(cardRepository.loggedAmount, 59);
+    expect(cardRepository.loggedCategory, 'Personal');
+    expect(cardRepository.loggedDescription, 'Coffee');
+  });
+}
+
+FinancialAccount _account({
+  required String id,
+  required String name,
+  String institution = 'DNB',
+}) {
+  return FinancialAccount(
+    id: id,
+    name: name,
+    institution: institution,
+    accountType: 'checking',
+    currency: 'NOK',
+    openingBalance: 1000,
+    balanceAsOf: DateTime(2026, 6, 17),
+    familyVisibility: 'private',
+    notes: '',
+    archived: false,
+    archivedAt: null,
+    createdAt: DateTime(2026, 6, 17),
+    updatedAt: DateTime(2026, 6, 17),
+  );
+}
+
+CreditCardAccount _card({
+  required String id,
+  required String name,
+  String issuer = '',
+  String last4 = '',
+}) {
+  return CreditCardAccount(
+    id: id,
+    name: name,
+    issuer: issuer,
+    network: 'Mastercard',
+    last4: last4,
+    currency: 'NOK',
+    creditLimit: 50000,
+    currentBalance: 1200,
+    availableCredit: 48800,
+    balanceAsOf: DateTime(2026, 6, 17),
+    statementDay: 1,
+    dueDay: 15,
+    cycleStart: DateTime(2026, 6, 1),
+    statementDate: DateTime(2026, 6, 30),
+    paymentDueDate: DateTime(2026, 7, 15),
+    currentCycleSpend: 1200,
+    familyVisibility: 'private',
+    notes: '',
+    archived: false,
   );
 }

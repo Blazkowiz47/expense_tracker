@@ -336,11 +336,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           );
         }
         final savingsName = goal.nameController.text.trim();
-        _addBudgetAmount(
-          budgets,
-          savingsName.isEmpty ? 'Savings' : 'Savings - $savingsName',
-          savingsMonthly,
-        );
+        if (_countsUndatedMonthlyItemForSetupMonth(setupDate)) {
+          _addBudgetAmount(
+            budgets,
+            savingsName.isEmpty ? 'Savings' : 'Savings - $savingsName',
+            savingsMonthly,
+          );
+        }
         final explicitTarget = _amountValue(goal.targetController);
         final name = savingsName.isEmpty ? 'Savings' : savingsName;
         final targetAmount = explicitTarget > 0
@@ -1150,6 +1152,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
   bool _countsForSetupMonth(int dayOfMonth, DateTime setupDate) {
     return dayOfMonth >= setupDate.day;
+  }
+
+  bool _countsUndatedMonthlyItemForSetupMonth(DateTime setupDate) {
+    return setupDate.day == 1;
   }
 
   String _monthKey(DateTime date) {

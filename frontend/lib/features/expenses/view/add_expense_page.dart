@@ -6,12 +6,17 @@ import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
+import 'package:expense_tracker/features/accounts/models/financial_account.dart';
+import 'package:expense_tracker/features/accounts/repositories/api_accounts_repository.dart';
+import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
+import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
 import 'package:expense_tracker/features/receipts/widgets/receipt_line_items_review.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 class AddExpensePage extends StatefulWidget {
@@ -23,6 +28,8 @@ class AddExpensePage extends StatefulWidget {
     this.initialAmount,
     this.initialCurrency,
     this.initialPaymentMethod,
+    this.accountsRepository,
+    this.creditCardsRepository,
     super.key,
   });
 
@@ -33,12 +40,16 @@ class AddExpensePage extends StatefulWidget {
   final double? initialAmount;
   final String? initialCurrency;
   final String? initialPaymentMethod;
+  final ApiAccountsRepository? accountsRepository;
+  final ApiCreditCardsRepository? creditCardsRepository;
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
 }
 
 class _AddExpensePageState extends State<AddExpensePage> {
+  static const _accountPaymentPrefix = 'account:';
+  static const _creditCardPaymentPrefix = 'credit_card:';
   static const _categories = <String>[
     'Food',
     'Groceries',
@@ -70,13 +81,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final _notesController = TextEditingController();
   final _billRepository = BillAiRepository();
   final _picker = ImagePicker();
+  late final ApiAccountsRepository _accountsRepository;
+  late final ApiCreditCardsRepository _creditCardsRepository;
+  http.Client? _client;
 
   bool _saving = false;
   bool _extractingBill = false;
   String? _error;
+  String? _paymentSourcesError;
   String? _billMessage;
   BillExtractionResult? _billResult;
   List<BillLineItem> _receiptItems = const [];
+  List<FinancialAccount> _accounts = const [];
+  List<CreditCardAccount> _creditCards = const [];
   DateTime _expenseDate = DateTime.now();
   String _category = 'Personal';
   String _currency = 'INR';
@@ -87,6 +104,16 @@ class _AddExpensePageState extends State<AddExpensePage> {
   @override
   void initState() {
     super.initState();
+    if (widget.accountsRepository == null ||
+        widget.creditCardsRepository == null) {
+      _client = http.Client();
+    }
+    _accountsRepository =
+        widget.accountsRepository ??
+        ApiAccountsRepository(client: _client ?? http.Client());
+    _creditCardsRepository =
+        widget.creditCardsRepository ??
+        ApiCreditCardsRepository(client: _client ?? http.Client());
     final expense = widget.expense;
     if (expense != null) {
       final descriptionParts = _splitDescription(
@@ -141,6 +168,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
         }
       });
     }
+    _loadPaymentSources();
   }
 
   @override
@@ -148,7 +176,29 @@ class _AddExpensePageState extends State<AddExpensePage> {
     _descriptionController.dispose();
     _amountController.dispose();
     _notesController.dispose();
+    _client?.close();
     super.dispose();
+  }
+
+  Future<void> _loadPaymentSources() async {
+    try {
+      final results = await Future.wait([
+        _accountsRepository.fetchAccounts(),
+        _creditCardsRepository.fetchCards(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _accounts = results[0] as List<FinancialAccount>;
+        _creditCards = results[1] as List<CreditCardAccount>;
+        _paymentSourcesError = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _paymentSourcesError =
+            'Bank accounts and credit cards could not be loaded.';
+      });
+    }
   }
 
   Future<void> _save({bool addAnother = false}) async {
@@ -167,17 +217,22 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
     final notes = _notesController.text.trim();
     final existing = widget.expense;
+    final selectedCard = _selectedCreditCard;
+    final effectiveCurrency = selectedCard?.currency ?? _currency;
+    final effectivePaymentMethod = selectedCard == null
+        ? _paymentMethod
+        : 'card';
     final expense = Expense(
       core: ExpenseCore(
         id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         title: description,
         amount: amount,
-        currency: _currency,
+        currency: effectiveCurrency,
         category: _category,
         createdAt: _expenseDate,
       ),
       description: _composeDescription(description, notes),
-      paymentMethod: _paymentMethod,
+      paymentMethod: effectivePaymentMethod,
       updatedAt: DateTime.now(),
       isSynced: false,
       deleted: existing?.deleted ?? false,
@@ -194,7 +249,16 @@ class _AddExpensePageState extends State<AddExpensePage> {
           .where((item) => item.name.trim().isNotEmpty)
           .map((item) => item.toJson())
           .toList(growable: false);
-      if (_editing) {
+      if (!_editing && selectedCard != null) {
+        await _creditCardsRepository.logSpend(
+          cardId: selectedCard.id,
+          amount: amount,
+          category: _category,
+          description: _composeDescription(description, notes),
+          date: _expenseDate,
+        );
+        bloc.add(const RefreshExpenses());
+      } else if (_editing) {
         bloc.add(UpdateExpense(expense: expense, receiptItems: receiptItems));
       } else {
         bloc.add(CreateExpense(expense: expense, receiptItems: receiptItems));
@@ -412,10 +476,62 @@ class _AddExpensePageState extends State<AddExpensePage> {
     String fallback,
   ) {
     final lower = value.trim().toLowerCase();
+    if (lower.startsWith(_accountPaymentPrefix) ||
+        lower.startsWith(_creditCardPaymentPrefix)) {
+      return lower;
+    }
     return choices.firstWhere(
       (choice) => choice.toLowerCase() == lower,
       orElse: () => fallback,
     );
+  }
+
+  List<String> get _paymentChoices {
+    final choices = <String>[
+      ..._paymentMethods,
+      ..._accounts
+          .where((account) => !account.archived)
+          .map((account) => _accountPaymentValue(account.id)),
+      ..._creditCards
+          .where((card) => !card.archived)
+          .map((card) => _creditCardPaymentValue(card.id)),
+    ];
+    if (!choices.contains(_paymentMethod)) {
+      choices.add(_paymentMethod);
+    }
+    return choices;
+  }
+
+  CreditCardAccount? get _selectedCreditCard {
+    if (!_paymentMethod.startsWith(_creditCardPaymentPrefix)) return null;
+    final id = _paymentMethod.substring(_creditCardPaymentPrefix.length);
+    for (final card in _creditCards) {
+      if (card.id == id && !card.archived) return card;
+    }
+    return null;
+  }
+
+  String? _currencyForPayment(String value) {
+    if (value.startsWith(_accountPaymentPrefix)) {
+      final id = value.substring(_accountPaymentPrefix.length);
+      for (final account in _accounts) {
+        if (account.id == id) return account.currency;
+      }
+    }
+    if (value.startsWith(_creditCardPaymentPrefix)) {
+      final id = value.substring(_creditCardPaymentPrefix.length);
+      for (final card in _creditCards) {
+        if (card.id == id) return card.currency;
+      }
+    }
+    return null;
+  }
+
+  void _setPaymentMethod(String value) {
+    setState(() {
+      _paymentMethod = value;
+      _currency = _currencyForPayment(value) ?? _currency;
+    });
   }
 
   @override
@@ -541,10 +657,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       child: _DropdownField(
                         label: 'Payment',
                         value: _paymentMethod,
-                        values: _paymentMethods,
+                        values: _paymentChoices,
                         labelFor: _paymentLabel,
-                        onChanged: (value) =>
-                            setState(() => _paymentMethod = value),
+                        onChanged: _setPaymentMethod,
                       ),
                     ),
                   ],
@@ -552,6 +667,17 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 if (_paymentMethod == 'paid_previously') ...[
                   const SizedBox(height: 8),
                   const _PaidPreviouslyNotice(),
+                ],
+                if (_paymentMethod.startsWith(_creditCardPaymentPrefix)) ...[
+                  const SizedBox(height: 8),
+                  _PaymentSourceNotice(
+                    message:
+                        'This will update the selected credit card balance.',
+                  ),
+                ],
+                if (_paymentSourcesError != null) ...[
+                  const SizedBox(height: 8),
+                  _PaymentSourceNotice(message: _paymentSourcesError!),
                 ],
                 const SizedBox(height: 12),
                 Row(
@@ -748,12 +874,12 @@ class _AddExpensePageState extends State<AddExpensePage> {
                           padding: EdgeInsets.zero,
                           onPressed: () => _showCupertinoChoice(
                             title: 'Payment',
-                            values: _paymentMethods,
+                            values: _paymentChoices,
                             selectedValue: _paymentMethod,
                             labelFor: _paymentLabel,
                             onSelected: (value) {
                               if (!mounted) return;
-                              setState(() => _paymentMethod = value);
+                              _setPaymentMethod(value);
                             },
                           ),
                           child: Text(
@@ -766,6 +892,14 @@ class _AddExpensePageState extends State<AddExpensePage> {
                         const Padding(
                           padding: EdgeInsets.all(12),
                           child: _PaidPreviouslyNotice(),
+                        ),
+                      if (_paymentMethod.startsWith(_creditCardPaymentPrefix))
+                        const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: _PaymentSourceNotice(
+                            message:
+                                'This will update the selected credit card balance.',
+                          ),
                         ),
                     ],
                   ),
@@ -801,7 +935,25 @@ class _AddExpensePageState extends State<AddExpensePage> {
     );
   }
 
-  static String _paymentLabel(String value) {
+  String _paymentLabel(String value) {
+    if (value.startsWith(_accountPaymentPrefix)) {
+      final id = value.substring(_accountPaymentPrefix.length);
+      for (final account in _accounts) {
+        if (account.id == id) {
+          return _accountLabel(account);
+        }
+      }
+      return 'Bank account';
+    }
+    if (value.startsWith(_creditCardPaymentPrefix)) {
+      final id = value.substring(_creditCardPaymentPrefix.length);
+      for (final card in _creditCards) {
+        if (card.id == id) {
+          return _creditCardLabel(card);
+        }
+      }
+      return 'Credit card';
+    }
     return switch (value) {
       'cash' => 'Cash',
       'card' => 'Card',
@@ -810,6 +962,43 @@ class _AddExpensePageState extends State<AddExpensePage> {
       'paid_previously' => 'Paid previously',
       _ => 'Other',
     };
+  }
+
+  String _accountPaymentValue(String id) => '$_accountPaymentPrefix$id';
+
+  String _creditCardPaymentValue(String id) => '$_creditCardPaymentPrefix$id';
+
+  String _accountLabel(FinancialAccount account) {
+    final institution = account.institution.trim();
+    final suffix = institution.isEmpty ? '' : ' - $institution';
+    return '${account.name}$suffix';
+  }
+
+  String _creditCardLabel(CreditCardAccount card) {
+    final last4 = card.last4.trim();
+    final issuer = card.issuer.trim();
+    final details = [
+      if (issuer.isNotEmpty) issuer,
+      if (last4.isNotEmpty) '•••• $last4',
+    ].join(' · ');
+    return details.isEmpty ? card.name : '${card.name} - $details';
+  }
+}
+
+class _PaymentSourceNotice extends StatelessWidget {
+  const _PaymentSourceNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Text(
+      message,
+      style: Theme.of(
+        context,
+      ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+    );
   }
 }
 

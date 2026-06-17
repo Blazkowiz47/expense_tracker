@@ -612,6 +612,7 @@ class _EmptySnapshotRepository implements DashboardSnapshotRepository {
       overallPositive: true,
       friendItems: [],
       groupItems: [],
+      aiInsights: [],
       actionItems: [],
       activityItems: [],
       accountName: 'Sushrut',
@@ -631,6 +632,7 @@ class _ActionSnapshotRepository implements DashboardSnapshotRepository {
       overallPositive: true,
       friendItems: [],
       groupItems: [],
+      aiInsights: [],
       actionItems: [
         DailyActionItem(
           title: 'Confirm rent',

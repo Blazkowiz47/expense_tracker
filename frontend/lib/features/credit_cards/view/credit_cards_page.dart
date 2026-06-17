@@ -143,6 +143,35 @@ class _CreditCardsPageState extends State<CreditCardsPage> {
     );
   }
 
+  Future<void> _recordPayment(CreditCardAccount card) async {
+    final draft = await showDialog<_PaymentDraft>(
+      context: context,
+      builder: (context) => _PaymentDraftDialog(card: card),
+    );
+    if (draft == null) return;
+    await _runCardAction(
+      busyCardId: card.id,
+      successMessage: 'Credit card payment recorded.',
+      failureMessage: 'Could not record this credit card payment.',
+      action: () async {
+        await _repository.updateCard(
+          id: card.id,
+          name: card.name,
+          issuer: card.issuer,
+          network: card.network,
+          last4: card.last4,
+          currency: card.currency,
+          creditLimit: card.creditLimit,
+          currentBalance: card.currentBalance - draft.amount,
+          statementDay: card.statementDay,
+          dueDay: card.dueDay,
+          familyVisibility: card.familyVisibility,
+          notes: card.notes,
+        );
+      },
+    );
+  }
+
   Future<void> _archiveCard(CreditCardAccount card) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -257,6 +286,7 @@ class _CreditCardsPageState extends State<CreditCardsPage> {
                       card: card,
                       busy: _busyCardId == card.id,
                       onLogSpend: () => _logSpend(card),
+                      onRecordPayment: () => _recordPayment(card),
                       onEdit: () => _openCardDialog(card: card),
                       onArchive: () => _archiveCard(card),
                     ),
@@ -347,6 +377,7 @@ class _CreditCardTile extends StatelessWidget {
     required this.card,
     required this.busy,
     required this.onLogSpend,
+    required this.onRecordPayment,
     required this.onEdit,
     required this.onArchive,
   });
@@ -354,6 +385,7 @@ class _CreditCardTile extends StatelessWidget {
   final CreditCardAccount card;
   final bool busy;
   final VoidCallback onLogSpend;
+  final VoidCallback onRecordPayment;
   final VoidCallback onEdit;
   final VoidCallback onArchive;
 
@@ -443,6 +475,13 @@ class _CreditCardTile extends StatelessWidget {
                 onPressed: busy ? null : onLogSpend,
                 icon: const Icon(Icons.add_card_outlined),
                 label: const Text('Log spend'),
+              ),
+              OutlinedButton.icon(
+                onPressed: busy || card.currentBalance <= 0
+                    ? null
+                    : onRecordPayment,
+                icon: const Icon(Icons.payments_outlined),
+                label: const Text('Record payment'),
               ),
               OutlinedButton.icon(
                 onPressed: busy ? null : onEdit,
@@ -898,6 +937,86 @@ class _SpendDraftDialogState extends State<_SpendDraftDialog> {
   }
 }
 
+class _PaymentDraftDialog extends StatefulWidget {
+  const _PaymentDraftDialog({required this.card});
+
+  final CreditCardAccount card;
+
+  @override
+  State<_PaymentDraftDialog> createState() => _PaymentDraftDialogState();
+}
+
+class _PaymentDraftDialogState extends State<_PaymentDraftDialog> {
+  late final TextEditingController _amountController;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final amount = _parseMoney(_amountController.text);
+    if (amount <= 0) {
+      setState(() => _error = 'Add a positive payment amount.');
+      return;
+    }
+    if (amount > widget.card.currentBalance) {
+      setState(() => _error = 'Payment cannot exceed outstanding balance.');
+      return;
+    }
+    Navigator.of(context).pop(_PaymentDraft(amount: amount));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Record payment for ${widget.card.name}'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Outstanding ${AppMoney.formatCurrency(widget.card.currentBalance, widget.card.currency)}',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _amountController,
+            decoration: InputDecoration(
+              labelText: 'Payment amount',
+              prefixText: '${widget.card.currency} ',
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Record payment')),
+      ],
+    );
+  }
+}
+
 class _CardDraft {
   const _CardDraft({
     required this.name,
@@ -938,6 +1057,12 @@ class _SpendDraft {
   final String category;
   final String description;
   final DateTime date;
+}
+
+class _PaymentDraft {
+  const _PaymentDraft({required this.amount});
+
+  final double amount;
 }
 
 List<DropdownMenuItem<int>> _days() {
