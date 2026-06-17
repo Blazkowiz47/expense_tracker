@@ -47,6 +47,7 @@ class MonthlyPlanRepository {
     String? groupId,
     required String currency,
     required Map<String, double> budgets,
+    double? income,
   }) async {
     final token = await _authTokenProvider.getBearerToken();
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/planning/monthly');
@@ -62,6 +63,7 @@ class MonthlyPlanRepository {
         if (groupId?.trim().isNotEmpty == true) 'groupId': groupId!.trim(),
         'currency': currency,
         'budgets': budgets,
+        if (income != null) 'income': income,
       }),
     );
     if (response.statusCode != 200) {

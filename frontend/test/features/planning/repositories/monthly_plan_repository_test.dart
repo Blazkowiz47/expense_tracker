@@ -30,8 +30,9 @@ void main() {
         expect(request.body, contains('"groupId":"family-1"'));
         expect(request.body, contains('"currency":"USD"'));
         expect(request.body, contains('"Groceries":500'));
+        expect(request.body, contains('"income":1800'));
         return http.Response(
-          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"skippedActualExpenseCount":1,"excludedActualsByCurrency":{"NOK":45},"categories":[]}',
+          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"income":1800,"surplus":1300,"skippedActualExpenseCount":1,"excludedActualsByCurrency":{"NOK":45},"categories":[]}',
           200,
         );
       }
@@ -51,6 +52,7 @@ void main() {
       groupId: 'family-1',
       currency: 'USD',
       budgets: {'Groceries': 500},
+      income: 1800,
     );
 
     expect(fetched.groupId, 'family-1');
@@ -60,6 +62,8 @@ void main() {
     expect(fetched.excludedActualsByCurrency, {'EUR': 12});
     expect(saved.groupId, 'family-1');
     expect(saved.currency, 'USD');
+    expect(saved.income, 1800);
+    expect(saved.surplus, 1300);
     expect(saved.excludedExpenseCount, 1);
     expect(saved.excludedActualsByCurrency, {'NOK': 45});
     expect(requests, hasLength(2));

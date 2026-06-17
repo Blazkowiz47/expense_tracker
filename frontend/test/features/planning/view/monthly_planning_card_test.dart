@@ -80,6 +80,7 @@ class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
     String? groupId,
     required String currency,
     required Map<String, double> budgets,
+    double? income,
   }) async {
     savedBudgets = budgets;
     savedCurrency = currency;

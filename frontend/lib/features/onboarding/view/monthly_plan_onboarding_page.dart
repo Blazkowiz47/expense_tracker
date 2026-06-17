@@ -375,11 +375,12 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         }
       }
 
-      if (budgets.isNotEmpty) {
+      if (budgets.isNotEmpty || salaryAmount > 0) {
         await _setupWriter.saveMonthlyPlan(
           month: month,
           currency: _currency,
           budgets: budgets,
+          income: salaryAmount > 0 ? salaryAmount : null,
         );
       }
       await _clearLocalAccountDraft();

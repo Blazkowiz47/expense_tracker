@@ -114,9 +114,15 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
     required String month,
     required String currency,
     required Map<String, double> budgets,
+    double? income,
   }) async {
     monthlyPlans.add(
-      _SavedMonthlyPlan(month: month, currency: currency, budgets: budgets),
+      _SavedMonthlyPlan(
+        month: month,
+        currency: currency,
+        budgets: budgets,
+        income: income,
+      ),
     );
   }
 
@@ -524,6 +530,7 @@ void main() {
         setupWriter.monthlyPlans.single.budgets,
         containsPair('Groceries', 5000),
       );
+      expect(setupWriter.monthlyPlans.single.income, 42000);
       expect(
         setupWriter.monthlyPlans.single.budgets,
         containsPair('Utilities', 1200),
@@ -1215,6 +1222,7 @@ void main() {
     );
     expect(setupWriter.loans, hasLength(2));
     expect(setupWriter.savingsGoals.single.name, 'Emergency fund');
+    expect(setupWriter.monthlyPlans.single.income, 36000);
     expect(setupWriter.monthlyPlans.single.budgets, isNot(contains('Salary')));
     expect(
       setupWriter.monthlyPlans.single.budgets,
@@ -1284,11 +1292,13 @@ class _SavedMonthlyPlan {
     required this.month,
     required this.currency,
     required this.budgets,
+    this.income,
   });
 
   final String month;
   final String currency;
   final Map<String, double> budgets;
+  final double? income;
 }
 
 class _SavedRecurring {

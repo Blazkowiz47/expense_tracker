@@ -25,6 +25,7 @@ abstract class OnboardingSetupWriter {
     required String month,
     required String currency,
     required Map<String, double> budgets,
+    double? income,
   });
 
   Future<void> createRecurringTemplate({
@@ -198,11 +199,13 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     required String month,
     required String currency,
     required Map<String, double> budgets,
+    double? income,
   }) async {
     await _monthlyPlanRepository.savePlan(
       month: month,
       currency: currency,
       budgets: budgets,
+      income: income,
     );
   }
 

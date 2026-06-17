@@ -1538,6 +1538,18 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             except (TypeError, ValueError):
                 raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "budget amounts must be numbers")) from None
             budgets[label] = value
+        income: float | None = None
+        if any(key in body for key in ("income", "monthlyIncome", "plannedIncome", "totalIncome")):
+            try:
+                income = max(0.0, float(
+                    body.get("income")
+                    or body.get("monthlyIncome")
+                    or body.get("plannedIncome")
+                    or body.get("totalIncome")
+                    or 0
+                ))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "income must be a number")) from None
         doc = {
             "uid": owner_uid,
             "month": plan_month,
@@ -1547,6 +1559,8 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "budgets": budgets,
             "updatedAt": now(),
         }
+        if income is not None:
+            doc["income"] = income
         app.state.db.monthly_plans.update_one(
             {"uid": owner_uid, "month": plan_month},
             {"$set": doc, "$setOnInsert": {"createdAt": now()}},
@@ -4344,6 +4358,17 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
         })
     total_budget = sum(budgets.values())
     total_actual = sum(actuals.values())
+    planned_income_raw = plan.get("income")
+    planned_income = (
+        max(0.0, float(planned_income_raw))
+        if planned_income_raw is not None
+        else None
+    )
+    projected_surplus = (
+        planned_income - total_budget
+        if planned_income is not None
+        else None
+    )
     total_excluded: dict[str, float] = {}
     for amounts in excluded_actuals.values():
         for currency, amount in amounts.items():
@@ -4355,6 +4380,12 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
         "totalBudget": total_budget,
         "totalActual": total_actual,
         "totalRemaining": total_budget - total_actual,
+        "income": planned_income,
+        "monthlyIncome": planned_income,
+        "totalIncome": planned_income,
+        "surplus": projected_surplus,
+        "netSurplus": projected_surplus,
+        "projectedSurplus": projected_surplus,
         "convertedExpenseCount": sum(converted_counts.values()),
         "excludedExpenseCount": sum(excluded_counts.values()),
         "skippedActualExpenseCount": sum(excluded_counts.values()),

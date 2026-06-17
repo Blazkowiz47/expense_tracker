@@ -995,12 +995,21 @@ def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
     saved = client.put(
         "/api/v1/planning/monthly",
         headers=headers,
-        json={"month": "2026-05", "currency": "INR", "budgets": {"Food": 500, "Travel": 300}},
+        json={
+            "month": "2026-05",
+            "currency": "INR",
+            "income": 2000,
+            "budgets": {"Food": 500, "Travel": 300},
+        },
     )
     assert saved.status_code == 200, saved.text
     payload = saved.json()
     assert payload["totalBudget"] == 800
     assert payload["totalActual"] == 200
+    assert payload["income"] == 2000
+    assert payload["totalIncome"] == 2000
+    assert payload["surplus"] == 1200
+    assert payload["projectedSurplus"] == 1200
     assert payload["excludedExpenseCount"] == 1
     assert payload["skippedActualExpenseCount"] == 1
     assert payload["excludedActualsByCurrency"] == {"USD": 30}
