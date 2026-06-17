@@ -177,6 +177,55 @@ void main() {
     );
   });
 
+  testWidgets('home page shows continue setup in needs attention', (
+    tester,
+  ) async {
+    final cubit = DashboardSnapshotCubit(
+      repository: const _EmptySnapshotRepository(),
+    );
+    await cubit.load();
+    addTearDown(cubit.close);
+    var setupOpened = false;
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(
+              showContinueSetup: true,
+              onContinueSetup: () => setupOpened = true,
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Continue setup'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Needs attention'), findsWidgets);
+    expect(find.text('1 items'), findsOneWidget);
+    expect(find.text('Continue setup'), findsOneWidget);
+    expect(
+      find.text(
+        'Finish onboarding so budgets, bills, and savings stay aligned.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Continue'), findsOneWidget);
+
+    await tester.tap(find.text('Continue setup'));
+    await tester.pump();
+
+    expect(setupOpened, isTrue);
+  });
+
   testWidgets('home auto-refresh skips reload when dashboard is fresh', (
     tester,
   ) async {
@@ -224,6 +273,25 @@ void main() {
       DateTime.parse('2026-06-07T10:00:00Z'),
     );
   });
+}
+
+class _EmptySnapshotRepository implements DashboardSnapshotRepository {
+  const _EmptySnapshotRepository();
+
+  @override
+  Future<DashboardSnapshot> fetchSnapshot() async {
+    return const DashboardSnapshot(
+      overallLabel: "You're all settled up",
+      overallAmountText: 'INR 0.00',
+      overallPositive: true,
+      friendItems: [],
+      groupItems: [],
+      actionItems: [],
+      activityItems: [],
+      accountName: 'Sushrut',
+      accountEmail: 'sushrut@example.com',
+    );
+  }
 }
 
 class _ActionSnapshotRepository implements DashboardSnapshotRepository {

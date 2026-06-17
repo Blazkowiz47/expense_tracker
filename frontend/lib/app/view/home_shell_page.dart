@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:expense_tracker/app/routes/app_routes.dart';
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/core/utils/platform_page_route.dart';
@@ -22,6 +24,8 @@ import 'package:expense_tracker/features/groups/models/group_summary.dart';
 import 'package:expense_tracker/features/groups/repositories/api_groups_repository.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
 import 'package:expense_tracker/features/loans/view/loans_page.dart';
+import 'package:expense_tracker/features/onboarding/repositories/onboarding_draft_repository.dart';
+import 'package:expense_tracker/features/onboarding/view/monthly_plan_onboarding_page.dart';
 import 'package:expense_tracker/features/receipts/view/price_book_page.dart';
 import 'package:expense_tracker/features/recurring/view/recurring_page.dart';
 import 'package:expense_tracker/features/savings/view/savings_page.dart';
@@ -53,7 +57,9 @@ class _HomeShellPageState extends State<HomeShellPage>
   late final DashboardSnapshotCubit _dashboardCubit;
   late final AnimationController _actionMenuController;
   late final Animation<double> _actionMenuAnimation;
+  final _onboardingDraftRepository = OnboardingDraftRepository();
   bool _actionMenuOpen = false;
+  bool _hasOnboardingDraft = false;
 
   static const _destinations = <_ShellDestination>[
     _ShellDestination(
@@ -103,6 +109,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
+    unawaited(_loadOnboardingDraftStatus());
   }
 
   DashboardSnapshotRepository _buildApiRepository() {
@@ -315,6 +322,32 @@ class _HomeShellPageState extends State<HomeShellPage>
     );
   }
 
+  Future<void> _loadOnboardingDraftStatus() async {
+    final hasDraft = await _onboardingDraftRepository.hasSetupDraft();
+    if (!mounted) return;
+    setState(() => _hasOnboardingDraft = hasDraft);
+  }
+
+  Future<void> _openOnboardingSetup() async {
+    final completed = await Navigator.of(context).push<bool>(
+      platformPageRoute(builder: (_) => const MonthlyPlanOnboardingPage()),
+    );
+    if (!mounted) return;
+    await _loadOnboardingDraftStatus();
+    if (completed == true) {
+      await _dashboardCubit.load(showLoading: false);
+    }
+  }
+
+  bool _isOnboardingIncomplete(BuildContext context) {
+    try {
+      return context.watch<AuthCubit>().state.user?.onboardingCompleted ==
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _openPriceBookPage() {
     Navigator.of(
       context,
@@ -462,13 +495,16 @@ class _HomeShellPageState extends State<HomeShellPage>
   Widget _pageForDestination(_ShellDestination destination, int index) {
     final autoRefresh = index == _selectedIndex;
     if (destination.label == 'Home') {
+      final onboardingIncomplete = _isOnboardingIncomplete(context);
       return HomePage(
         autoRefresh: autoRefresh,
+        showContinueSetup: onboardingIncomplete || _hasOnboardingDraft,
         onOpenFriends: _openFriendsPage,
         onOpenGroups: () => _openSharedSpace(GroupType.split),
         onOpenFamily: () => _onDestinationSelected(1),
         onOpenRecurring: _openRecurringPage,
         onOpenAction: _openDashboardAction,
+        onContinueSetup: _openOnboardingSetup,
         onAddExpenseForCategory: _openPersonalPlannedExpense,
         onRecordPlannedPayment: _recordPersonalPlannedPayment,
         onOpenActivityCategory: _openActivityCategory,

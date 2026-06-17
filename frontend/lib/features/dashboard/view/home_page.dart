@@ -29,12 +29,14 @@ class HomePage extends StatefulWidget {
     this.onOpenFamily,
     this.onOpenRecurring,
     this.onOpenAction,
+    this.onContinueSetup,
     this.onAddExpenseForCategory,
     this.onRecordPlannedPayment,
     this.onOpenActivityCategory,
     this.freshnessRepository,
     this.monthlyPlanRepository,
     this.autoRefresh = false,
+    this.showContinueSetup = false,
     super.key,
   });
 
@@ -43,6 +45,7 @@ class HomePage extends StatefulWidget {
   final VoidCallback? onOpenFamily;
   final VoidCallback? onOpenRecurring;
   final void Function(DailyActionItem item)? onOpenAction;
+  final VoidCallback? onContinueSetup;
   final ValueChanged<String>? onAddExpenseForCategory;
   final Future<bool> Function(
     String category, {
@@ -54,6 +57,7 @@ class HomePage extends StatefulWidget {
   final FreshnessRepository? freshnessRepository;
   final MonthlyPlanRepository? monthlyPlanRepository;
   final bool autoRefresh;
+  final bool showContinueSetup;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -184,6 +188,8 @@ class _HomePageState extends State<HomePage> {
               onOpenFamily: widget.onOpenFamily,
               onOpenRecurring: widget.onOpenRecurring,
               onOpenAction: widget.onOpenAction,
+              onContinueSetup: widget.onContinueSetup,
+              showContinueSetup: widget.showContinueSetup,
             ),
             const SizedBox(height: 10),
             const _PlanningAssistantCard(),
@@ -215,6 +221,8 @@ class _HomePageState extends State<HomePage> {
               onOpenFamily: widget.onOpenFamily,
               onOpenRecurring: widget.onOpenRecurring,
               onOpenAction: widget.onOpenAction,
+              onContinueSetup: widget.onContinueSetup,
+              showContinueSetup: widget.showContinueSetup,
             ),
             const SizedBox(height: 16),
             _AdaptiveColumns(
@@ -608,6 +616,8 @@ class _NeedsAttentionSection extends StatelessWidget {
     this.onOpenFamily,
     this.onOpenRecurring,
     this.onOpenAction,
+    this.onContinueSetup,
+    this.showContinueSetup = false,
   });
 
   final List<DailyActionItem> items;
@@ -616,19 +626,24 @@ class _NeedsAttentionSection extends StatelessWidget {
   final VoidCallback? onOpenFamily;
   final VoidCallback? onOpenRecurring;
   final void Function(DailyActionItem item)? onOpenAction;
+  final VoidCallback? onContinueSetup;
+  final bool showContinueSetup;
 
   @override
   Widget build(BuildContext context) {
-    final visibleItems = items.take(5).toList(growable: false);
+    final visibleItems = items
+        .take(showContinueSetup ? 4 : 5)
+        .toList(growable: false);
+    final attentionCount = items.length + (showContinueSetup ? 1 : 0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
           title: 'Needs attention',
-          badge: items.isEmpty ? null : '${items.length} items',
+          badge: attentionCount == 0 ? null : '$attentionCount items',
         ),
         const SizedBox(height: 10),
-        if (visibleItems.isEmpty)
+        if (!showContinueSetup && visibleItems.isEmpty)
           const _NoAttentionCard()
         else
           LayoutBuilder(
@@ -641,6 +656,14 @@ class _NeedsAttentionSection extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (showContinueSetup)
+                    SizedBox(
+                      width: itemWidth,
+                      child: _AttentionCard(
+                        item: _continueSetupAttentionItem,
+                        onTap: onContinueSetup,
+                      ),
+                    ),
                   for (final item in visibleItems)
                     SizedBox(
                       width: itemWidth,
@@ -667,6 +690,14 @@ class _NeedsAttentionSection extends StatelessWidget {
     };
   }
 }
+
+const _continueSetupAttentionItem = DailyActionItem(
+  title: 'Continue setup',
+  subtitle: 'Finish onboarding so budgets, bills, and savings stay aligned.',
+  severity: 'info',
+  destination: 'onboarding',
+  actionType: 'continue_onboarding',
+);
 
 class _AttentionCard extends StatelessWidget {
   const _AttentionCard({required this.item, this.onTap});
@@ -2659,6 +2690,9 @@ Color _backgroundFor(BuildContext context, _InsightTone tone) {
 }
 
 IconData _attentionIcon(DailyActionItem item) {
+  if (item.actionType == 'continue_onboarding') {
+    return Icons.checklist_outlined;
+  }
   if (item.actionType.contains('receipt')) {
     return Icons.receipt_long_outlined;
   }
@@ -2679,6 +2713,7 @@ IconData _attentionIcon(DailyActionItem item) {
 }
 
 String _badgeLabel(DailyActionItem item) {
+  if (item.actionType == 'continue_onboarding') return 'Setup';
   return switch (item.severity) {
     'critical' => 'Urgent',
     'warning' => 'Due',
@@ -2688,6 +2723,7 @@ String _badgeLabel(DailyActionItem item) {
 
 String _primaryActionLabel(DailyActionItem item) {
   final action = item.actionType.toLowerCase();
+  if (action == 'continue_onboarding') return 'Continue';
   if (action.contains('confirm')) return 'Confirm';
   if (action.contains('review')) return 'Review';
   if (action.contains('settle')) return 'Settle';

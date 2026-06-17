@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:expense_tracker/app/routes/app_routes.dart';
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/loans/models/loan.dart';
+import 'package:expense_tracker/features/onboarding/repositories/onboarding_draft_repository.dart';
 import 'package:expense_tracker/features/onboarding/repositories/onboarding_setup_writer.dart';
 import 'package:expense_tracker/features/planning/models/monthly_plan.dart';
 import 'package:expense_tracker/features/recurring/models/recurring_template.dart';
@@ -37,8 +39,6 @@ const _frequencyOptions = <String>[
   'quarterly',
   'yearly',
 ];
-const _setupDraftBoxName = 'monthly_setup_draft_v1';
-const _accountDraftsKey = 'accountDrafts';
 const _setupSteps = <_SetupStep>[
   _SetupStep.currency,
   _SetupStep.accounts,
@@ -105,6 +105,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   var _loadingExistingSetup = false;
   var _saving = false;
   String? _message;
+  final _draftRepository = OnboardingDraftRepository();
 
   _SetupStep get _step => _setupSteps[_stepIndex];
 
@@ -370,6 +371,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       if (!mounted) return;
       if (widget.completeOnFinish) {
         await context.read<AuthCubit>().completeOnboarding();
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(true);
+        }
       } else {
         Navigator.of(context).pop(true);
       }
@@ -468,7 +472,12 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   Future<void> _skipAll() {
     return _run(() async {
       if (widget.completeOnFinish) {
-        await context.read<AuthCubit>().completeOnboarding();
+        if (!mounted) return;
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(false);
+        } else {
+          Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+        }
       } else if (mounted) {
         Navigator.of(context).pop(false);
       }
@@ -593,7 +602,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   Future<void> _loadLocalAccountDraft() async {
     final box = await _openDraftBox();
     if (box == null || _accountsTouched) return;
-    final raw = box.get(_accountDraftsKey);
+    final raw = box.get(onboardingAccountDraftsKey);
     if (raw == null || raw.isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
@@ -663,24 +672,23 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         )
         .toList(growable: false);
     if (payload.isEmpty) {
-      await box.delete(_accountDraftsKey);
+      await box.delete(onboardingAccountDraftsKey);
       return;
     }
-    await box.put(_accountDraftsKey, jsonEncode(payload));
+    await box.put(onboardingAccountDraftsKey, jsonEncode(payload));
   }
 
   Future<void> _clearLocalAccountDraft() async {
-    final box = await _openDraftBox();
-    await box?.delete(_accountDraftsKey);
+    await _draftRepository.clearAccountDraft();
   }
 
   Future<Box<String>?> _openDraftBox() async {
     try {
-      if (!Hive.isBoxOpen(_setupDraftBoxName)) {
+      if (!Hive.isBoxOpen(onboardingSetupDraftBoxName)) {
         if (!kIsWeb) return null;
-        await Hive.openBox<String>(_setupDraftBoxName);
+        await Hive.openBox<String>(onboardingSetupDraftBoxName);
       }
-      return Hive.box<String>(_setupDraftBoxName);
+      return Hive.box<String>(onboardingSetupDraftBoxName);
     } catch (_) {
       return null;
     }
