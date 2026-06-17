@@ -666,16 +666,16 @@ class _NeedsAttentionSection extends StatelessWidget {
         else
           LayoutBuilder(
             builder: (context, constraints) {
-              final twoColumns = constraints.maxWidth >= 720;
-              final itemWidth = twoColumns
-                  ? (constraints.maxWidth - 8) / 2
-                  : constraints.maxWidth;
+              final itemWidth = constraints.maxWidth;
               return Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
                   if (showContinueSetup)
                     SizedBox(
+                      key: const ValueKey(
+                        'needs-attention-card-continue-onboarding',
+                      ),
                       width: itemWidth,
                       child: _AttentionCard(
                         item: _continueSetupAttentionItem,
@@ -684,6 +684,9 @@ class _NeedsAttentionSection extends StatelessWidget {
                     ),
                   for (final item in visibleItems)
                     SizedBox(
+                      key: ValueKey(
+                        'needs-attention-card-${item.actionType}-${item.title}',
+                      ),
                       width: itemWidth,
                       child: _AttentionCard(item: item, onTap: _tapFor(item)),
                     ),

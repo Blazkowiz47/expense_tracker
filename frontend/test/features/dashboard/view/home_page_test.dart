@@ -213,6 +213,16 @@ void main() {
     expect(find.text('1 items'), findsOneWidget);
     expect(find.text('Complete onboarding'), findsOneWidget);
     expect(
+      tester
+          .getSize(
+            find.byKey(
+              const ValueKey('needs-attention-card-continue-onboarding'),
+            ),
+          )
+          .width,
+      greaterThan(700),
+    );
+    expect(
       find.text(
         'Finish onboarding so budgets, bills, and savings stay aligned.',
       ),
