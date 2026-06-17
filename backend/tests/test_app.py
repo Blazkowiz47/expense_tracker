@@ -1197,6 +1197,96 @@ def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):
     assert food["excludedActualsByCurrency"] == {"USD": 30}
 
 
+def test_monthly_plan_uses_activity_income_when_plan_income_missing(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    income = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 36000,
+            "currency": "NOK",
+            "category": "Salary",
+            "description": "Salary",
+            "paymentMethod": "income",
+            "date": "2026-06-05T12:00:00Z",
+            "sourceType": "setup_month_entry",
+            "sourcePaymentType": "income",
+            "sourcePeriod": "2026-06",
+            "sourceSetupKey": "salary",
+        },
+    )
+    assert income.status_code == 201, income.text
+    rent = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 8000,
+            "currency": "NOK",
+            "category": "Rent and housing",
+            "description": "Rent and housing",
+            "paymentMethod": "paid_previously",
+            "date": "2026-06-01T12:00:00Z",
+            "sourceType": "setup_month_entry",
+            "sourcePaymentType": "expense",
+            "sourcePeriod": "2026-06",
+            "sourceSetupKey": "housing",
+        },
+    )
+    assert rent.status_code == 201, rent.text
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers,
+        json={
+            "month": "2026-06",
+            "currency": "NOK",
+            "budgets": {"Rent and housing": 8000},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    payload = saved.json()
+    assert payload["income"] == 36000
+    assert payload["surplus"] == 28000
+    categories = {item["category"]: item for item in payload["categories"]}
+    assert "Salary" not in categories
+    assert categories["Rent and housing"]["actual"] == 8000
+
+
+def test_monthly_plan_falls_back_to_recurring_income_when_plan_income_missing(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    recurring = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Salary",
+            "kind": "income",
+            "amount": 42000,
+            "currency": "NOK",
+            "category": "Salary",
+            "frequency": "monthly",
+            "dayOfMonth": 25,
+            "startDate": "2026-06-01T00:00:00Z",
+        },
+    )
+    assert recurring.status_code == 201, recurring.text
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers,
+        json={
+            "month": "2026-06",
+            "currency": "NOK",
+            "budgets": {"Groceries": 5000},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    payload = saved.json()
+    assert payload["income"] == 42000
+    assert payload["surplus"] == 37000
+
+
 def test_family_roles_and_expenses_feed_monthly_plan(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")

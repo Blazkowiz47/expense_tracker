@@ -4508,6 +4508,71 @@ def monthly_plan_scope(db: Any, uid: str, raw_group_id: Any = "") -> tuple[str, 
     return monthly_plan_group_owner(group_id), group_id
 
 
+def is_income_activity_entry(expense: dict[str, Any]) -> bool:
+    return str(expense.get("sourcePaymentType") or "").strip().lower() == "income"
+
+
+def income_amount_for_currency(doc: dict[str, Any], currency: str) -> float:
+    amount = expense_amount_for_currency(doc, currency)
+    if amount is None:
+        return 0.0
+    return max(0.0, amount)
+
+
+def monthly_activity_income(db: Any, uid: str, month: str, currency: str) -> float:
+    start, end = month_range(month)
+    docs = db.expenses.find({
+        "uid": uid,
+        "sourcePaymentType": "income",
+        "date": {"$gte": start, "$lt": end},
+    })
+    return sum(income_amount_for_currency(doc, currency) for doc in docs)
+
+
+def monthly_recurring_income(db: Any, uid: str, month: str, currency: str) -> float:
+    total = 0.0
+    templates = db.recurring_templates.find({
+        "uid": uid,
+        "kind": "income",
+        "deletedAt": {"$exists": False},
+    })
+    for template in templates:
+        if not template.get("active", True):
+            continue
+        if not recurring_due_dates_for_month(template, month):
+            continue
+        total += income_amount_for_currency(template, currency)
+    return total
+
+
+def effective_monthly_income(
+    db: Any,
+    uid: str,
+    month: str,
+    currency: str,
+    raw_income: Any,
+    *,
+    group_id: str | None = None,
+) -> float | None:
+    stored_income: float | None = None
+    if raw_income is not None:
+        try:
+            stored_income = max(0.0, float(raw_income))
+        except (TypeError, ValueError):
+            stored_income = None
+    if stored_income is not None and stored_income > 0.005:
+        return stored_income
+    if group_id:
+        return stored_income
+    activity_income = monthly_activity_income(db, uid, month, currency)
+    if activity_income > 0.005:
+        return activity_income
+    recurring_income = monthly_recurring_income(db, uid, month, currency)
+    if recurring_income > 0.005:
+        return recurring_income
+    return stored_income
+
+
 def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None) -> dict[str, Any]:
     plan = db.monthly_plans.find_one({"uid": uid, "month": month}) or {}
     plan_currency = safe_currency(plan.get("currency"), "INR") or "INR"
@@ -4520,6 +4585,8 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
     excluded_actuals: dict[str, dict[str, float]] = {}
 
     def add_expense(expense: dict[str, Any]) -> None:
+        if is_income_activity_entry(expense):
+            return
         category = str(expense.get("category") or "Personal").strip() or "Personal"
         amount = expense_amount_for_currency(expense, plan_currency)
         if amount is not None:
@@ -4577,11 +4644,13 @@ def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None)
         })
     total_budget = sum(budgets.values())
     total_actual = sum(actuals.values())
-    planned_income_raw = plan.get("income")
-    planned_income = (
-        max(0.0, float(planned_income_raw))
-        if planned_income_raw is not None
-        else None
+    planned_income = effective_monthly_income(
+        db,
+        uid,
+        month,
+        plan_currency,
+        plan.get("income"),
+        group_id=group_id,
     )
     projected_surplus = (
         planned_income - total_budget
