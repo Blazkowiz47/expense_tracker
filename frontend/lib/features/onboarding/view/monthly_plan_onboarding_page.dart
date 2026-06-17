@@ -69,11 +69,13 @@ class MonthlyPlanOnboardingPage extends StatefulWidget {
   const MonthlyPlanOnboardingPage({
     this.setupWriter,
     this.completeOnFinish = true,
+    this.currentDate,
     super.key,
   });
 
   final OnboardingSetupWriter? setupWriter;
   final bool completeOnFinish;
+  final DateTime? currentDate;
 
   @override
   State<MonthlyPlanOnboardingPage> createState() =>
@@ -172,7 +174,8 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   Future<void> _finish() {
     return _run(() async {
       final budgets = <String, double>{};
-      final month = _monthKey(DateTime.now());
+      final setupDate = _setupDate;
+      final month = _monthKey(setupDate);
 
       for (final account in _accounts) {
         final name = account.nameController.text.trim();
@@ -199,6 +202,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
       final salaryAmount = _amountValue(_salaryAmountController);
       if (salaryAmount > 0) {
+        final salaryDay = _dayValue(_salaryDayController, 'Salary day');
         await _saveRecurringTemplate(
           id: _salaryTemplateId,
           title: 'Salary',
@@ -207,13 +211,16 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           category: 'Salary',
           currency: _currency,
           frequency: 'monthly',
-          dayOfMonth: _dayValue(_salaryDayController, 'Salary day'),
+          dayOfMonth: salaryDay,
         );
       }
 
       final rentAmount = _amountValue(_rentAmountController);
       if (rentAmount > 0) {
-        budgets['Rent and housing'] = rentAmount;
+        final rentDay = _dayValue(_rentDayController, 'Housing due day');
+        if (_countsForSetupMonth(rentDay, setupDate)) {
+          budgets['Rent and housing'] = rentAmount;
+        }
         await _saveRecurringTemplate(
           id: _housingTemplateId,
           title: 'Rent and housing',
@@ -222,7 +229,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           category: 'Rent and housing',
           currency: _currency,
           frequency: 'monthly',
-          dayOfMonth: _dayValue(_rentDayController, 'Housing due day'),
+          dayOfMonth: rentDay,
         );
       }
 
@@ -237,7 +244,6 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
             'Each loan needs remaining principal and EMI, or remove that loan.',
           );
         }
-        _addBudgetAmount(budgets, 'Loans / EMI', loanEmi);
         final name = loan.nameController.text.trim().isEmpty
             ? 'Loan'
             : loan.nameController.text.trim();
@@ -246,6 +252,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         final interestRate = _amountValue(loan.interestController);
         final remainingEmis = _intValue(loan.monthsController);
         final dueDay = _dayValue(loan.dueDayController, 'Loan due day');
+        if (_countsForSetupMonth(dueDay, setupDate)) {
+          _addBudgetAmount(budgets, 'Loans / EMI', loanEmi);
+        }
         if (loan.existingId == null) {
           await _setupWriter.createLoan(
             name: name,
@@ -278,6 +287,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
       await _addCommitments(
         budgets,
+        setupDate: setupDate,
         category: 'Insurance',
         drafts: _insurances,
         fallbackTitle: 'Insurance',
@@ -290,18 +300,21 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       );
       await _addCommitments(
         budgets,
+        setupDate: setupDate,
         category: 'Utilities',
         drafts: _utilities,
         fallbackTitle: 'Utility bill',
       );
       await _addCommitments(
         budgets,
+        setupDate: setupDate,
         category: 'Subscriptions',
         drafts: _subscriptions,
         fallbackTitle: 'Subscription',
       );
       await _addCommitments(
         budgets,
+        setupDate: setupDate,
         category: 'Memberships',
         drafts: _memberships,
         fallbackTitle: 'Membership',
@@ -415,6 +428,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
   Future<void> _addCommitments(
     Map<String, double> budgets, {
+    required DateTime setupDate,
     required String category,
     required List<_CommitmentDraftController> drafts,
     required String fallbackTitle,
@@ -424,10 +438,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       if (amount <= 0) {
         continue;
       }
-      _addBudgetAmount(budgets, category, amount);
       final title = draft.nameController.text.trim().isEmpty
           ? fallbackTitle
           : draft.nameController.text.trim();
+      final dayOfMonth = _dayValue(draft.dayController, '$title due day');
+      if (_countsForSetupMonth(dayOfMonth, setupDate)) {
+        _addBudgetAmount(budgets, category, amount);
+      }
       await _saveRecurringTemplate(
         id: draft.existingId,
         title: title,
@@ -436,7 +453,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         category: category,
         currency: _currency,
         frequency: draft.frequency,
-        dayOfMonth: _dayValue(draft.dayController, '$title due day'),
+        dayOfMonth: dayOfMonth,
       );
     }
   }
@@ -510,7 +527,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     setState(() => _loadingExistingSetup = true);
     try {
       await _loadLocalAccountDraft();
-      final month = _monthKey(DateTime.now());
+      final month = _monthKey(_setupDate);
       final accounts = await _withSetupFallback(
         _setupWriter.fetchFinancialAccounts(),
         const <FinancialAccount>[],
@@ -1127,6 +1144,12 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       throw _OnboardingValidationException('$field must be between 1 and 31.');
     }
     return value;
+  }
+
+  DateTime get _setupDate => widget.currentDate ?? DateTime.now();
+
+  bool _countsForSetupMonth(int dayOfMonth, DateTime setupDate) {
+    return dayOfMonth >= setupDate.day;
   }
 
   String _monthKey(DateTime date) {

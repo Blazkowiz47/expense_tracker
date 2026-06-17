@@ -340,7 +340,10 @@ void main() {
         MaterialApp(
           home: BlocProvider.value(
             value: authCubit,
-            child: MonthlyPlanOnboardingPage(setupWriter: setupWriter),
+            child: MonthlyPlanOnboardingPage(
+              setupWriter: setupWriter,
+              currentDate: DateTime(2026, 6),
+            ),
           ),
         ),
       );
@@ -555,7 +558,10 @@ void main() {
       MaterialApp(
         home: BlocProvider.value(
           value: authCubit,
-          child: MonthlyPlanOnboardingPage(setupWriter: setupWriter),
+          child: MonthlyPlanOnboardingPage(
+            setupWriter: setupWriter,
+            currentDate: DateTime(2026, 6),
+          ),
         ),
       ),
     );
@@ -606,6 +612,7 @@ void main() {
           value: _authCubit(),
           child: MonthlyPlanOnboardingPage(
             setupWriter: _FakeOnboardingSetupWriter(),
+            currentDate: DateTime(2026, 6),
           ),
         ),
       ),
@@ -667,6 +674,7 @@ void main() {
           child: MonthlyPlanOnboardingPage(
             setupWriter: setupWriter,
             completeOnFinish: false,
+            currentDate: DateTime(2026, 6),
           ),
         ),
       ),
@@ -880,6 +888,7 @@ void main() {
           child: MonthlyPlanOnboardingPage(
             setupWriter: setupWriter,
             completeOnFinish: false,
+            currentDate: DateTime(2026, 6),
           ),
         ),
       ),
@@ -953,7 +962,10 @@ void main() {
       MaterialApp(
         home: BlocProvider.value(
           value: authCubit,
-          child: MonthlyPlanOnboardingPage(setupWriter: setupWriter),
+          child: MonthlyPlanOnboardingPage(
+            setupWriter: setupWriter,
+            currentDate: DateTime(2026, 6),
+          ),
         ),
       ),
     );
@@ -1105,6 +1117,99 @@ void main() {
     expect(
       setupWriter.savingsGoals.map((goal) => goal.accountName),
       containsAll(<String>['Sparekonto - DNB', 'Sparekonto - Nordea']),
+    );
+  });
+
+  testWidgets('setup month skips commitments already due before enrollment', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(700, 1300));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final authCubit = _authCubit();
+    final setupWriter = _FakeOnboardingSetupWriter();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BlocProvider.value(
+          value: authCubit,
+          child: MonthlyPlanOnboardingPage(
+            setupWriter: setupWriter,
+            currentDate: DateTime(2026, 6, 17),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await _advance(tester);
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Monthly salary'),
+      '36000',
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Salary day'), '5');
+    await _advance(tester);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Rent or housing payment'),
+      '8000',
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Payment day'), '1');
+    await _advance(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('loan-0-name')),
+      'Old EMI',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('loan-0-principal')),
+      '100000',
+    );
+    await tester.enterText(find.byKey(const ValueKey('loan-0-emi')), '3000');
+    await tester.enterText(find.byKey(const ValueKey('loan-0-day')), '5');
+    await tester.tap(find.byKey(const ValueKey('loans-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('loan-1-name')),
+      'Upcoming EMI',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('loan-1-principal')),
+      '50000',
+    );
+    await tester.enterText(find.byKey(const ValueKey('loan-1-emi')), '1000');
+    await tester.enterText(find.byKey(const ValueKey('loan-1-day')), '25');
+    await _advance(tester);
+
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('onboarding-complete-setup')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      setupWriter.recurringTemplates.map((item) => item.title),
+      containsAll(<String>['Salary', 'Rent and housing']),
+    );
+    expect(setupWriter.loans, hasLength(2));
+    expect(setupWriter.monthlyPlans.single.budgets, isNot(contains('Salary')));
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      isNot(contains('Rent and housing')),
+    );
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      containsPair('Loans / EMI', 1000),
     );
   });
 }

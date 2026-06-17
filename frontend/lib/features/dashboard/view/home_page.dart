@@ -2809,9 +2809,6 @@ double _cashflowIncome(MonthlyPlan plan) {
   if (explicitIncome != null && explicitIncome.abs() > 0.005) {
     return explicitIncome;
   }
-  if (plan.totalBudget > 0.005) {
-    return 36000;
-  }
   return 0;
 }
 

@@ -182,6 +182,60 @@ void main() {
     );
   });
 
+  testWidgets('home page does not estimate income when plan has none', (
+    tester,
+  ) async {
+    final cubit = DashboardSnapshotCubit(
+      repository: const _ActionSnapshotRepository(),
+    );
+    await cubit.load();
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(
+                plan: const MonthlyPlan(
+                  month: '2026-06',
+                  currency: 'NOK',
+                  totalBudget: 4294,
+                  totalActual: 0,
+                  totalRemaining: 4294,
+                  categories: [
+                    MonthlyPlanCategory(
+                      category: 'Loans / EMI',
+                      budget: 4294,
+                      actual: 0,
+                      remaining: 4294,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                  ],
+                ),
+              ),
+              creditCardsRepository: _FakeCreditCardsRepository(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Cashflow — June'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Income'), findsOneWidget);
+    expect(find.text('NOK 0'), findsWidgets);
+    expect(find.text('NOK 36,000'), findsNothing);
+    expect(find.text('Net shortfall after all planned costs'), findsOneWidget);
+  });
+
   testWidgets('home page shows all planned setup categories', (tester) async {
     final cubit = DashboardSnapshotCubit(
       repository: const _EmptySnapshotRepository(),
