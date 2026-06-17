@@ -136,6 +136,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
     required String currency,
     required String frequency,
     required int dayOfMonth,
+    String? sourceAccountName,
   }) async {
     recurringTemplates.add(
       _SavedRecurring(
@@ -146,6 +147,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
         currency: currency,
         frequency: frequency,
         dayOfMonth: dayOfMonth,
+        sourceAccountName: sourceAccountName,
       ),
     );
   }
@@ -160,6 +162,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
     required String currency,
     required String frequency,
     required int dayOfMonth,
+    String? sourceAccountName,
   }) async {
     updatedRecurringTemplates.add(
       _SavedRecurring(
@@ -171,6 +174,7 @@ class _FakeOnboardingSetupWriter implements OnboardingSetupWriter {
         currency: currency,
         frequency: frequency,
         dayOfMonth: dayOfMonth,
+        sourceAccountName: sourceAccountName,
       ),
     );
   }
@@ -583,6 +587,10 @@ void main() {
       expect(salaryActivity.entryType, 'income');
       expect(salaryActivity.amount, 42000);
       expect(salaryActivity.date, DateTime(2026, 6, 25, 12));
+      final salaryRecurring = setupWriter.recurringTemplates.singleWhere(
+        (item) => item.title == 'Salary',
+      );
+      expect(salaryRecurring.sourceAccountName, 'DNB savings - DNB');
       expect(
         setupWriter.activityEntries.map((entry) => entry.title),
         containsAll(<String>[
@@ -1363,6 +1371,7 @@ class _SavedRecurring {
     required this.currency,
     required this.frequency,
     required this.dayOfMonth,
+    this.sourceAccountName,
   });
 
   final String? id;
@@ -1373,6 +1382,7 @@ class _SavedRecurring {
   final String currency;
   final String frequency;
   final int dayOfMonth;
+  final String? sourceAccountName;
 }
 
 class _SavedLoan {

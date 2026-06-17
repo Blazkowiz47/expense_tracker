@@ -103,6 +103,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   var _currency = 'NOK';
   String? _salaryTemplateId;
   String? _housingTemplateId;
+  var _salaryAccountName = '';
   var _accountsTouched = false;
   var _loadingExistingSetup = false;
   var _saving = false;
@@ -203,6 +204,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       final salaryAmount = _amountValue(_salaryAmountController);
       if (salaryAmount > 0) {
         final salaryDay = _dayValue(_salaryDayController, 'Salary day');
+        _syncSalaryAccountSelection();
         await _createSetupMonthActivityEntry(
           title: 'Salary',
           category: 'Salary',
@@ -221,6 +223,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           currency: _currency,
           frequency: 'monthly',
           dayOfMonth: salaryDay,
+          sourceAccountName: _salaryAccountName,
         );
       }
 
@@ -438,6 +441,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     required String currency,
     required String frequency,
     required int dayOfMonth,
+    String? sourceAccountName,
   }) {
     if (id == null) {
       return _setupWriter.createRecurringTemplate(
@@ -448,6 +452,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         currency: currency,
         frequency: frequency,
         dayOfMonth: dayOfMonth,
+        sourceAccountName: sourceAccountName,
       );
     }
     return _setupWriter.updateRecurringTemplate(
@@ -459,6 +464,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       currency: currency,
       frequency: frequency,
       dayOfMonth: dayOfMonth,
+      sourceAccountName: sourceAccountName,
     );
   }
 
@@ -708,6 +714,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         }
       }
     }
+    _syncSalaryAccountSelection();
     _syncSavingsAccountSelection();
   }
 
@@ -758,11 +765,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         goal.targetCurrency = _currency;
       }
     }
+    _syncSalaryAccountSelection();
     _syncSavingsAccountSelection();
   }
 
   void _markAccountsChanged() {
     _accountsTouched = true;
+    _syncSalaryAccountSelection();
     _syncSavingsAccountSelection();
     unawaited(_saveLocalAccountDraft());
   }
@@ -871,6 +880,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       _salaryTemplateId = salary.id;
       _salaryAmountController.text = _formatAmount(salary.amount);
       _salaryDayController.text = salary.dayOfMonth.toString();
+      _salaryAccountName = _accountLabelForStoredName(
+        salary.sourceAccountName ?? '',
+      );
       _applyCurrencyIfKnown(salary.currency);
     }
 
@@ -1121,6 +1133,7 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     setState(() {
       _stepIndex += 1;
       _message = null;
+      _syncSalaryAccountSelection();
       _syncSavingsAccountSelection();
     });
   }
@@ -1152,11 +1165,13 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         for (final goal in _savingsGoals) {
           goal.accountName = '';
         }
+        _salaryAccountName = '';
         _accountsTouched = true;
         unawaited(_clearLocalAccountDraft());
         break;
       case _SetupStep.salary:
         _salaryAmountController.clear();
+        _salaryAccountName = '';
         break;
       case _SetupStep.housing:
         _rentAmountController.clear();
@@ -1192,6 +1207,15 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       } else if (!accountNames.contains(goal.accountName)) {
         goal.accountName = accountNames.first;
       }
+    }
+  }
+
+  void _syncSalaryAccountSelection() {
+    final accountNames = _accountNames;
+    if (accountNames.isEmpty) {
+      _salaryAccountName = '';
+    } else if (!accountNames.contains(_salaryAccountName)) {
+      _salaryAccountName = accountNames.first;
     }
   }
 
@@ -1757,6 +1781,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   }
 
   Widget _salaryStep() {
+    final accountNames = _accountNames;
+    final selectedAccount = accountNames.contains(_salaryAccountName)
+        ? _salaryAccountName
+        : (accountNames.isNotEmpty ? accountNames.first : null);
     return Column(
       children: [
         _MoneyField(
@@ -1770,6 +1798,29 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
           controller: _salaryDayController,
           label: 'Salary day',
           enabled: !_saving,
+        ),
+        const SizedBox(height: AppSpacing.md),
+        DropdownButtonFormField<String>(
+          initialValue: selectedAccount,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Salary deposited to',
+            border: OutlineInputBorder(),
+          ),
+          items: accountNames
+              .map(
+                (item) => DropdownMenuItem<String>(
+                  value: item,
+                  child: Text(item, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: _saving || accountNames.isEmpty
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  setState(() => _salaryAccountName = value);
+                },
         ),
       ],
     );

@@ -53,6 +53,13 @@ class ExpenseRepository {
               'sourceAccountId': expense.sourceAccountId!.trim(),
             if (expense.sourceAccountName?.trim().isNotEmpty == true)
               'sourceAccountName': expense.sourceAccountName!.trim(),
+            if (expense.sourceDestinationAccountId?.trim().isNotEmpty == true)
+              'sourceDestinationAccountId': expense.sourceDestinationAccountId!
+                  .trim(),
+            if (expense.sourceDestinationAccountName?.trim().isNotEmpty == true)
+              'sourceDestinationAccountName': expense
+                  .sourceDestinationAccountName!
+                  .trim(),
             if (expense.sourcePaymentType?.trim().isNotEmpty == true)
               'sourcePaymentType': expense.sourcePaymentType!.trim(),
             if (expense.sourcePeriod?.trim().isNotEmpty == true)
@@ -98,10 +105,12 @@ class ExpenseRepository {
             'date': BackendDateCodec.encodeDate(expense.createdAt),
             if (expense.sourceType?.trim().isNotEmpty == true)
               'sourceType': expense.sourceType!.trim(),
-            if (expense.sourceAccountId?.trim().isNotEmpty == true)
-              'sourceAccountId': expense.sourceAccountId!.trim(),
-            if (expense.sourceAccountName?.trim().isNotEmpty == true)
-              'sourceAccountName': expense.sourceAccountName!.trim(),
+            'sourceAccountId': expense.sourceAccountId?.trim() ?? '',
+            'sourceAccountName': expense.sourceAccountName?.trim() ?? '',
+            'sourceDestinationAccountId':
+                expense.sourceDestinationAccountId?.trim() ?? '',
+            'sourceDestinationAccountName':
+                expense.sourceDestinationAccountName?.trim() ?? '',
             if (expense.sourcePaymentType?.trim().isNotEmpty == true)
               'sourcePaymentType': expense.sourcePaymentType!.trim(),
             if (expense.sourcePeriod?.trim().isNotEmpty == true)

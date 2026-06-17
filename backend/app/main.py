@@ -3036,6 +3036,8 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "sourceCreditCardId",
         "sourceAccountId",
         "sourceAccountName",
+        "sourceDestinationAccountId",
+        "sourceDestinationAccountName",
         "sourcePaymentType",
         "sourcePeriod",
         "sourceSetupKey",
@@ -3063,6 +3065,8 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "sourceCreditCardId",
             "sourceAccountId",
             "sourceAccountName",
+            "sourceDestinationAccountId",
+            "sourceDestinationAccountName",
             "sourcePaymentType",
             "sourcePeriod",
             "sourceSetupKey",
@@ -4627,6 +4631,32 @@ def account_reference_for_name(db: Any, uid: str, account_name: Any, currency: s
     return {"name": name}
 
 
+def salary_account_reference(db: Any, uid: str, currency: str = "") -> dict[str, str]:
+    template = db.recurring_templates.find_one(
+        {
+            "uid": uid,
+            "kind": "income",
+            "category": "Salary",
+            "deletedAt": {"$exists": False},
+        },
+        sort=[("updatedAt", DESCENDING)],
+    )
+    if not template:
+        return {}
+    account_id = str(template.get("sourceAccountId") or "").strip()
+    account_name = str(template.get("sourceAccountName") or template.get("accountName") or "").strip()
+    if account_id:
+        account = db.financial_accounts.find_one({
+            "uid": uid,
+            "id": account_id,
+            "archivedAt": {"$exists": False},
+        })
+        if account:
+            return {"id": account_id, "name": financial_account_label(account)}
+        return {"id": account_id, "name": account_name}
+    return account_reference_for_name(db, uid, account_name, currency or template.get("currency") or "")
+
+
 def insert_setup_month_entry_if_missing(
     db: Any,
     uid: str,
@@ -4642,6 +4672,8 @@ def insert_setup_month_entry_if_missing(
     payment_method: str | None = None,
     source_account_id: str = "",
     source_account_name: str = "",
+    source_destination_account_id: str = "",
+    source_destination_account_name: str = "",
 ) -> bool:
     if amount <= 0:
         return False
@@ -4657,12 +4689,16 @@ def insert_setup_month_entry_if_missing(
             updates["sourceAccountId"] = source_account_id
         if source_account_name and not existing.get("sourceAccountName"):
             updates["sourceAccountName"] = source_account_name
+        if source_destination_account_id and not existing.get("sourceDestinationAccountId"):
+            updates["sourceDestinationAccountId"] = source_destination_account_id
+        if source_destination_account_name and not existing.get("sourceDestinationAccountName"):
+            updates["sourceDestinationAccountName"] = source_destination_account_name
         if (
-            source_account_id
+            payment_method
             and not existing.get("sourceAccountId")
             and str(existing.get("paymentMethod") or "").strip().lower() in {"", "cash", "paid_previously"}
         ):
-            updates["paymentMethod"] = f"account:{source_account_id}"
+            updates["paymentMethod"] = payment_method
         if updates:
             updates["updatedAt"] = now()
             db.expenses.update_one({"id": existing["id"], "uid": uid}, {"$set": updates})
@@ -4681,6 +4717,8 @@ def insert_setup_month_entry_if_missing(
             "sourceSetupKey": setup_key,
             "sourceAccountId": source_account_id,
             "sourceAccountName": source_account_name,
+            "sourceDestinationAccountId": source_destination_account_id,
+            "sourceDestinationAccountName": source_destination_account_name,
         },
         uid,
     )
@@ -4759,6 +4797,7 @@ def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = N
         ))
 
     savings_goals = db.savings_goals.find({"uid": uid, "archivedAt": {"$exists": False}})
+    salary_account = salary_account_reference(db, uid)
     for goal in savings_goals:
         goal_id = str(goal.get("id") or "")
         if goal_id and db.savings_contributions.find_one({"uid": uid, "goalId": goal_id}):
@@ -4767,9 +4806,7 @@ def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = N
         if start_month > period:
             continue
         name = str(goal.get("name") or "Savings")
-        account_ref = account_reference_for_name(db, uid, goal.get("accountName"), goal.get("sourceCurrency"))
-        account_id = account_ref.get("id", "")
-        account_name = account_ref.get("name", "")
+        destination_ref = account_reference_for_name(db, uid, goal.get("accountName"), goal.get("sourceCurrency"))
         created += int(insert_setup_month_entry_if_missing(
             db,
             uid,
@@ -4781,9 +4818,10 @@ def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = N
             currency=safe_currency(goal.get("sourceCurrency"), "INR") or "INR",
             date=setup_month_entry_date(period, fallback=goal.get("createdAt")),
             entry_type="expense",
-            payment_method=f"account:{account_id}" if account_id else None,
-            source_account_id=account_id,
-            source_account_name=account_name,
+            source_account_id=salary_account.get("id", ""),
+            source_account_name=salary_account.get("name", ""),
+            source_destination_account_id=destination_ref.get("id", ""),
+            source_destination_account_name=destination_ref.get("name", ""),
         ))
 
     return created

@@ -12,6 +12,8 @@ class Expense {
   final String? sourceType;
   final String? sourceAccountId;
   final String? sourceAccountName;
+  final String? sourceDestinationAccountId;
+  final String? sourceDestinationAccountName;
   final String? sourcePaymentType;
   final String? sourcePeriod;
   final String? sourceSetupKey;
@@ -26,6 +28,8 @@ class Expense {
     this.sourceType,
     this.sourceAccountId,
     this.sourceAccountName,
+    this.sourceDestinationAccountId,
+    this.sourceDestinationAccountName,
     this.sourcePaymentType,
     this.sourcePeriod,
     this.sourceSetupKey,
@@ -53,6 +57,10 @@ class Expense {
     final sourceType = (json['sourceType'] as String?)?.trim();
     final sourceAccountId = (json['sourceAccountId'] as String?)?.trim();
     final sourceAccountName = (json['sourceAccountName'] as String?)?.trim();
+    final sourceDestinationAccountId =
+        (json['sourceDestinationAccountId'] as String?)?.trim();
+    final sourceDestinationAccountName =
+        (json['sourceDestinationAccountName'] as String?)?.trim();
     final sourcePaymentType = (json['sourcePaymentType'] as String?)?.trim();
     final sourcePeriod = (json['sourcePeriod'] as String?)?.trim();
     final sourceSetupKey = (json['sourceSetupKey'] as String?)?.trim();
@@ -81,6 +89,13 @@ class Expense {
       sourceAccountName: sourceAccountName?.isNotEmpty == true
           ? sourceAccountName
           : null,
+      sourceDestinationAccountId: sourceDestinationAccountId?.isNotEmpty == true
+          ? sourceDestinationAccountId
+          : null,
+      sourceDestinationAccountName:
+          sourceDestinationAccountName?.isNotEmpty == true
+          ? sourceDestinationAccountName
+          : null,
       sourcePaymentType: sourcePaymentType?.isNotEmpty == true
           ? sourcePaymentType
           : null,
@@ -107,6 +122,8 @@ class Expense {
     String? sourceType,
     String? sourceAccountId,
     String? sourceAccountName,
+    String? sourceDestinationAccountId,
+    String? sourceDestinationAccountName,
     String? sourcePaymentType,
     String? sourcePeriod,
     String? sourceSetupKey,
@@ -121,6 +138,10 @@ class Expense {
       sourceType: sourceType ?? this.sourceType,
       sourceAccountId: sourceAccountId ?? this.sourceAccountId,
       sourceAccountName: sourceAccountName ?? this.sourceAccountName,
+      sourceDestinationAccountId:
+          sourceDestinationAccountId ?? this.sourceDestinationAccountId,
+      sourceDestinationAccountName:
+          sourceDestinationAccountName ?? this.sourceDestinationAccountName,
       sourcePaymentType: sourcePaymentType ?? this.sourcePaymentType,
       sourcePeriod: sourcePeriod ?? this.sourcePeriod,
       sourceSetupKey: sourceSetupKey ?? this.sourceSetupKey,

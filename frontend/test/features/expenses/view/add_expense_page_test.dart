@@ -391,10 +391,12 @@ void main() {
         createdAt: DateTime(2026, 6, 17),
       ),
       description: 'For SGP Trip',
-      paymentMethod: 'account:account-1',
+      paymentMethod: 'paid_previously',
       sourceType: 'setup_month_entry',
       sourceAccountId: 'account-1',
       sourceAccountName: 'DNB current - DNB',
+      sourceDestinationAccountId: 'account-2',
+      sourceDestinationAccountName: 'DNB savings - DNB',
       sourcePaymentType: 'expense',
       sourcePeriod: '2026-06',
       sourceSetupKey: 'savings:sgp-trip',
@@ -412,6 +414,7 @@ void main() {
             expense: existing,
             accountsRepository: _FakeAccountsRepository([
               _account(id: 'account-1', name: 'DNB current'),
+              _account(id: 'account-2', name: 'DNB savings'),
             ]),
             creditCardsRepository: _FakeCreditCardsRepository(),
           ),
@@ -421,9 +424,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Savings - For SGP Trip'), findsWidgets);
-    expect(find.text('DNB current - DNB'), findsOneWidget);
-    expect(find.text('Paid previously'), findsNothing);
+    expect(find.text('DNB savings - DNB'), findsOneWidget);
+    expect(find.text('Paid previously'), findsOneWidget);
+    expect(find.text('Paid from'), findsOneWidget);
+    expect(find.text('Paid to'), findsOneWidget);
 
+    await tester.tap(find.text('Paid previously'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DNB current - DNB').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Save expense'));
     await tester.pumpAndSettle();
 
@@ -432,6 +441,11 @@ void main() {
     expect(repository.updatedExpense!.paymentMethod, 'account:account-1');
     expect(repository.updatedExpense!.sourceAccountId, 'account-1');
     expect(repository.updatedExpense!.sourceAccountName, 'DNB current - DNB');
+    expect(repository.updatedExpense!.sourceDestinationAccountId, 'account-2');
+    expect(
+      repository.updatedExpense!.sourceDestinationAccountName,
+      'DNB savings - DNB',
+    );
   });
 }
 

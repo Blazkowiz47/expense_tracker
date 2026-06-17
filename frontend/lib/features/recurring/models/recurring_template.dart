@@ -11,6 +11,8 @@ class RecurringTemplate {
     required this.startDate,
     required this.nextDueDate,
     required this.active,
+    this.sourceAccountId,
+    this.sourceAccountName,
   });
 
   final String id;
@@ -24,6 +26,8 @@ class RecurringTemplate {
   final DateTime startDate;
   final DateTime nextDueDate;
   final bool active;
+  final String? sourceAccountId;
+  final String? sourceAccountName;
 
   factory RecurringTemplate.fromJson(Map<String, dynamic> json) {
     return RecurringTemplate(
@@ -45,6 +49,11 @@ class RecurringTemplate {
           DateTime.tryParse((json['nextDueDate'] as String?) ?? '') ??
           DateTime.now(),
       active: json['active'] as bool? ?? true,
+      sourceAccountId: (json['sourceAccountId'] as String?)?.trim(),
+      sourceAccountName:
+          ((json['sourceAccountName'] as String?) ??
+                  (json['accountName'] as String?))
+              ?.trim(),
     );
   }
 }

@@ -49,6 +49,7 @@ class ApiRecurringRepository {
     required String frequency,
     required int dayOfMonth,
     required DateTime startDate,
+    String? sourceAccountName,
   }) async {
     final token = await _authTokenProvider.getBearerToken();
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/recurring/templates');
@@ -68,6 +69,8 @@ class ApiRecurringRepository {
         'frequency': frequency,
         'dayOfMonth': dayOfMonth,
         'startDate': BackendDateCodec.encodeDate(startDate),
+        if (sourceAccountName?.trim().isNotEmpty == true)
+          'sourceAccountName': sourceAccountName!.trim(),
       }),
     );
     if (response.statusCode != 201) {
@@ -89,6 +92,7 @@ class ApiRecurringRepository {
     required String frequency,
     required int dayOfMonth,
     DateTime? startDate,
+    String? sourceAccountName,
   }) {
     return _updateTemplate(
       id: id,
@@ -100,6 +104,7 @@ class ApiRecurringRepository {
         'category': category,
         'frequency': frequency,
         'dayOfMonth': dayOfMonth,
+        'sourceAccountName': sourceAccountName?.trim() ?? '',
         if (startDate != null)
           'startDate': BackendDateCodec.encodeDate(startDate),
       },

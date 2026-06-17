@@ -39,6 +39,7 @@ abstract class OnboardingSetupWriter {
     required String currency,
     required String frequency,
     required int dayOfMonth,
+    String? sourceAccountName,
   });
 
   Future<void> updateRecurringTemplate({
@@ -50,6 +51,7 @@ abstract class OnboardingSetupWriter {
     required String currency,
     required String frequency,
     required int dayOfMonth,
+    String? sourceAccountName,
   });
 
   Future<void> createLoan({
@@ -238,6 +240,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     required String currency,
     required String frequency,
     required int dayOfMonth,
+    String? sourceAccountName,
   }) async {
     await _recurringRepository.createTemplate(
       title: title,
@@ -248,6 +251,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
       frequency: frequency,
       dayOfMonth: dayOfMonth,
       startDate: DateTime.now(),
+      sourceAccountName: sourceAccountName,
     );
   }
 
@@ -261,6 +265,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
     required String currency,
     required String frequency,
     required int dayOfMonth,
+    String? sourceAccountName,
   }) async {
     await _recurringRepository.updateTemplate(
       id: id,
@@ -272,6 +277,7 @@ class ApiOnboardingSetupWriter implements OnboardingSetupWriter {
       frequency: frequency,
       dayOfMonth: dayOfMonth,
       startDate: DateTime.now(),
+      sourceAccountName: sourceAccountName,
     );
   }
 

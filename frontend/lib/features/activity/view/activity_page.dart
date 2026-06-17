@@ -778,6 +778,39 @@ class _ActivityPageState extends State<ActivityPage> {
     }
   }
 
+  Future<void> _recordTimelineEntry(_ActivityTimelineEntry entry) async {
+    final expense = entry.personalExpense;
+    final repository = _repository;
+    if (expense == null || repository == null) return;
+    final sourceAccountId = expense.sourceAccountId?.trim() ?? '';
+    if (sourceAccountId.isEmpty) {
+      await _editExpense(expense);
+      return;
+    }
+    final updated = Expense(
+      core: expense.core,
+      description: expense.description,
+      updatedAt: DateTime.now(),
+      paymentMethod: 'account:$sourceAccountId',
+      sourceType: expense.sourceType,
+      sourceAccountId: expense.sourceAccountId,
+      sourceAccountName: expense.sourceAccountName,
+      sourceDestinationAccountId: expense.sourceDestinationAccountId,
+      sourceDestinationAccountName: expense.sourceDestinationAccountName,
+      sourcePaymentType: expense.sourcePaymentType,
+      sourcePeriod: expense.sourcePeriod,
+      sourceSetupKey: expense.sourceSetupKey,
+      isSynced: false,
+      deleted: expense.deleted,
+    );
+    await repository.updateExpense(updated);
+    if (!mounted) return;
+    await Future.wait([
+      _refreshActivityData(showLoading: false),
+      context.read<DashboardSnapshotCubit>().load(showLoading: false),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardSnapshotCubit, DashboardSnapshotState>(
@@ -876,6 +909,9 @@ class _ActivityPageState extends State<ActivityPage> {
                 (entry) => _TimelineActivityTile(
                   entry: entry,
                   onTap: entry.canOpen ? () => _openTimelineEntry(entry) : null,
+                  onRecord: entry.canRecord
+                      ? () => _recordTimelineEntry(entry)
+                      : null,
                 ),
               )
             else if (_historyFiltersActive)
@@ -898,6 +934,9 @@ class _ActivityPageState extends State<ActivityPage> {
                 (entry) => _TimelineActivityTile(
                   entry: entry,
                   onTap: entry.canOpen ? () => _openTimelineEntry(entry) : null,
+                  onRecord: entry.canRecord
+                      ? () => _recordTimelineEntry(entry)
+                      : null,
                 ),
               ),
             ] else if (state.snapshot.activityItems.isEmpty)
@@ -1083,10 +1122,15 @@ class _ActivityHistoryFiltersCard extends StatelessWidget {
 }
 
 class _TimelineActivityTile extends StatelessWidget {
-  const _TimelineActivityTile({required this.entry, required this.onTap});
+  const _TimelineActivityTile({
+    required this.entry,
+    required this.onTap,
+    required this.onRecord,
+  });
 
   final _ActivityTimelineEntry entry;
   final VoidCallback? onTap;
+  final VoidCallback? onRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1096,10 +1140,25 @@ class _TimelineActivityTile extends StatelessWidget {
         leading: AppAvatar(icon: entry.icon),
         title: Text(entry.title),
         subtitle: Text(entry.subtitle),
-        trailing: AppMoneyLabel(
-          text: entry.amountText,
-          positive: entry.positive,
-          neutral: entry.neutral,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onRecord != null) ...[
+              Tooltip(
+                message: 'Record',
+                child: IconButton(
+                  onPressed: onRecord,
+                  icon: const Icon(Icons.check_circle_outline),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+            AppMoneyLabel(
+              text: entry.amountText,
+              positive: entry.positive,
+              neutral: entry.neutral,
+            ),
+          ],
         ),
       ),
     );
@@ -1335,6 +1394,13 @@ class _ActivityTimelineEntry {
   final _GroupExpenseEntry? groupExpense;
 
   bool get canOpen => personalExpense != null || groupExpense != null;
+
+  bool get canRecord {
+    final expense = personalExpense;
+    if (expense == null) return false;
+    return expense.sourceType == 'setup_month_entry' &&
+        (expense.paymentMethod ?? '').trim().toLowerCase() == 'paid_previously';
+  }
 
   String get searchableText {
     return [

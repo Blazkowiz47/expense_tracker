@@ -74,6 +74,7 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
     required String frequency,
     required int dayOfMonth,
     required DateTime startDate,
+    String? sourceAccountName,
   }) async {
     createdTemplate = _CreatedRecurring(
       title: title,
@@ -112,6 +113,7 @@ class _FakeRecurringRepository extends ApiRecurringRepository {
     required String frequency,
     required int dayOfMonth,
     DateTime? startDate,
+    String? sourceAccountName,
   }) async {
     updatedTemplateId = id;
     final updated = RecurringTemplate(

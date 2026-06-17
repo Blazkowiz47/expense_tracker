@@ -98,8 +98,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
   String _category = 'Personal';
   String _currency = 'INR';
   String _paymentMethod = 'cash';
+  String _destinationAccount = '';
 
   bool get _editing => widget.expense != null;
+  bool get _isSelfTransfer =>
+      _category.trim().toLowerCase().startsWith('savings') ||
+      widget.expense?.sourceDestinationAccountId?.trim().isNotEmpty == true ||
+      widget.expense?.sourceDestinationAccountName?.trim().isNotEmpty == true;
 
   @override
   void initState() {
@@ -131,6 +136,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
         _paymentMethods,
         'cash',
       );
+      final destinationId = expense.sourceDestinationAccountId?.trim();
+      final destinationName = expense.sourceDestinationAccountName?.trim();
+      if (destinationId != null && destinationId.isNotEmpty) {
+        _destinationAccount = _accountPaymentValue(destinationId);
+      } else if (destinationName != null && destinationName.isNotEmpty) {
+        _destinationAccount = destinationName;
+      }
     } else {
       final initialCategory = widget.initialCategory?.trim();
       final initialDescription = widget.initialDescription?.trim();
@@ -186,6 +198,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
       setState(() {
         _accounts = results[0] as List<FinancialAccount>;
         _creditCards = results[1] as List<CreditCardAccount>;
+        if (_isSelfTransfer &&
+            _destinationAccount.isEmpty &&
+            _accounts.any((account) => !account.archived)) {
+          _destinationAccount = _accountPaymentValue(
+            _accounts.firstWhere((account) => !account.archived).id,
+          );
+        }
         _paymentSourcesError = null;
       });
     } catch (_) {
@@ -215,10 +234,12 @@ class _AddExpensePageState extends State<AddExpensePage> {
     final existing = widget.expense;
     final selectedCard = _selectedCreditCard;
     final selectedAccount = _selectedAccount;
+    final selectedDestinationAccount = _selectedDestinationAccount;
     final effectiveCurrency = selectedCard?.currency ?? _currency;
     final effectivePaymentMethod = selectedCard == null
         ? _paymentMethod
         : 'card';
+    final preservedSourceAccount = effectivePaymentMethod == 'paid_previously';
     final expense = Expense(
       core: ExpenseCore(
         id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
@@ -231,10 +252,18 @@ class _AddExpensePageState extends State<AddExpensePage> {
       description: _composeDescription(description, notes),
       paymentMethod: effectivePaymentMethod,
       sourceType: existing?.sourceType,
-      sourceAccountId: selectedAccount?.id ?? existing?.sourceAccountId,
+      sourceAccountId:
+          selectedAccount?.id ??
+          (preservedSourceAccount ? existing?.sourceAccountId : null),
       sourceAccountName: selectedAccount == null
-          ? existing?.sourceAccountName
+          ? (preservedSourceAccount ? existing?.sourceAccountName : null)
           : _accountLabel(selectedAccount),
+      sourceDestinationAccountId:
+          selectedDestinationAccount?.id ??
+          existing?.sourceDestinationAccountId,
+      sourceDestinationAccountName: selectedDestinationAccount == null
+          ? existing?.sourceDestinationAccountName
+          : _accountLabel(selectedDestinationAccount),
       sourcePaymentType: existing?.sourcePaymentType,
       sourcePeriod: existing?.sourcePeriod,
       sourceSetupKey: existing?.sourceSetupKey,
@@ -526,6 +555,31 @@ class _AddExpensePageState extends State<AddExpensePage> {
     return choices;
   }
 
+  List<String> get _transferPaymentChoices {
+    final choices = <String>[
+      'paid_previously',
+      ..._accounts
+          .where((account) => !account.archived)
+          .map((account) => _accountPaymentValue(account.id)),
+    ];
+    if (!choices.contains(_paymentMethod)) {
+      choices.add(_paymentMethod);
+    }
+    return choices;
+  }
+
+  List<String> get _destinationChoices {
+    final choices = _accounts
+        .where((account) => !account.archived)
+        .map((account) => _accountPaymentValue(account.id))
+        .toList(growable: true);
+    if (_destinationAccount.isNotEmpty &&
+        !choices.contains(_destinationAccount)) {
+      choices.add(_destinationAccount);
+    }
+    return choices;
+  }
+
   CreditCardAccount? get _selectedCreditCard {
     if (!_paymentMethod.startsWith(_creditCardPaymentPrefix)) return null;
     final id = _paymentMethod.substring(_creditCardPaymentPrefix.length);
@@ -538,6 +592,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
   FinancialAccount? get _selectedAccount {
     if (!_paymentMethod.startsWith(_accountPaymentPrefix)) return null;
     final id = _paymentMethod.substring(_accountPaymentPrefix.length);
+    for (final account in _accounts) {
+      if (account.id == id && !account.archived) return account;
+    }
+    return null;
+  }
+
+  FinancialAccount? get _selectedDestinationAccount {
+    if (!_destinationAccount.startsWith(_accountPaymentPrefix)) return null;
+    final id = _destinationAccount.substring(_accountPaymentPrefix.length);
     for (final account in _accounts) {
       if (account.id == id && !account.archived) return account;
     }
@@ -564,6 +627,12 @@ class _AddExpensePageState extends State<AddExpensePage> {
     setState(() {
       _paymentMethod = value;
       _currency = _currencyForPayment(value) ?? _currency;
+    });
+  }
+
+  void _setDestinationAccount(String value) {
+    setState(() {
+      _destinationAccount = value;
     });
   }
 
@@ -688,15 +757,29 @@ class _AddExpensePageState extends State<AddExpensePage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _DropdownField(
-                        label: 'Payment',
+                        label: _isSelfTransfer ? 'Paid from' : 'Payment',
                         value: _paymentMethod,
-                        values: _paymentChoices,
+                        values: _isSelfTransfer
+                            ? _transferPaymentChoices
+                            : _paymentChoices,
                         labelFor: _paymentLabel,
                         onChanged: _setPaymentMethod,
                       ),
                     ),
                   ],
                 ),
+                if (_isSelfTransfer && _destinationChoices.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _DropdownField(
+                    label: 'Paid to',
+                    value: _destinationAccount.isEmpty
+                        ? _destinationChoices.first
+                        : _destinationAccount,
+                    values: _destinationChoices,
+                    labelFor: _destinationLabel,
+                    onChanged: _setDestinationAccount,
+                  ),
+                ],
                 if (_paymentMethod == 'paid_previously') ...[
                   const SizedBox(height: 8),
                   const _PaidPreviouslyNotice(),
@@ -995,6 +1078,18 @@ class _AddExpensePageState extends State<AddExpensePage> {
       'paid_previously' => 'Paid previously',
       _ => 'Other',
     };
+  }
+
+  String _destinationLabel(String value) {
+    if (value.startsWith(_accountPaymentPrefix)) {
+      final id = value.substring(_accountPaymentPrefix.length);
+      for (final account in _accounts) {
+        if (account.id == id) {
+          return _accountLabel(account);
+        }
+      }
+    }
+    return value.trim().isEmpty ? 'Bank account' : value;
   }
 
   String _accountPaymentValue(String id) => '$_accountPaymentPrefix$id';

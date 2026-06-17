@@ -1325,21 +1325,36 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
 
-    account = client.post(
+    salary_account = client.post(
         "/api/v1/accounts",
         headers=headers,
         json={
-            "name": "DNB current",
+            "name": "DNB salary",
             "institution": "DNB",
             "accountType": "checking",
             "currency": "NOK",
             "openingBalance": 10000,
         },
     )
-    assert account.status_code == 201, account.text
-    account_payload = account.json()
-    account_id = account_payload["id"]
-    account_label = "DNB current - DNB"
+    assert salary_account.status_code == 201, salary_account.text
+    salary_account_payload = salary_account.json()
+    salary_account_id = salary_account_payload["id"]
+    salary_account_label = "DNB salary - DNB"
+    savings_account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={
+            "name": "DNB savings",
+            "institution": "DNB",
+            "accountType": "savings",
+            "currency": "NOK",
+            "openingBalance": 0,
+        },
+    )
+    assert savings_account.status_code == 201, savings_account.text
+    savings_account_payload = savings_account.json()
+    savings_account_id = savings_account_payload["id"]
+    savings_account_label = "DNB savings - DNB"
 
     salary = client.post(
         "/api/v1/recurring/templates",
@@ -1353,6 +1368,7 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
             "frequency": "monthly",
             "dayOfMonth": 15,
             "startDate": "2026-06-17T00:00:00Z",
+            "sourceAccountName": salary_account_label,
         },
     )
     assert salary.status_code == 201, salary.text
@@ -1368,8 +1384,8 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
             "frequency": "monthly",
             "dayOfMonth": 1,
             "startDate": "2026-06-17T00:00:00Z",
-            "sourceAccountId": account_id,
-            "sourceAccountName": account_label,
+            "sourceAccountId": salary_account_id,
+            "sourceAccountName": salary_account_label,
         },
     )
     assert insurance.status_code == 201, insurance.text
@@ -1399,7 +1415,7 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
             "sourceCurrency": "NOK",
             "monthlyTargetAmount": 2000,
             "startMonth": "2026-06",
-            "accountName": account_label,
+            "accountName": savings_account_label,
         },
     )
     assert savings.status_code == 201, savings.text
@@ -1410,12 +1426,14 @@ def test_expense_list_backfills_current_setup_month_activity(tmp_path):
     titles = {expense["description"]: expense for expense in expenses}
     assert titles["Salary"]["sourcePaymentType"] == "income"
     assert titles["Car insurance"]["category"] == "Insurance"
-    assert titles["Car insurance"]["paymentMethod"] == f"account:{account_id}"
-    assert titles["Car insurance"]["sourceAccountName"] == account_label
+    assert titles["Car insurance"]["paymentMethod"] == f"account:{salary_account_id}"
+    assert titles["Car insurance"]["sourceAccountName"] == salary_account_label
     assert titles["Home loan"]["category"] == "Loans / EMI"
     assert titles["Emergency fund"]["category"] == "Savings - Emergency fund"
-    assert titles["Emergency fund"]["paymentMethod"] == f"account:{account_id}"
-    assert titles["Emergency fund"]["sourceAccountName"] == account_label
+    assert titles["Emergency fund"]["paymentMethod"] == "paid_previously"
+    assert titles["Emergency fund"]["sourceAccountName"] == salary_account_label
+    assert titles["Emergency fund"]["sourceDestinationAccountId"] == savings_account_id
+    assert titles["Emergency fund"]["sourceDestinationAccountName"] == savings_account_label
 
     listed_again = client.get("/api/v1/expenses?page=1&limit=200", headers=headers)
     assert listed_again.status_code == 200, listed_again.text
