@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/theme/app_theme.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
@@ -73,12 +74,12 @@ class ThemeSettingsPage extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 10,
                   children: const [
-                    _AccentButton(Color(0xFF7AA2F7)),
-                    _AccentButton(Color(0xFF3B7FE0)),
-                    _AccentButton(Color(0xFF3FBF9B)),
-                    _AccentButton(Color(0xFFFF6B6B)),
-                    _AccentButton(Color(0xFFE8A317)),
-                    _AccentButton(Color(0xFF9D7CFF)),
+                    _AccentButton(AppPalette.accent),
+                    _AccentButton(AppPalette.accentStrong),
+                    _AccentButton(AppPalette.mint),
+                    _AccentButton(AppPalette.negative),
+                    _AccentButton(AppPalette.expense),
+                    _AccentButton(AppPalette.purple),
                   ],
                 ),
               ],
@@ -91,7 +92,7 @@ class ThemeSettingsPage extends StatelessWidget {
 
   static String _familyLabel(ThemeFamily family) {
     return switch (family) {
-      ThemeFamily.tokyoNight => 'Tokyo Night',
+      ThemeFamily.tokyoNight => 'Hybrid',
       ThemeFamily.mint => 'Mint',
     };
   }

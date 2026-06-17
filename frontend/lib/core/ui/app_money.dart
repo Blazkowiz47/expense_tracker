@@ -1,7 +1,8 @@
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:flutter/material.dart';
 
 class AppMoney {
-  static const positiveColor = Color(0xFF1B8C67);
+  static const positiveColor = AppPalette.positive;
   static const inputPrefix = 'INR ';
 
   const AppMoney._();

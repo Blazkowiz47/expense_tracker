@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
@@ -40,6 +41,8 @@ class ThemeCubit extends HydratedCubit<ThemeState> {
     );
     final customAccentValue = switch (accentValue) {
       0xFF26A17B => defaultState.customAccentValue,
+      0xFF7AA2F7 => defaultState.customAccentValue,
+      0xFF7DCFFF => defaultState.customAccentValue,
       final int value => value,
       _ => defaultState.customAccentValue,
     };

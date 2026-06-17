@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/theme/theme_pack.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
 import 'package:flutter/cupertino.dart';
@@ -24,7 +25,7 @@ class AppThemeFactory {
       ThemeVariant.dark => const Color(0xFF111318),
       ThemeVariant.custom => const Color(0xFF111318),
       ThemeVariant.highContrast => const Color(0xFFFFFFFF),
-      ThemeVariant.light => const Color(0xFFF7F8F9),
+      ThemeVariant.light => AppPalette.appBackground,
     };
 
     return base.copyWith(

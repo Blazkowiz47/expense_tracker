@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:async';
 
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
@@ -10,17 +11,17 @@ import 'package:expense_tracker/features/planning/repositories/monthly_plan_repo
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-const _hybridAccent = Color(0xFF26A17B);
-const _hybridAccentStrong = Color(0xFF1A8F6C);
-const _hybridAccentSoft = Color(0xFFE6F4EE);
-const _hybridNegative = Color(0xFFBA1A1A);
-const _hybridNegativeSoft = Color(0xFFFDE7E7);
-const _hybridNeutralSoft = Color(0xFFF0F2F4);
-const _hybridTrack = Color(0xFFEEF0F3);
-const _hybridWarning = Color(0xFFC47B00);
-const _hybridWarningText = Color(0xFF8A5E00);
-const _hybridWarningSoft = Color(0xFFFFF4E0);
-const _hybridExpense = Color(0xFFE8A317);
+const _hybridAccent = AppPalette.accent;
+const _hybridAccentStrong = AppPalette.accentStrong;
+const _hybridAccentSoft = AppPalette.accentSoft;
+const _hybridNegative = AppPalette.negative;
+const _hybridNegativeSoft = AppPalette.negativeSoft;
+const _hybridNeutralSoft = AppPalette.neutralSoft;
+const _hybridTrack = AppPalette.track;
+const _hybridWarning = AppPalette.warning;
+const _hybridWarningText = AppPalette.warningText;
+const _hybridWarningSoft = AppPalette.warningSoft;
+const _hybridExpense = AppPalette.expense;
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -350,13 +351,15 @@ class _PlanningAssistantCard extends StatelessWidget {
                       hintText:
                           'Ask anything - plan a trip, afford a big purchase, save for a goal...',
                       filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
+                      fillColor: AppPalette.fieldFill,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(color: Color(0xFF45474A)),
+                        borderSide: const BorderSide(
+                          color: AppPalette.inputBorder,
+                        ),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -387,8 +390,8 @@ class _PlanningAssistantCard extends StatelessWidget {
                     (prompt) => ActionChip(
                       label: Text(prompt),
                       onPressed: () {},
-                      backgroundColor: const Color(0xFFF7F8F9),
-                      side: const BorderSide(color: Color(0xFFE2E4E8)),
+                      backgroundColor: AppPalette.appBackground,
+                      side: const BorderSide(color: AppPalette.border),
                       visualDensity: VisualDensity.compact,
                     ),
                   )
@@ -397,7 +400,7 @@ class _PlanningAssistantCard extends StatelessWidget {
             const SizedBox(height: 14),
             DecoratedBox(
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: AppPalette.fieldFill,
                 borderRadius: BorderRadius.circular(8),
                 border: const Border(
                   left: BorderSide(color: AppMoney.positiveColor, width: 3),
@@ -548,23 +551,23 @@ class _InsightBanner extends StatelessWidget {
     final resolved = switch (tone) {
       _InsightTone.positive => (
         background: _hybridAccentSoft,
-        border: const Color(0xFFC3E6D9),
+        border: AppPalette.accentBorder,
         foreground: AppMoney.positiveColor,
       ),
       _InsightTone.warning => (
-        background: const Color(0xFFFFF8E6),
-        border: const Color(0xFFF5DFA0),
+        background: AppPalette.warningSoft,
+        border: AppPalette.warningBorder,
         foreground: _hybridWarningText,
       ),
       _InsightTone.critical => (
         background: _hybridNegativeSoft,
-        border: const Color(0xFFF6C6C6),
+        border: AppPalette.negativeBorder,
         foreground: _hybridNegative,
       ),
       _InsightTone.neutral => (
         background: Colors.white,
-        border: const Color(0xFFE2E4E8),
-        foreground: const Color(0xFF58646F),
+        border: AppPalette.border,
+        foreground: AppPalette.mutedText,
       ),
     };
 
@@ -847,12 +850,12 @@ class _MobileBudgetSummary extends StatelessWidget {
             _CategorySlice(
               label: 'Loan EMIs due',
               amount: 4294,
-              color: Color(0xFFE11D1D),
+              color: AppPalette.negative,
             ),
             _CategorySlice(
               label: 'Housing',
               amount: 8000,
-              color: Color(0xFF111827),
+              color: AppPalette.strongText,
             ),
           ]
         : categories.take(2).toList(growable: false);
@@ -1096,7 +1099,7 @@ class _MiniBudgetBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F6F8),
+        color: AppPalette.page,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
@@ -1374,7 +1377,7 @@ class _CashflowPanel extends StatelessWidget {
               label: 'Follow-ups',
               amountText: '${snapshot.actionItems.length} items',
               fraction: (snapshot.actionItems.length / 5).clamp(0.12, 1.0),
-              color: const Color(0xFFE8A317),
+              color: AppPalette.expense,
             ),
           ]
         : _cashflowRowsFor(loadedPlan);
@@ -1433,7 +1436,7 @@ class _CashflowPanel extends StatelessWidget {
         label: 'Loan EMIs',
         amountText: _formatWhole(loanEmis, plan.currency),
         fraction: fraction(loanEmis),
-        color: const Color(0xFF7AA2F7),
+        color: AppPalette.info,
       ),
       _CashflowRowData(
         label: 'Discretionary',
@@ -1843,7 +1846,7 @@ class _MetricBox extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F8F9),
+        color: AppPalette.appBackground,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
@@ -2242,21 +2245,13 @@ List<_CategorySlice> _plannedCategories(MonthlyPlan? plan) {
         color: _hybridAccent,
         isAlert: true,
       ),
-      _CategorySlice(
-        label: 'Groceries',
-        amount: 4200,
-        color: Color(0xFF3FBF9B),
-      ),
-      _CategorySlice(
-        label: 'Transport',
-        amount: 1800,
-        color: Color(0xFF7AA2F7),
-      ),
+      _CategorySlice(label: 'Groceries', amount: 4200, color: AppPalette.mint),
+      _CategorySlice(label: 'Transport', amount: 1800, color: AppPalette.info),
       _CategorySlice(label: 'Utilities', amount: 1200, color: _hybridExpense),
       _CategorySlice(
         label: 'Subscriptions',
         amount: 600,
-        color: Color(0xFF9D7CFF),
+        color: AppPalette.purple,
       ),
     ];
   }
@@ -2284,24 +2279,24 @@ Color _plannedCostColor(String category, int index) {
   if (normalized.contains('grocery') ||
       normalized.contains('food') ||
       normalized.contains('rema')) {
-    return const Color(0xFF3FBF9B);
+    return AppPalette.mint;
   }
   if (normalized.contains('transport') ||
       normalized.contains('fuel') ||
       normalized.contains('pass')) {
-    return const Color(0xFF7AA2F7);
+    return AppPalette.info;
   }
   if (normalized.contains('subscription') ||
       normalized.contains('membership')) {
-    return const Color(0xFF9D7CFF);
+    return AppPalette.purple;
   }
   const colors = [
     _hybridAccentStrong,
     _hybridAccent,
-    Color(0xFF3FBF9B),
-    Color(0xFF7AA2F7),
+    AppPalette.mint,
+    AppPalette.info,
     _hybridExpense,
-    Color(0xFF9D7CFF),
+    AppPalette.purple,
   ];
   return colors[index % colors.length];
 }
@@ -2332,7 +2327,7 @@ class _BudgetLinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = const Color(0xFFE5E7EB)
+      ..color = AppPalette.chartGrid
       ..strokeWidth = 1;
     for (var i = 0; i <= 6; i++) {
       final y = size.height * i / 6;
@@ -2345,7 +2340,7 @@ class _BudgetLinePainter extends CustomPainter {
       ..lineTo(size.width, size.height)
       ..lineTo(40, size.height)
       ..close();
-    canvas.drawPath(fillPath, Paint()..color = const Color(0xFFEAF6F1));
+    canvas.drawPath(fillPath, Paint()..color = AppPalette.chartFill);
 
     final planned = Path()
       ..moveTo(40, size.height * 0.2)
@@ -2376,7 +2371,7 @@ class _BudgetLinePainter extends CustomPainter {
     for (var i = 0; i < labels.length; i++) {
       textPainter.text = TextSpan(
         text: 'NOK ${labels[i]}',
-        style: const TextStyle(color: Color(0xFF64748B), fontSize: 10),
+        style: const TextStyle(color: AppPalette.chartLabel, fontSize: 10),
       );
       textPainter.layout(maxWidth: 38);
       textPainter.paint(canvas, Offset(0, size.height * i / 6 - 6));
@@ -2429,7 +2424,7 @@ class _TrendLinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = const Color(0xFFE5E7EB)
+      ..color = AppPalette.chartGrid
       ..strokeWidth = 1;
     for (var i = 0; i < 4; i++) {
       final y = 20 + i * (size.height - 44) / 3;
@@ -2451,7 +2446,7 @@ class _TrendLinePainter extends CustomPainter {
       ..lineTo(size.width, size.height - 18)
       ..lineTo(0, size.height - 18)
       ..close();
-    canvas.drawPath(fill, Paint()..color = const Color(0xFFEAF6F1));
+    canvas.drawPath(fill, Paint()..color = AppPalette.chartFill);
     canvas.drawPath(
       path,
       Paint()
@@ -2468,7 +2463,7 @@ class _TrendLinePainter extends CustomPainter {
     for (var index = 0; index < labels.length; index++) {
       labelPainter.text = TextSpan(
         text: labels[index],
-        style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+        style: const TextStyle(color: AppPalette.chartLabel, fontSize: 11),
       );
       labelPainter.layout();
       labelPainter.paint(

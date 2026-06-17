@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:flutter/material.dart';
 
 class ThemePack {
@@ -31,8 +32,10 @@ class ThemePack {
     return ThemePack(
       familyId: (json['familyId'] ?? 'custom').toString(),
       displayName: (json['displayName'] ?? 'Custom').toString(),
-      lightAccent: Color(parseColor('lightAccent', 0xFF7AA2F7)),
-      darkAccent: Color(parseColor('darkAccent', 0xFF7AA2F7)),
+      lightAccent: Color(
+        parseColor('lightAccent', AppPalette.accent.toARGB32()),
+      ),
+      darkAccent: Color(parseColor('darkAccent', AppPalette.accent.toARGB32())),
       highContrastAccent: Color(parseColor('highContrastAccent', 0xFF1D1D1D)),
     );
   }
@@ -51,17 +54,17 @@ class ThemePack {
 class ThemePackCatalog {
   static const tokyoNight = ThemePack(
     familyId: 'tokyoNight',
-    displayName: 'Tokyo Night',
-    lightAccent: Color(0xFF7AA2F7),
-    darkAccent: Color(0xFF7DCFFF),
+    displayName: 'Hybrid',
+    lightAccent: AppPalette.accent,
+    darkAccent: AppPalette.accent,
     highContrastAccent: Color(0xFF1D1D1D),
   );
 
   static const mint = ThemePack(
     familyId: 'mint',
     displayName: 'Mint',
-    lightAccent: Color(0xFF3FBF9B),
-    darkAccent: Color(0xFF2FAE8E),
+    lightAccent: AppPalette.mint,
+    darkAccent: AppPalette.accentStrong,
     highContrastAccent: Color(0xFF0B3D2E),
   );
 }

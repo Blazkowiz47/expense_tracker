@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:expense_tracker/app/routes/app_routes.dart';
 import 'package:expense_tracker/core/constants/app_spacing.dart';
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/utils/platform_page_route.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/core/utils/responsive_layout.dart';
@@ -34,9 +35,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
 
-const _hybridAccent = Color(0xFF26A17B);
-const _hybridAccentStrong = Color(0xFF1A8F6C);
-const _hybridAccentSoft = Color(0xFFE6F4EE);
+const _hybridAccent = AppPalette.accent;
+const _hybridAccentStrong = AppPalette.accentStrong;
+const _hybridAccentSoft = AppPalette.accentSoft;
 
 class HomeShellPage extends StatefulWidget {
   const HomeShellPage({this.initialIndex = 0, this.repository, super.key});
@@ -576,7 +577,7 @@ class _HomeShellPageState extends State<HomeShellPage>
   }) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8),
+      backgroundColor: AppPalette.page,
       appBar: AppBar(
         centerTitle: centerTitle,
         title: Text(
@@ -618,14 +619,14 @@ class _HomeShellPageState extends State<HomeShellPage>
             return IconThemeData(
               color: states.contains(WidgetState.selected)
                   ? _hybridAccentStrong
-                  : const Color(0xFF58646F),
+                  : AppPalette.mutedText,
             );
           }),
           labelTextStyle: WidgetStateProperty.resolveWith((states) {
             return Theme.of(context).textTheme.labelSmall?.copyWith(
               color: states.contains(WidgetState.selected)
                   ? _hybridAccentStrong
-                  : const Color(0xFF58646F),
+                  : AppPalette.mutedText,
               fontWeight: states.contains(WidgetState.selected)
                   ? FontWeight.w700
                   : FontWeight.w500,
@@ -746,7 +747,7 @@ class _HomeShellPageState extends State<HomeShellPage>
     final shortcuts = _quickActions();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFD5D9DE),
+      backgroundColor: AppPalette.shellBackground,
       body: SafeArea(
         child: Center(
           child: Padding(
@@ -757,7 +758,7 @@ class _HomeShellPageState extends State<HomeShellPage>
                 borderRadius: BorderRadius.circular(14),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF4F6F8),
+                    color: AppPalette.page,
                     border: Border.all(color: colors.outlineVariant),
                   ),
                   child: Column(

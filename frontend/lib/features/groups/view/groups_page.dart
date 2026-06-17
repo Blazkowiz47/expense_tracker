@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
@@ -4506,12 +4507,7 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
 
   Widget _buildParticipantRow(BuildContext context, String member, int index) {
     final selected = _selected.contains(member);
-    final colorChoices = <Color>[
-      const Color(0xFF6EC8AA),
-      const Color(0xFF4DA58E),
-      const Color(0xFFE39A6B),
-      const Color(0xFF4F7AA2),
-    ];
+    const colorChoices = AppPalette.participantPalette;
     final avatarColor = colorChoices[index % colorChoices.length];
 
     Widget trailing;
@@ -4838,21 +4834,21 @@ class _SplitOptionsPageState extends State<_SplitOptionsPage> {
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: const [
+              children: [
                 _SplitMascot(
-                  color: Color(0xFF9BDDD0),
+                  color: AppPalette.mascotPalette[0],
                   icon: Icons.icecream_outlined,
                 ),
                 _SplitMascot(
-                  color: Color(0xFF6CA6D9),
+                  color: AppPalette.mascotPalette[1],
                   icon: Icons.pets_outlined,
                 ),
                 _SplitMascot(
-                  color: Color(0xFFD96D8A),
+                  color: AppPalette.mascotPalette[2],
                   icon: Icons.pets_outlined,
                 ),
                 _SplitMascot(
-                  color: Color(0xFF9E80D9),
+                  color: AppPalette.mascotPalette[3],
                   icon: Icons.pets_outlined,
                 ),
               ],

@@ -29,12 +29,10 @@ void main() {
     return cubit;
   }
 
-  testWidgets('shows tokyo night and mint as the theme families', (
-    tester,
-  ) async {
+  testWidgets('shows hybrid and mint as the theme families', (tester) async {
     await pumpSettings(tester);
 
-    expect(find.text('Tokyo Night'), findsOneWidget);
+    expect(find.text('Hybrid'), findsOneWidget);
     expect(find.text('Splitwise'), findsNothing);
 
     await tester.tap(find.byType(DropdownButtonFormField<ThemeFamily>));
@@ -44,7 +42,7 @@ void main() {
     expect(find.text('Splitwise'), findsNothing);
   });
 
-  testWidgets('reset returns to tokyo night', (tester) async {
+  testWidgets('reset returns to hybrid', (tester) async {
     final cubit = await pumpSettings(tester);
 
     cubit.setFamily(ThemeFamily.mint);

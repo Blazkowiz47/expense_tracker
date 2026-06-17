@@ -1,14 +1,15 @@
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/features/theme/cubit/theme_cubit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('ThemeCubit', () {
-    test('initial state is tokyo night light', () {
+    test('initial state is hybrid light', () {
       final cubit = ThemeCubit();
       expect(cubit.state.family, ThemeFamily.tokyoNight);
       expect(cubit.state.variant, ThemeVariant.light);
-      expect(cubit.state.customAccent, const Color(0xFF7AA2F7));
+      expect(cubit.state.customAccent, AppPalette.accent);
       cubit.close();
     });
 
@@ -42,17 +43,17 @@ void main() {
       cubit.close();
     });
 
-    test('migrates removed splitwise persistence to tokyo night', () {
+    test('migrates removed splitwise persistence to hybrid', () {
       final cubit = ThemeCubit();
       final restored = cubit.fromJson({
         'family': 'splitwise',
         'variant': 'light',
-        'customAccentValue': 0xFF26A17B,
+        'customAccentValue': 0xFF7AA2F7,
       });
 
       expect(restored, isNotNull);
       expect(restored!.family, ThemeFamily.tokyoNight);
-      expect(restored.customAccent, const Color(0xFF7AA2F7));
+      expect(restored.customAccent, AppPalette.accent);
       cubit.close();
     });
   });

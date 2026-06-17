@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
@@ -1469,8 +1470,8 @@ class _HouseholdCard extends StatelessWidget {
               const AppAvatar(
                 icon: Icons.home,
                 size: 44,
-                backgroundColor: Color(0xFFCFE0FA),
-                foregroundColor: Color(0xFF0C2D63),
+                backgroundColor: AppPalette.accentSoft,
+                foregroundColor: AppPalette.accentStrong,
               ),
               const SizedBox(width: 12),
               Expanded(

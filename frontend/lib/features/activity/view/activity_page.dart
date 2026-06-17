@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/ui/app_ui.dart';
 import 'package:expense_tracker/core/widgets/selectable_error_message.dart';
 import 'package:expense_tracker/data/models/freshness_snapshot.dart';
@@ -1474,12 +1475,7 @@ class _CategoryBreakdownCard extends StatelessWidget {
       0,
       (sum, category) => sum + category.sortAmount,
     );
-    final colors = [
-      Theme.of(context).colorScheme.primary,
-      Theme.of(context).colorScheme.primaryContainer,
-      Theme.of(context).colorScheme.secondaryContainer,
-      Theme.of(context).colorScheme.surfaceContainerHighest,
-    ];
+    final colors = AppPalette.categoryPalette;
     final segments = categories
         .asMap()
         .entries

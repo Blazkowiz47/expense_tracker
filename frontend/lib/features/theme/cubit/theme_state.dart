@@ -8,7 +8,7 @@ class ThemeState extends Equatable {
   const ThemeState({
     this.family = ThemeFamily.tokyoNight,
     this.variant = ThemeVariant.light,
-    this.customAccentValue = 0xFF7AA2F7,
+    this.customAccentValue = AppPalette.accentValue,
   });
 
   final ThemeFamily family;
