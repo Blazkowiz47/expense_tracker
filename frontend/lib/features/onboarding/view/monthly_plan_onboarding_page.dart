@@ -81,35 +81,19 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   final _utilities = <_CommitmentDraftController>[];
   final _subscriptions = <_CommitmentDraftController>[];
   final _memberships = <_CommitmentDraftController>[];
+  final _loans = <_LoanDraftController>[];
+  final _groceryItems = <_NamedBudgetDraftController>[];
+  final _transportItems = <_NamedBudgetDraftController>[];
+  final _savingsGoals = <_SavingsDraftController>[];
   final _salaryAmountController = TextEditingController();
   final _salaryDayController = TextEditingController(text: '25');
   final _rentAmountController = TextEditingController();
   final _rentDayController = TextEditingController(text: '1');
-  final _loanNameController = TextEditingController();
-  final _loanLenderController = TextEditingController();
-  final _loanPrincipalController = TextEditingController();
-  final _loanEmiController = TextEditingController();
-  final _loanInterestController = TextEditingController();
-  final _loanMonthsController = TextEditingController();
-  final _loanDueDayController = TextEditingController(text: '18');
-  final _groceriesController = TextEditingController();
-  final _transportController = TextEditingController();
-  final _savingsNameController = TextEditingController();
-  final _savingsMonthlyController = TextEditingController();
-  final _savingsTargetController = TextEditingController();
 
   var _stepIndex = 0;
   var _currency = 'NOK';
-  var _loanRateType = 'floating';
-  var _loanType = 'Car';
-  var _savingsTargetCurrency = 'NOK';
-  var _savingsAccountName = '';
   String? _salaryTemplateId;
   String? _housingTemplateId;
-  String? _loanExistingId;
-  String? _savingsExistingId;
-  var _showSavingsInFamily = false;
-  var _savingsTargetCurrencyTouched = false;
   var _accountsTouched = false;
   var _loadingExistingSetup = false;
   var _saving = false;
@@ -126,6 +110,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _resetCommitmentDrafts(_utilities);
     _resetCommitmentDrafts(_subscriptions);
     _resetCommitmentDrafts(_memberships);
+    _loans.add(_LoanDraftController());
+    _groceryItems.add(_NamedBudgetDraftController(name: 'Groceries'));
+    _transportItems.add(_NamedBudgetDraftController(name: 'Transport'));
+    _savingsGoals.add(_SavingsDraftController(targetCurrency: _currency));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _loadExistingSetup();
@@ -142,14 +130,12 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     _salaryDayController.dispose();
     _rentAmountController.dispose();
     _rentDayController.dispose();
-    _loanNameController.dispose();
-    _loanLenderController.dispose();
-    _loanPrincipalController.dispose();
-    _loanEmiController.dispose();
-    _loanInterestController.dispose();
-    _loanMonthsController.dispose();
-    _loanDueDayController.dispose();
-    _groceriesController.dispose();
+    for (final loan in _loans) {
+      loan.dispose();
+    }
+    for (final item in _groceryItems) {
+      item.dispose();
+    }
     for (final draft in _utilities) {
       draft.dispose();
     }
@@ -159,10 +145,12 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     for (final draft in _memberships) {
       draft.dispose();
     }
-    _transportController.dispose();
-    _savingsNameController.dispose();
-    _savingsMonthlyController.dispose();
-    _savingsTargetController.dispose();
+    for (final item in _transportItems) {
+      item.dispose();
+    }
+    for (final goal in _savingsGoals) {
+      goal.dispose();
+    }
     if (_ownsSetupWriter) {
       _setupWriter.dispose();
     }
@@ -224,54 +212,61 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         );
       }
 
-      final loanPrincipal = _amountValue(_loanPrincipalController);
-      final loanEmi = _amountValue(_loanEmiController);
-      if (loanPrincipal > 0 || loanEmi > 0) {
+      for (final loan in _loans) {
+        final loanPrincipal = _amountValue(loan.principalController);
+        final loanEmi = _amountValue(loan.emiController);
+        if (!_loanHasContent(loan)) {
+          continue;
+        }
         if (loanPrincipal <= 0 || loanEmi <= 0) {
           throw const _OnboardingValidationException(
-            'Loan needs remaining principal and EMI, or skip the loan step.',
+            'Each loan needs remaining principal and EMI, or remove that loan.',
           );
         }
-        budgets['Loans / EMI'] = loanEmi;
-        final name = _loanNameController.text.trim().isEmpty
+        _addBudgetAmount(budgets, 'Loans / EMI', loanEmi);
+        final name = loan.nameController.text.trim().isEmpty
             ? 'Loan'
-            : _loanNameController.text.trim();
-        final lender = _loanLenderController.text.trim();
+            : loan.nameController.text.trim();
+        final lender = loan.lenderController.text.trim();
         final principal = loanPrincipal;
-        final interestRate = _amountValue(_loanInterestController);
-        final remainingEmis = _intValue(_loanMonthsController);
-        final dueDay = _dayValue(_loanDueDayController, 'Loan due day');
-        if (_loanExistingId == null) {
+        final interestRate = _amountValue(loan.interestController);
+        final remainingEmis = _intValue(loan.monthsController);
+        final dueDay = _dayValue(loan.dueDayController, 'Loan due day');
+        if (loan.existingId == null) {
           await _setupWriter.createLoan(
             name: name,
             lender: lender,
-            loanType: _loanType,
+            loanType: loan.loanType,
             principalAmount: principal,
             emiAmount: loanEmi,
             currency: _currency,
             interestRate: interestRate,
-            rateType: _loanRateType,
+            rateType: loan.rateType,
             remainingEmis: remainingEmis,
             dueDay: dueDay,
           );
         } else {
           await _setupWriter.updateLoan(
-            id: _loanExistingId!,
+            id: loan.existingId!,
             name: name,
             lender: lender,
-            loanType: _loanType,
+            loanType: loan.loanType,
             principalAmount: principal,
             emiAmount: loanEmi,
             currency: _currency,
             interestRate: interestRate,
-            rateType: _loanRateType,
+            rateType: loan.rateType,
             remainingEmis: remainingEmis,
             dueDay: dueDay,
           );
         }
       }
 
-      _addBudget(budgets, 'Groceries', _groceriesController);
+      _addNamedBudgets(
+        budgets,
+        baseCategory: 'Groceries',
+        drafts: _groceryItems,
+      );
       await _addCommitments(
         budgets,
         category: 'Utilities',
@@ -290,40 +285,55 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         drafts: _memberships,
         fallbackTitle: 'Membership',
       );
-      _addBudget(budgets, 'Transport', _transportController);
+      _addNamedBudgets(
+        budgets,
+        baseCategory: 'Transport',
+        drafts: _transportItems,
+      );
 
-      final savingsMonthly = _amountValue(_savingsMonthlyController);
-      if (savingsMonthly > 0) {
-        budgets['Savings'] = savingsMonthly;
-        final explicitTarget = _amountValue(_savingsTargetController);
-        final name = _savingsNameController.text.trim().isEmpty
-            ? 'Savings'
-            : _savingsNameController.text.trim();
+      for (final goal in _savingsGoals) {
+        final savingsMonthly = _amountValue(goal.monthlyController);
+        if (!_savingsHasContent(goal)) {
+          continue;
+        }
+        if (savingsMonthly <= 0) {
+          throw const _OnboardingValidationException(
+            'Each savings goal needs a monthly amount, or remove that goal.',
+          );
+        }
+        final savingsName = goal.nameController.text.trim();
+        _addBudgetAmount(
+          budgets,
+          savingsName.isEmpty ? 'Savings' : 'Savings - $savingsName',
+          savingsMonthly,
+        );
+        final explicitTarget = _amountValue(goal.targetController);
+        final name = savingsName.isEmpty ? 'Savings' : savingsName;
         final targetAmount = explicitTarget > 0
             ? explicitTarget
             : savingsMonthly * 12;
-        final familyVisibility = _showSavingsInFamily ? 'family' : 'private';
-        if (_savingsExistingId == null) {
+        final familyVisibility = goal.showInFamily ? 'family' : 'private';
+        if (goal.existingId == null) {
           await _setupWriter.createSavingsGoal(
             name: name,
             targetAmount: targetAmount,
-            targetCurrency: _savingsTargetCurrency,
+            targetCurrency: goal.targetCurrency,
             sourceCurrency: _currency,
             monthlyTargetAmount: savingsMonthly,
             startMonth: month,
-            accountName: _savingsAccountName,
+            accountName: goal.accountName,
             familyVisibility: familyVisibility,
           );
         } else {
           await _setupWriter.updateSavingsGoal(
-            id: _savingsExistingId!,
+            id: goal.existingId!,
             name: name,
             targetAmount: targetAmount,
-            targetCurrency: _savingsTargetCurrency,
+            targetCurrency: goal.targetCurrency,
             sourceCurrency: _currency,
             monthlyTargetAmount: savingsMonthly,
             startMonth: month,
-            accountName: _savingsAccountName,
+            accountName: goal.accountName,
             familyVisibility: familyVisibility,
           );
         }
@@ -403,17 +413,6 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     }
   }
 
-  void _addBudget(
-    Map<String, double> budgets,
-    String category,
-    TextEditingController controller,
-  ) {
-    final amount = _amountValue(controller);
-    if (amount > 0) {
-      _addBudgetAmount(budgets, category, amount);
-    }
-  }
-
   void _addBudgetAmount(
     Map<String, double> budgets,
     String category,
@@ -421,6 +420,25 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   ) {
     if (amount <= 0) return;
     budgets[category] = (budgets[category] ?? 0) + amount;
+  }
+
+  void _addNamedBudgets(
+    Map<String, double> budgets, {
+    required String baseCategory,
+    required List<_NamedBudgetDraftController> drafts,
+  }) {
+    for (final draft in drafts) {
+      final amount = _amountValue(draft.amountController);
+      if (amount <= 0) continue;
+      final name = draft.nameController.text.trim();
+      _addBudgetAmount(
+        budgets,
+        name.isEmpty || name.toLowerCase() == baseCategory.toLowerCase()
+            ? baseCategory
+            : '$baseCategory - $name',
+        amount,
+      );
+    }
   }
 
   Future<void> _skipAll() {
@@ -539,8 +557,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       );
     if (_accounts.isNotEmpty) {
       _currency = _accounts.first.currency;
-      if (!_savingsTargetCurrencyTouched) {
-        _savingsTargetCurrency = _currency;
+      for (final goal in _savingsGoals) {
+        if (!goal.targetCurrencyTouched) {
+          goal.targetCurrency = _currency;
+        }
       }
     }
     _syncSavingsAccountSelection();
@@ -588,8 +608,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       ..clear()
       ..addAll(drafts);
     _currency = _accounts.first.currency;
-    if (!_savingsTargetCurrencyTouched) {
-      _savingsTargetCurrency = _currency;
+    for (final goal in _savingsGoals) {
+      if (!goal.targetCurrencyTouched) {
+        goal.targetCurrency = _currency;
+      }
     }
     _syncSavingsAccountSelection();
   }
@@ -665,15 +687,25 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     final currency = plan.currency.trim().toUpperCase();
     if (_currencyOptions.contains(currency)) {
       _currency = currency;
-      if (!_savingsTargetCurrencyTouched) {
-        _savingsTargetCurrency = currency;
+      for (final goal in _savingsGoals) {
+        if (!goal.targetCurrencyTouched) {
+          goal.targetCurrency = currency;
+        }
       }
     }
     final budgets = plan.budgetsByCategory;
     _setAmountText(_rentAmountController, budgets['Rent and housing']);
-    _setAmountText(_groceriesController, budgets['Groceries']);
-    _setAmountText(_transportController, budgets['Transport']);
-    _setAmountText(_savingsMonthlyController, budgets['Savings']);
+    _applyNamedBudgetItems(
+      budgets,
+      baseCategory: 'Groceries',
+      drafts: _groceryItems,
+    );
+    _applyNamedBudgetItems(
+      budgets,
+      baseCategory: 'Transport',
+      drafts: _transportItems,
+    );
+    _applySavingsBudgetFallback(budgets);
   }
 
   void _applyExistingRecurringTemplates(List<RecurringTemplate> templates) {
@@ -771,48 +803,115 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   void _applyExistingLoans(List<Loan> loans) {
     final activeLoans = loans.where((loan) => !loan.archived).toList();
     if (activeLoans.isEmpty) return;
-    final loan = activeLoans.first;
-    _loanExistingId = loan.id;
-    _loanNameController.text = loan.name;
-    _loanLenderController.text = loan.lender;
-    _loanType = _normalizeLoanType(loan.loanType);
-    _loanPrincipalController.text = _formatAmount(
-      loan.estimatedOutstanding > 0
-          ? loan.estimatedOutstanding
-          : loan.principalAmount,
-    );
-    _loanEmiController.text = _formatAmount(loan.emiAmount);
-    _loanInterestController.text = _formatAmount(loan.interestRate);
-    _loanRateType = _normalizeLoanRateType(loan.rateType);
-    final monthsLeft = loan.remainingEmis ?? loan.totalEmis;
-    if (monthsLeft > 0) {
-      _loanMonthsController.text = monthsLeft.toString();
+    for (final loan in _loans) {
+      loan.dispose();
     }
-    _loanDueDayController.text = loan.dueDay.toString();
-    _applyCurrencyIfKnown(loan.currency);
+    _loans
+      ..clear()
+      ..addAll(
+        activeLoans.map((loan) {
+          final draft = _LoanDraftController(existingId: loan.id);
+          draft.nameController.text = loan.name;
+          draft.lenderController.text = loan.lender;
+          draft.loanType = _normalizeLoanType(loan.loanType);
+          draft.principalController.text = _formatAmount(
+            loan.estimatedOutstanding > 0
+                ? loan.estimatedOutstanding
+                : loan.principalAmount,
+          );
+          draft.emiController.text = _formatAmount(loan.emiAmount);
+          draft.interestController.text = _formatAmount(loan.interestRate);
+          draft.rateType = _normalizeLoanRateType(loan.rateType);
+          final monthsLeft = loan.remainingEmis ?? loan.totalEmis;
+          if (monthsLeft > 0) {
+            draft.monthsController.text = monthsLeft.toString();
+          }
+          draft.dueDayController.text = loan.dueDay.toString();
+          _applyCurrencyIfKnown(loan.currency);
+          return draft;
+        }),
+      );
   }
 
   void _applyExistingSavingsGoals(List<SavingsGoal> goals) {
     final activeGoals = goals.where((goal) => !goal.archived).toList();
     if (activeGoals.isEmpty) return;
-    final goal = activeGoals.first;
-    _savingsExistingId = goal.id;
-    _applyCurrencyIfKnown(goal.sourceCurrency);
-    _savingsNameController.text = goal.name;
-    _savingsMonthlyController.text = _formatAmount(goal.monthlyTargetAmount);
-    _savingsTargetCurrency = _normalizedCurrency(goal.targetCurrency);
-    _savingsTargetController.text = _formatAmount(goal.targetAmount);
-    _savingsAccountName = goal.accountName;
-    _showSavingsInFamily = goal.familyVisibility == 'family';
+    for (final goal in _savingsGoals) {
+      goal.dispose();
+    }
+    _savingsGoals
+      ..clear()
+      ..addAll(
+        activeGoals.map((goal) {
+          _applyCurrencyIfKnown(goal.sourceCurrency);
+          final draft = _SavingsDraftController(
+            existingId: goal.id,
+            targetCurrency: _normalizedCurrency(goal.targetCurrency),
+          );
+          draft.nameController.text = goal.name;
+          draft.monthlyController.text = _formatAmount(
+            goal.monthlyTargetAmount,
+          );
+          draft.targetController.text = _formatAmount(goal.targetAmount);
+          draft.accountName = _accountLabelForStoredName(goal.accountName);
+          draft.showInFamily = goal.familyVisibility == 'family';
+          return draft;
+        }),
+      );
     _syncSavingsAccountSelection();
+  }
+
+  void _applyNamedBudgetItems(
+    Map<String, double> budgets, {
+    required String baseCategory,
+    required List<_NamedBudgetDraftController> drafts,
+  }) {
+    final matches = <_NamedBudgetDraftController>[];
+    for (final entry in budgets.entries) {
+      if (entry.value <= 0) continue;
+      final category = entry.key.trim();
+      if (category == baseCategory) {
+        matches.add(
+          _NamedBudgetDraftController(
+            name: baseCategory,
+            amount: _formatAmount(entry.value),
+          ),
+        );
+      } else if (category.toLowerCase().startsWith(
+        '${baseCategory.toLowerCase()} - ',
+      )) {
+        matches.add(
+          _NamedBudgetDraftController(
+            name: category.substring(baseCategory.length + 3),
+            amount: _formatAmount(entry.value),
+          ),
+        );
+      }
+    }
+    if (matches.isEmpty) return;
+    for (final draft in drafts) {
+      draft.dispose();
+    }
+    drafts
+      ..clear()
+      ..addAll(matches);
+  }
+
+  void _applySavingsBudgetFallback(Map<String, double> budgets) {
+    if (_savingsGoals.any(_savingsHasContent)) return;
+    final savings = budgets['Savings'];
+    if (savings == null || savings <= 0) return;
+    _savingsGoals.first.monthlyController.text = _formatAmount(savings);
   }
 
   void _applyCurrencyIfKnown(String value) {
     final currency = value.trim().toUpperCase();
     if (!_currencyOptions.contains(currency)) return;
     _currency = currency;
-    if (!_savingsTargetCurrencyTouched) {
-      _savingsTargetCurrency = currency;
+    for (final goal in _savingsGoals) {
+      if (!goal.targetCurrencyTouched) {
+        goal.targetCurrency = currency;
+      }
     }
   }
 
@@ -880,7 +979,9 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         _accounts
           ..clear()
           ..add(_AccountDraftController(currency: _currency));
-        _savingsAccountName = '';
+        for (final goal in _savingsGoals) {
+          goal.accountName = '';
+        }
         _accountsTouched = true;
         unawaited(_clearLocalAccountDraft());
         break;
@@ -891,13 +992,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         _rentAmountController.clear();
         break;
       case _SetupStep.loans:
-        _loanPrincipalController.clear();
-        _loanEmiController.clear();
-        _loanInterestController.clear();
-        _loanMonthsController.clear();
+        _resetLoanDrafts();
         break;
       case _SetupStep.groceries:
-        _groceriesController.clear();
+        _resetNamedBudgetDrafts(_groceryItems, name: 'Groceries');
         break;
       case _SetupStep.commitments:
         _resetCommitmentDrafts(_utilities);
@@ -905,11 +1003,10 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         _resetCommitmentDrafts(_memberships);
         break;
       case _SetupStep.transport:
-        _transportController.clear();
+        _resetNamedBudgetDrafts(_transportItems, name: 'Transport');
         break;
       case _SetupStep.savings:
-        _savingsMonthlyController.clear();
-        _savingsTargetController.clear();
+        _resetSavingsDrafts();
         break;
       case _SetupStep.review:
         break;
@@ -918,21 +1015,42 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
   void _syncSavingsAccountSelection() {
     final accountNames = _accountNames;
-    if (accountNames.isEmpty) {
-      _savingsAccountName = '';
-      return;
-    }
-    if (!accountNames.contains(_savingsAccountName)) {
-      _savingsAccountName = accountNames.first;
+    for (final goal in _savingsGoals) {
+      if (accountNames.isEmpty) {
+        goal.accountName = '';
+      } else if (!accountNames.contains(goal.accountName)) {
+        goal.accountName = accountNames.first;
+      }
     }
   }
 
   List<String> get _accountNames {
     return _accounts
-        .map((account) => account.nameController.text.trim())
+        .map(_accountLabel)
         .where((name) => name.isNotEmpty)
         .toSet()
         .toList(growable: false);
+  }
+
+  String _accountLabel(_AccountDraftController account) {
+    final name = account.nameController.text.trim();
+    final institution = account.institutionController.text.trim();
+    if (name.isEmpty) return '';
+    if (institution.isEmpty) return name;
+    return '$name - $institution';
+  }
+
+  String _accountLabelForStoredName(String storedName) {
+    final raw = storedName.trim();
+    if (raw.isEmpty) return raw;
+    final labels = _accountNames;
+    if (labels.contains(raw)) return raw;
+    for (final account in _accounts) {
+      if (account.nameController.text.trim() == raw) {
+        return _accountLabel(account);
+      }
+    }
+    return raw;
   }
 
   double _amountValue(TextEditingController controller) {
@@ -965,6 +1083,87 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
       ..add(_CommitmentDraftController());
   }
 
+  void _resetLoanDrafts() {
+    for (final loan in _loans) {
+      loan.dispose();
+    }
+    _loans
+      ..clear()
+      ..add(_LoanDraftController());
+  }
+
+  void _resetNamedBudgetDrafts(
+    List<_NamedBudgetDraftController> drafts, {
+    required String name,
+  }) {
+    for (final draft in drafts) {
+      draft.dispose();
+    }
+    drafts
+      ..clear()
+      ..add(_NamedBudgetDraftController(name: name));
+  }
+
+  void _resetSavingsDrafts() {
+    for (final goal in _savingsGoals) {
+      goal.dispose();
+    }
+    _savingsGoals
+      ..clear()
+      ..add(_SavingsDraftController(targetCurrency: _currency));
+    _syncSavingsAccountSelection();
+  }
+
+  void _addLoanDraft() {
+    setState(() => _loans.add(_LoanDraftController()));
+  }
+
+  void _removeLoanDraft(int index) {
+    setState(() {
+      _loans.removeAt(index).dispose();
+      if (_loans.isEmpty) {
+        _loans.add(_LoanDraftController());
+      }
+    });
+  }
+
+  void _addNamedBudgetDraft(
+    List<_NamedBudgetDraftController> drafts, {
+    required String name,
+  }) {
+    setState(() => drafts.add(_NamedBudgetDraftController(name: name)));
+  }
+
+  void _removeNamedBudgetDraft(
+    List<_NamedBudgetDraftController> drafts,
+    int index, {
+    required String name,
+  }) {
+    setState(() {
+      drafts.removeAt(index).dispose();
+      if (drafts.isEmpty) {
+        drafts.add(_NamedBudgetDraftController(name: name));
+      }
+    });
+  }
+
+  void _addSavingsDraft() {
+    setState(() {
+      _savingsGoals.add(_SavingsDraftController(targetCurrency: _currency));
+      _syncSavingsAccountSelection();
+    });
+  }
+
+  void _removeSavingsDraft(int index) {
+    setState(() {
+      _savingsGoals.removeAt(index).dispose();
+      if (_savingsGoals.isEmpty) {
+        _savingsGoals.add(_SavingsDraftController(targetCurrency: _currency));
+      }
+      _syncSavingsAccountSelection();
+    });
+  }
+
   void _addCommitmentDraft(List<_CommitmentDraftController> drafts) {
     setState(() => drafts.add(_CommitmentDraftController()));
   }
@@ -989,6 +1188,36 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   }
 
   int _filledCommitmentCount(List<_CommitmentDraftController> drafts) {
+    return drafts
+        .where((draft) => _amountValue(draft.amountController) > 0)
+        .length;
+  }
+
+  bool _loanHasContent(_LoanDraftController loan) {
+    return loan.existingId?.trim().isNotEmpty == true ||
+        loan.nameController.text.trim().isNotEmpty ||
+        loan.lenderController.text.trim().isNotEmpty ||
+        loan.principalController.text.trim().isNotEmpty ||
+        loan.emiController.text.trim().isNotEmpty ||
+        loan.interestController.text.trim().isNotEmpty ||
+        loan.monthsController.text.trim().isNotEmpty;
+  }
+
+  bool _savingsHasContent(_SavingsDraftController goal) {
+    return goal.existingId?.trim().isNotEmpty == true ||
+        goal.nameController.text.trim().isNotEmpty ||
+        goal.monthlyController.text.trim().isNotEmpty ||
+        goal.targetController.text.trim().isNotEmpty;
+  }
+
+  double _namedBudgetTotal(List<_NamedBudgetDraftController> drafts) {
+    return drafts.fold<double>(
+      0,
+      (sum, draft) => sum + _amountValue(draft.amountController),
+    );
+  }
+
+  int _filledNamedBudgetCount(List<_NamedBudgetDraftController> drafts) {
     return drafts
         .where((draft) => _amountValue(draft.amountController) > 0)
         .length;
@@ -1233,9 +1462,11 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
                   setState(() {
                     final previousCurrency = _currency;
                     _currency = value;
-                    if (!_savingsTargetCurrencyTouched ||
-                        _savingsTargetCurrency == previousCurrency) {
-                      _savingsTargetCurrency = value;
+                    for (final goal in _savingsGoals) {
+                      if (!goal.targetCurrencyTouched ||
+                          goal.targetCurrency == previousCurrency) {
+                        goal.targetCurrency = value;
+                      }
                     }
                     for (final account in _accounts) {
                       if (account.currency.isEmpty) {
@@ -1329,132 +1560,91 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
 
   Widget _loansStep() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextField(
-          controller: _loanNameController,
-          enabled: !_saving,
-          decoration: const InputDecoration(
-            labelText: 'Loan name',
-            border: OutlineInputBorder(),
+        for (var index = 0; index < _loans.length; index++) ...[
+          _LoanDraftEditor(
+            controller: _loans[index],
+            currency: _currency,
+            enabled: !_saving,
+            canRemove: _loans.length > 1,
+            fieldKeyPrefix: 'loan-$index',
+            onChanged: () => setState(() {}),
+            onRemove: () => _removeLoanDraft(index),
           ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        TextField(
-          controller: _loanLenderController,
-          enabled: !_saving,
-          decoration: const InputDecoration(
-            labelText: 'Lender',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        DropdownButtonFormField<String>(
-          initialValue: _loanType,
-          decoration: const InputDecoration(
-            labelText: 'Loan type',
-            border: OutlineInputBorder(),
-          ),
-          items: const ['Car', 'Home', 'Personal', 'Education', 'Other']
-              .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-              .toList(growable: false),
-          onChanged: _saving
-              ? null
-              : (value) {
-                  if (value != null) setState(() => _loanType = value);
-                },
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _MoneyField(
-          controller: _loanPrincipalController,
-          currency: _currency,
-          label: 'Remaining principal',
-          enabled: !_saving,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _MoneyField(
-          controller: _loanEmiController,
-          currency: _currency,
-          label: 'Monthly EMI',
-          enabled: !_saving,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _loanInterestController,
-                enabled: !_saving,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'Interest rate',
-                  suffixText: '%',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                initialValue: _loanRateType,
-                decoration: const InputDecoration(
-                  labelText: 'Rate',
-                  border: OutlineInputBorder(),
-                ),
-                items: const ['floating', 'fixed', 'unknown']
-                    .map(
-                      (item) => DropdownMenuItem(
-                        value: item,
-                        child: Text(_titleCase(item)),
-                      ),
-                    )
-                    .toList(growable: false),
-                onChanged: _saving
-                    ? null
-                    : (value) {
-                        if (value != null) {
-                          setState(() => _loanRateType = value);
-                        }
-                      },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _loanMonthsController,
-                enabled: !_saving,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Months left',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: _DayField(
-                controller: _loanDueDayController,
-                label: 'EMI day',
-                enabled: !_saving,
-              ),
-            ),
-          ],
+          const SizedBox(height: AppSpacing.md),
+        ],
+        OutlinedButton.icon(
+          key: const ValueKey('loans-add'),
+          onPressed: _saving ? null : _addLoanDraft,
+          icon: const Icon(Icons.add),
+          label: const Text('Add another loan'),
         ),
       ],
     );
   }
 
   Widget _groceriesStep() {
-    return _MoneyField(
-      controller: _groceriesController,
+    return _NamedBudgetSection(
+      title: 'Grocery items',
+      description: 'Break the grocery plan into useful buckets.',
+      icon: Icons.shopping_basket_outlined,
+      itemLabel: 'Grocery item',
+      itemHint: 'Vegetables',
+      addLabel: 'Add grocery item',
       currency: _currency,
-      label: 'Monthly grocery budget',
+      drafts: _groceryItems,
       enabled: !_saving,
+      sectionKeyPrefix: 'groceries',
+      onAdd: () => _addNamedBudgetDraft(_groceryItems, name: 'Groceries'),
+      onRemove: (index) =>
+          _removeNamedBudgetDraft(_groceryItems, index, name: 'Groceries'),
+    );
+  }
+
+  Widget _transportStep() {
+    return _NamedBudgetSection(
+      title: 'Transport costs',
+      description: 'Add fuel, tickets, tolls, parking, or other travel costs.',
+      icon: Icons.directions_car_outlined,
+      itemLabel: 'Transport item',
+      itemHint: 'Bus tickets',
+      addLabel: 'Add transport item',
+      currency: _currency,
+      drafts: _transportItems,
+      enabled: !_saving,
+      sectionKeyPrefix: 'transport',
+      onAdd: () => _addNamedBudgetDraft(_transportItems, name: 'Transport'),
+      onRemove: (index) =>
+          _removeNamedBudgetDraft(_transportItems, index, name: 'Transport'),
+    );
+  }
+
+  Widget _savingsStep() {
+    final accountNames = _accountNames;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var index = 0; index < _savingsGoals.length; index++) ...[
+          _SavingsDraftEditor(
+            controller: _savingsGoals[index],
+            currency: _currency,
+            accountNames: accountNames,
+            enabled: !_saving,
+            canRemove: _savingsGoals.length > 1,
+            fieldKeyPrefix: 'savings-$index',
+            onChanged: () => setState(() {}),
+            onRemove: () => _removeSavingsDraft(index),
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
+        OutlinedButton.icon(
+          key: const ValueKey('savings-add'),
+          onPressed: _saving ? null : _addSavingsDraft,
+          icon: const Icon(Icons.add),
+          label: const Text('Add savings goal'),
+        ),
+      ],
     );
   }
 
@@ -1513,100 +1703,6 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
     );
   }
 
-  Widget _transportStep() {
-    return _MoneyField(
-      controller: _transportController,
-      currency: _currency,
-      label: 'Monthly transport budget',
-      enabled: !_saving,
-    );
-  }
-
-  Widget _savingsStep() {
-    final accountNames = _accountNames;
-    return Column(
-      children: [
-        TextField(
-          controller: _savingsNameController,
-          enabled: !_saving,
-          decoration: const InputDecoration(
-            labelText: 'Savings goal name',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        _MoneyField(
-          controller: _savingsMonthlyController,
-          currency: _currency,
-          label: 'Monthly savings',
-          enabled: !_saving,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        DropdownButtonFormField<String>(
-          initialValue: _savingsTargetCurrency,
-          decoration: const InputDecoration(
-            labelText: 'Target currency',
-            border: OutlineInputBorder(),
-          ),
-          items: _currencyOptions
-              .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-              .toList(growable: false),
-          onChanged: _saving
-              ? null
-              : (value) {
-                  if (value != null) {
-                    setState(() {
-                      _savingsTargetCurrency = value;
-                      _savingsTargetCurrencyTouched = true;
-                    });
-                  }
-                },
-        ),
-        const SizedBox(height: AppSpacing.md),
-        TextField(
-          controller: _savingsTargetController,
-          enabled: !_saving,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            labelText: 'Target amount',
-            prefixText: '$_savingsTargetCurrency ',
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.md),
-        DropdownButtonFormField<String>(
-          initialValue: accountNames.contains(_savingsAccountName)
-              ? _savingsAccountName
-              : null,
-          decoration: const InputDecoration(
-            labelText: 'Savings account',
-            border: OutlineInputBorder(),
-          ),
-          items: accountNames
-              .map((item) => DropdownMenuItem(value: item, child: Text(item)))
-              .toList(growable: false),
-          onChanged: _saving || accountNames.isEmpty
-              ? null
-              : (value) {
-                  if (value != null) {
-                    setState(() => _savingsAccountName = value);
-                  }
-                },
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          value: _showSavingsInFamily,
-          onChanged: _saving
-              ? null
-              : (value) => setState(() => _showSavingsInFamily = value),
-          title: const Text('Visible to household'),
-          subtitle: const Text('Show this savings goal in the family space.'),
-        ),
-      ],
-    );
-  }
-
   Widget _reviewStep() {
     final rows = _reviewRows();
     if (rows.isEmpty) {
@@ -1656,22 +1752,27 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         ),
       );
     }
-    final loanEmi = _amountValue(_loanEmiController);
+    final loanEmi = _loans.fold<double>(
+      0,
+      (sum, loan) => sum + _amountValue(loan.emiController),
+    );
     if (loanEmi > 0) {
+      final count = _loans.where(_loanHasContent).length;
       rows.add(
         _ReviewItem(
           Icons.request_quote_outlined,
-          'Loan EMI',
+          count > 1 ? 'Loan EMI ($count)' : 'Loan EMI',
           '$_currency ${loanEmi.toStringAsFixed(0)}',
         ),
       );
     }
-    final groceries = _amountValue(_groceriesController);
+    final groceries = _namedBudgetTotal(_groceryItems);
     if (groceries > 0) {
+      final count = _filledNamedBudgetCount(_groceryItems);
       rows.add(
         _ReviewItem(
           Icons.shopping_basket_outlined,
-          'Groceries',
+          count > 1 ? 'Groceries ($count)' : 'Groceries',
           '$_currency ${groceries.toStringAsFixed(0)}',
         ),
       );
@@ -1691,27 +1792,567 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
         _ReviewItem(item.$1, label, '$_currency ${total.toStringAsFixed(0)}'),
       );
     }
-    final transport = _amountValue(_transportController);
+    final transport = _namedBudgetTotal(_transportItems);
     if (transport > 0) {
+      final count = _filledNamedBudgetCount(_transportItems);
       rows.add(
         _ReviewItem(
           Icons.directions_car_outlined,
-          'Transport',
+          count > 1 ? 'Transport ($count)' : 'Transport',
           '$_currency ${transport.toStringAsFixed(0)}',
         ),
       );
     }
-    final savings = _amountValue(_savingsMonthlyController);
+    final savings = _savingsGoals.fold<double>(
+      0,
+      (sum, goal) => sum + _amountValue(goal.monthlyController),
+    );
     if (savings > 0) {
+      final count = _savingsGoals.where(_savingsHasContent).length;
       rows.add(
         _ReviewItem(
           Icons.savings_outlined,
-          'Savings',
+          count > 1 ? 'Savings ($count)' : 'Savings',
           '$_currency ${savings.toStringAsFixed(0)}',
         ),
       );
     }
     return rows;
+  }
+}
+
+class _LoanDraftController {
+  _LoanDraftController({this.existingId})
+    : nameController = TextEditingController(),
+      lenderController = TextEditingController(),
+      principalController = TextEditingController(),
+      emiController = TextEditingController(),
+      interestController = TextEditingController(),
+      monthsController = TextEditingController(),
+      dueDayController = TextEditingController(text: '18');
+
+  final String? existingId;
+  final TextEditingController nameController;
+  final TextEditingController lenderController;
+  final TextEditingController principalController;
+  final TextEditingController emiController;
+  final TextEditingController interestController;
+  final TextEditingController monthsController;
+  final TextEditingController dueDayController;
+  String loanType = 'Car';
+  String rateType = 'floating';
+
+  void dispose() {
+    nameController.dispose();
+    lenderController.dispose();
+    principalController.dispose();
+    emiController.dispose();
+    interestController.dispose();
+    monthsController.dispose();
+    dueDayController.dispose();
+  }
+}
+
+class _NamedBudgetDraftController {
+  _NamedBudgetDraftController({required String name, String amount = ''})
+    : nameController = TextEditingController(text: name),
+      amountController = TextEditingController(text: amount);
+
+  final TextEditingController nameController;
+  final TextEditingController amountController;
+
+  void dispose() {
+    nameController.dispose();
+    amountController.dispose();
+  }
+}
+
+class _SavingsDraftController {
+  _SavingsDraftController({this.existingId, required this.targetCurrency})
+    : nameController = TextEditingController(),
+      monthlyController = TextEditingController(),
+      targetController = TextEditingController();
+
+  final String? existingId;
+  final TextEditingController nameController;
+  final TextEditingController monthlyController;
+  final TextEditingController targetController;
+  String targetCurrency;
+  String accountName = '';
+  bool showInFamily = false;
+  bool targetCurrencyTouched = false;
+
+  void dispose() {
+    nameController.dispose();
+    monthlyController.dispose();
+    targetController.dispose();
+  }
+}
+
+class _LoanDraftEditor extends StatelessWidget {
+  const _LoanDraftEditor({
+    required this.controller,
+    required this.currency,
+    required this.enabled,
+    required this.canRemove,
+    required this.fieldKeyPrefix,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final _LoanDraftController controller;
+  final String currency;
+  final bool enabled;
+  final bool canRemove;
+  final String fieldKeyPrefix;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: ValueKey('$fieldKeyPrefix-name'),
+                    controller: controller.nameController,
+                    enabled: enabled,
+                    onChanged: (_) => onChanged(),
+                    decoration: const InputDecoration(
+                      labelText: 'Loan name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                IconButton(
+                  tooltip: 'Remove loan',
+                  onPressed: enabled && canRemove ? onRemove : null,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              key: ValueKey('$fieldKeyPrefix-lender'),
+              controller: controller.lenderController,
+              enabled: enabled,
+              onChanged: (_) => onChanged(),
+              decoration: const InputDecoration(
+                labelText: 'Lender',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            DropdownButtonFormField<String>(
+              initialValue: controller.loanType,
+              decoration: const InputDecoration(
+                labelText: 'Loan type',
+                border: OutlineInputBorder(),
+              ),
+              items: const ['Car', 'Home', 'Personal', 'Education', 'Other']
+                  .map(
+                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                  )
+                  .toList(growable: false),
+              onChanged: enabled
+                  ? (value) {
+                      if (value == null) return;
+                      controller.loanType = value;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MoneyField(
+              fieldKey: ValueKey('$fieldKeyPrefix-principal'),
+              controller: controller.principalController,
+              currency: currency,
+              label: 'Remaining principal',
+              enabled: enabled,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MoneyField(
+              fieldKey: ValueKey('$fieldKeyPrefix-emi'),
+              controller: controller.emiController,
+              currency: currency,
+              label: 'Monthly EMI',
+              enabled: enabled,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: ValueKey('$fieldKeyPrefix-interest'),
+                    controller: controller.interestController,
+                    enabled: enabled,
+                    onChanged: (_) => onChanged(),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Interest rate',
+                      suffixText: '%',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: controller.rateType,
+                    decoration: const InputDecoration(
+                      labelText: 'Rate',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const ['floating', 'fixed', 'unknown']
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(_titleCase(item)),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: enabled
+                        ? (value) {
+                            if (value == null) return;
+                            controller.rateType = value;
+                            onChanged();
+                          }
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: ValueKey('$fieldKeyPrefix-months'),
+                    controller: controller.monthsController,
+                    enabled: enabled,
+                    onChanged: (_) => onChanged(),
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Months left',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: _DayField(
+                    fieldKey: ValueKey('$fieldKeyPrefix-day'),
+                    controller: controller.dueDayController,
+                    label: 'EMI day',
+                    enabled: enabled,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NamedBudgetSection extends StatelessWidget {
+  const _NamedBudgetSection({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.itemLabel,
+    required this.itemHint,
+    required this.addLabel,
+    required this.currency,
+    required this.drafts,
+    required this.enabled,
+    required this.sectionKeyPrefix,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final String itemLabel;
+  final String itemHint;
+  final String addLabel;
+  final String currency;
+  final List<_NamedBudgetDraftController> drafts;
+  final bool enabled;
+  final String sectionKeyPrefix;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(child: Text(title, style: theme.textTheme.titleMedium)),
+            TextButton.icon(
+              key: ValueKey('$sectionKeyPrefix-add'),
+              onPressed: enabled ? onAdd : null,
+              icon: const Icon(Icons.add),
+              label: Text(addLabel),
+            ),
+          ],
+        ),
+        Text(
+          description,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (var index = 0; index < drafts.length; index++) ...[
+          _NamedBudgetDraftEditor(
+            controller: drafts[index],
+            currency: currency,
+            itemLabel: itemLabel,
+            itemHint: itemHint,
+            enabled: enabled,
+            canRemove: drafts.length > 1,
+            fieldKeyPrefix: '$sectionKeyPrefix-$index',
+            onRemove: () => onRemove(index),
+          ),
+          if (index < drafts.length - 1) const SizedBox(height: AppSpacing.sm),
+        ],
+      ],
+    );
+  }
+}
+
+class _NamedBudgetDraftEditor extends StatelessWidget {
+  const _NamedBudgetDraftEditor({
+    required this.controller,
+    required this.currency,
+    required this.itemLabel,
+    required this.itemHint,
+    required this.enabled,
+    required this.canRemove,
+    required this.fieldKeyPrefix,
+    required this.onRemove,
+  });
+
+  final _NamedBudgetDraftController controller;
+  final String currency;
+  final String itemLabel;
+  final String itemHint;
+  final bool enabled;
+  final bool canRemove;
+  final String fieldKeyPrefix;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: TextField(
+                key: ValueKey('$fieldKeyPrefix-name'),
+                controller: controller.nameController,
+                enabled: enabled,
+                decoration: InputDecoration(
+                  labelText: itemLabel,
+                  hintText: itemHint,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              flex: 2,
+              child: _MoneyField(
+                fieldKey: ValueKey('$fieldKeyPrefix-amount'),
+                controller: controller.amountController,
+                currency: currency,
+                label: 'Amount',
+                enabled: enabled,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            IconButton(
+              tooltip: 'Remove item',
+              onPressed: enabled && canRemove ? onRemove : null,
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SavingsDraftEditor extends StatelessWidget {
+  const _SavingsDraftEditor({
+    required this.controller,
+    required this.currency,
+    required this.accountNames,
+    required this.enabled,
+    required this.canRemove,
+    required this.fieldKeyPrefix,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final _SavingsDraftController controller;
+  final String currency;
+  final List<String> accountNames;
+  final bool enabled;
+  final bool canRemove;
+  final String fieldKeyPrefix;
+  final VoidCallback onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final selectedAccount = accountNames.contains(controller.accountName)
+        ? controller.accountName
+        : null;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: ValueKey('$fieldKeyPrefix-name'),
+                    controller: controller.nameController,
+                    enabled: enabled,
+                    onChanged: (_) => onChanged(),
+                    decoration: const InputDecoration(
+                      labelText: 'Savings goal name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                IconButton(
+                  tooltip: 'Remove savings goal',
+                  onPressed: enabled && canRemove ? onRemove : null,
+                  icon: const Icon(Icons.remove_circle_outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _MoneyField(
+              fieldKey: ValueKey('$fieldKeyPrefix-monthly'),
+              controller: controller.monthlyController,
+              currency: currency,
+              label: 'Monthly savings',
+              enabled: enabled,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            DropdownButtonFormField<String>(
+              initialValue: controller.targetCurrency,
+              decoration: const InputDecoration(
+                labelText: 'Target currency',
+                border: OutlineInputBorder(),
+              ),
+              items: _currencyOptions
+                  .map(
+                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                  )
+                  .toList(growable: false),
+              onChanged: enabled
+                  ? (value) {
+                      if (value == null) return;
+                      controller.targetCurrency = value;
+                      controller.targetCurrencyTouched = true;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              key: ValueKey('$fieldKeyPrefix-target'),
+              controller: controller.targetController,
+              enabled: enabled,
+              onChanged: (_) => onChanged(),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Target amount',
+                prefixText: '${controller.targetCurrency} ',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            DropdownButtonFormField<String>(
+              initialValue: selectedAccount,
+              decoration: const InputDecoration(
+                labelText: 'Savings account',
+                border: OutlineInputBorder(),
+              ),
+              items: accountNames
+                  .map(
+                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                  )
+                  .toList(growable: false),
+              onChanged: enabled && accountNames.isNotEmpty
+                  ? (value) {
+                      if (value == null) return;
+                      controller.accountName = value;
+                      onChanged();
+                    }
+                  : null,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: controller.showInFamily,
+              onChanged: enabled
+                  ? (value) {
+                      controller.showInFamily = value;
+                      onChanged();
+                    }
+                  : null,
+              title: const Text('Visible to household'),
+              subtitle: const Text(
+                'Show this savings goal in the family space.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

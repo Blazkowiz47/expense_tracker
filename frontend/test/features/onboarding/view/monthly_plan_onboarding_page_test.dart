@@ -396,7 +396,7 @@ void main() {
       await _advance(tester);
 
       await tester.enterText(
-        find.widgetWithText(TextField, 'Monthly grocery budget'),
+        find.byKey(const ValueKey('groceries-0-amount')),
         '5000',
       );
       await _advance(tester);
@@ -438,17 +438,17 @@ void main() {
       await _advance(tester);
 
       await tester.enterText(
-        find.widgetWithText(TextField, 'Monthly transport budget'),
+        find.byKey(const ValueKey('transport-0-amount')),
         '750',
       );
       await _advance(tester);
 
       await tester.enterText(
-        find.widgetWithText(TextField, 'Monthly savings'),
+        find.byKey(const ValueKey('savings-0-monthly')),
         '2500',
       );
       await tester.enterText(
-        find.widgetWithText(TextField, 'Target amount'),
+        find.byKey(const ValueKey('savings-0-target')),
         '300000',
       );
       await _advance(tester);
@@ -472,7 +472,7 @@ void main() {
       );
       expect(setupWriter.loans.single.principalAmount, 146087.67);
       expect(setupWriter.loans.single.rateType, 'floating');
-      expect(setupWriter.savingsGoals.single.accountName, 'DNB savings');
+      expect(setupWriter.savingsGoals.single.accountName, 'DNB savings - DNB');
       expect(setupWriter.savingsGoals.single.familyVisibility, 'private');
       expect(
         setupWriter.recurringTemplates.map((item) => item.title),
@@ -887,6 +887,174 @@ void main() {
     expect(setupWriter.updatedLoans.single.id, 'loan-1');
     expect(setupWriter.savingsGoals, isEmpty);
     expect(setupWriter.updatedSavingsGoals.single.id, 'goal-1');
+  });
+
+  testWidgets('setup supports repeatable loans budgets and savings accounts', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(700, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final authCubit = _authCubit();
+    final setupWriter = _FakeOnboardingSetupWriter();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BlocProvider.value(
+          value: authCubit,
+          child: MonthlyPlanOnboardingPage(setupWriter: setupWriter),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await _advance(tester);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Account name'),
+      'Sparekonto',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Bank or provider'),
+      'DNB',
+    );
+    await tester.tap(find.text('Add account'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Account name').last,
+      'Sparekonto',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Bank or provider').last,
+      'Nordea',
+    );
+    await _advance(tester);
+    await _advance(tester);
+    await _advance(tester);
+
+    await tester.enterText(find.byKey(const ValueKey('loan-0-name')), 'Car');
+    await tester.enterText(
+      find.byKey(const ValueKey('loan-0-principal')),
+      '100000',
+    );
+    await tester.enterText(find.byKey(const ValueKey('loan-0-emi')), '3000');
+    await tester.tap(find.byKey(const ValueKey('loans-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('loan-1-name')),
+      'Student loan',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('loan-1-principal')),
+      '50000',
+    );
+    await tester.enterText(find.byKey(const ValueKey('loan-1-emi')), '1000');
+    await _advance(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('groceries-0-name')),
+      'Vegetables',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('groceries-0-amount')),
+      '2000',
+    );
+    await tester.tap(find.byKey(const ValueKey('groceries-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('groceries-1-name')),
+      'Protein powder',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('groceries-1-amount')),
+      '1000',
+    );
+    await _advance(tester);
+    await tester.tap(find.text('Skip this step'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('transport-0-name')),
+      'Bus tickets',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('transport-0-amount')),
+      '500',
+    );
+    await tester.tap(find.byKey(const ValueKey('transport-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('transport-1-name')),
+      'Tolls',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('transport-1-amount')),
+      '250',
+    );
+    await _advance(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-0-name')),
+      'India',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-0-monthly')),
+      '2000',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-0-target')),
+      '24000',
+    );
+    expect(find.text('Sparekonto - DNB'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('savings-add')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-1-name')),
+      'Emergency',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-1-monthly')),
+      '1000',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('savings-1-target')),
+      '12000',
+    );
+    await tester.tap(find.text('Sparekonto - DNB').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Sparekonto - Nordea'), findsOneWidget);
+    await tester.tap(find.text('Sparekonto - Nordea').last);
+    await tester.pumpAndSettle();
+    await _advance(tester);
+
+    await tester.tap(find.byKey(const ValueKey('onboarding-complete-setup')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(setupWriter.loans, hasLength(2));
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      containsPair('Loans / EMI', 4000),
+    );
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      containsPair('Groceries - Vegetables', 2000),
+    );
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      containsPair('Groceries - Protein powder', 1000),
+    );
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      containsPair('Transport - Bus tickets', 500),
+    );
+    expect(
+      setupWriter.monthlyPlans.single.budgets,
+      containsPair('Transport - Tolls', 250),
+    );
+    expect(
+      setupWriter.savingsGoals.map((goal) => goal.accountName),
+      containsAll(<String>['Sparekonto - DNB', 'Sparekonto - Nordea']),
+    );
   });
 }
 
