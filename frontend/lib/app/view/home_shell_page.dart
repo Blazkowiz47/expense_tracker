@@ -30,6 +30,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
 
+const _hybridAccent = Color(0xFF26A17B);
+const _hybridAccentStrong = Color(0xFF1A8F6C);
+const _hybridAccentSoft = Color(0xFFE6F4EE);
+
 class HomeShellPage extends StatefulWidget {
   const HomeShellPage({this.initialIndex = 0, this.repository, super.key});
 
@@ -542,7 +546,7 @@ class _HomeShellPageState extends State<HomeShellPage>
         title: Text(
           'Expense tracker',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: colors.primary,
+            color: _hybridAccentStrong,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -571,30 +575,52 @@ class _HomeShellPageState extends State<HomeShellPage>
               .toList(growable: false),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: _destinations
-            .asMap()
-            .entries
-            .map((entry) {
-              final index = entry.key;
-              final destination = entry.value;
-              return NavigationDestination(
-                icon: _buildDestinationIcon(
-                  index: index,
-                  selected: false,
-                  accountPhotoUrl: accountPhotoUrl,
-                ),
-                selectedIcon: _buildDestinationIcon(
-                  index: index,
-                  selected: true,
-                  accountPhotoUrl: accountPhotoUrl,
-                ),
-                label: destination.label,
-              );
-            })
-            .toList(growable: false),
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          indicatorColor: _hybridAccentSoft,
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            return IconThemeData(
+              color: states.contains(WidgetState.selected)
+                  ? _hybridAccentStrong
+                  : const Color(0xFF58646F),
+            );
+          }),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            return Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: states.contains(WidgetState.selected)
+                  ? _hybridAccentStrong
+                  : const Color(0xFF58646F),
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w700
+                  : FontWeight.w500,
+            );
+          }),
+        ),
+        child: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: _onDestinationSelected,
+          destinations: _destinations
+              .asMap()
+              .entries
+              .map((entry) {
+                final index = entry.key;
+                final destination = entry.value;
+                return NavigationDestination(
+                  icon: _buildDestinationIcon(
+                    index: index,
+                    selected: false,
+                    accountPhotoUrl: accountPhotoUrl,
+                  ),
+                  selectedIcon: _buildDestinationIcon(
+                    index: index,
+                    selected: true,
+                    accountPhotoUrl: accountPhotoUrl,
+                  ),
+                  label: destination.label,
+                );
+              })
+              .toList(growable: false),
+        ),
       ),
       floatingActionButton: _showAddExpenseButton
           ? _buildActionFab(compact: true)
@@ -728,7 +754,7 @@ class _HomeShellPageState extends State<HomeShellPage>
                                             .textTheme
                                             .titleMedium
                                             ?.copyWith(
-                                              color: colors.primary,
+                                              color: _hybridAccentStrong,
                                               fontWeight: FontWeight.w800,
                                             ),
                                       ),
@@ -784,6 +810,8 @@ class _HomeShellPageState extends State<HomeShellPage>
                                           icon: const Icon(Icons.add),
                                           label: const Text('Add expense'),
                                           style: FilledButton.styleFrom(
+                                            backgroundColor: _hybridAccent,
+                                            foregroundColor: Colors.white,
                                             minimumSize: const Size(146, 40),
                                           ),
                                         ),
@@ -1263,7 +1291,7 @@ class _QuickActionButton extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Icon(action.icon, size: 20, color: colorScheme.primary),
+                Icon(action.icon, size: 20, color: _hybridAccentStrong),
               ],
             ),
           ),
@@ -1288,9 +1316,7 @@ class _WideNavChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Material(
-      color: selected
-          ? colors.primary.withValues(alpha: 0.12)
-          : Colors.transparent,
+      color: selected ? _hybridAccentSoft : Colors.transparent,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: onTap,
@@ -1300,7 +1326,7 @@ class _WideNavChip extends StatelessWidget {
           child: Text(
             label,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: selected ? colors.primary : colors.onSurface,
+              color: selected ? _hybridAccentStrong : colors.onSurface,
               fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
             ),
           ),
@@ -1329,9 +1355,7 @@ class _SideShortcutTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
-        color: selected
-            ? colors.primary.withValues(alpha: 0.12)
-            : Colors.transparent,
+        color: selected ? _hybridAccentSoft : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: onTap,
@@ -1343,7 +1367,9 @@ class _SideShortcutTile extends StatelessWidget {
                 Icon(
                   icon,
                   size: 18,
-                  color: selected ? colors.primary : colors.onSurfaceVariant,
+                  color: selected
+                      ? _hybridAccentStrong
+                      : colors.onSurfaceVariant,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1352,7 +1378,7 @@ class _SideShortcutTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: selected
-                          ? colors.primary
+                          ? _hybridAccentStrong
                           : colors.onSurfaceVariant,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     ),

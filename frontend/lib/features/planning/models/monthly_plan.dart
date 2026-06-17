@@ -6,6 +6,8 @@ class MonthlyPlan {
     required this.totalBudget,
     required this.totalActual,
     required this.totalRemaining,
+    this.income,
+    this.surplus,
     this.convertedExpenseCount = 0,
     this.excludedExpenseCount = 0,
     this.excludedActualsByCurrency = const {},
@@ -18,6 +20,8 @@ class MonthlyPlan {
   final double totalBudget;
   final double totalActual;
   final double totalRemaining;
+  final double? income;
+  final double? surplus;
   final int convertedExpenseCount;
   final int excludedExpenseCount;
   final Map<String, double> excludedActualsByCurrency;
@@ -36,6 +40,17 @@ class MonthlyPlan {
       totalBudget: (json['totalBudget'] as num?)?.toDouble() ?? 0,
       totalActual: (json['totalActual'] as num?)?.toDouble() ?? 0,
       totalRemaining: (json['totalRemaining'] as num?)?.toDouble() ?? 0,
+      income:
+          _parseDouble(json['totalIncome']) ??
+          _parseDouble(json['monthlyIncome']) ??
+          _parseDouble(json['plannedIncome']) ??
+          _parseDouble(json['projectedIncome']) ??
+          _parseDouble(json['income']),
+      surplus:
+          _parseDouble(json['totalSurplus']) ??
+          _parseDouble(json['projectedSurplus']) ??
+          _parseDouble(json['netSurplus']) ??
+          _parseDouble(json['surplus']),
       convertedExpenseCount:
           _parseInt(json['convertedExpenseCount']) ??
           _parseInt(metadata['convertedExpenseCount']) ??
@@ -101,6 +116,16 @@ class MonthlyPlanCategory {
           _parseAmountMap(json['excludedActualsByCurrency']) ?? const {},
     );
   }
+}
+
+double? _parseDouble(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value.trim());
+  }
+  return null;
 }
 
 int? _parseInt(Object? value) {

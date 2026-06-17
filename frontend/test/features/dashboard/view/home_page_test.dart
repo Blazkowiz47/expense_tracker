@@ -103,6 +103,69 @@ void main() {
     expect(openedAction?.period, '2026-05');
   });
 
+  testWidgets('home page shows income and surplus cashflow rows', (
+    tester,
+  ) async {
+    final cubit = DashboardSnapshotCubit(
+      repository: const _ActionSnapshotRepository(),
+    );
+    await cubit.load();
+    addTearDown(cubit.close);
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(
+                plan: const MonthlyPlan(
+                  month: '2026-06',
+                  currency: 'NOK',
+                  totalBudget: 12294,
+                  totalActual: 0,
+                  totalRemaining: 12294,
+                  income: 36000,
+                  surplus: 23706,
+                  categories: [
+                    MonthlyPlanCategory(
+                      category: 'Rent and housing',
+                      budget: 8000,
+                      actual: 0,
+                      remaining: 8000,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                    MonthlyPlanCategory(
+                      category: 'Loans / EMI',
+                      budget: 4294,
+                      actual: 0,
+                      remaining: 4294,
+                      progress: 0,
+                      overBudget: false,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Cashflow'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Income'), findsOneWidget);
+    expect(find.text('Surplus'), findsOneWidget);
+    expect(find.text('NOK 36,000.00'), findsOneWidget);
+    expect(find.text('NOK 23,706.00'), findsOneWidget);
+  });
+
   testWidgets('home auto-refresh skips reload when dashboard is fresh', (
     tester,
   ) async {
@@ -200,14 +263,20 @@ class _CountingSnapshotRepository implements DashboardSnapshotRepository {
 }
 
 class _FakeMonthlyPlanRepository extends MonthlyPlanRepository {
-  _FakeMonthlyPlanRepository()
+  _FakeMonthlyPlanRepository({this.plan})
     : super(client: MockClient((_) async => http.Response('{}', 200)));
+
+  final MonthlyPlan? plan;
 
   @override
   Future<MonthlyPlan> fetchPlan({
     required String month,
     String? groupId,
   }) async {
+    final existingPlan = plan;
+    if (existingPlan != null) {
+      return existingPlan;
+    }
     return MonthlyPlan(
       month: month,
       currency: 'INR',

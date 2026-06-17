@@ -22,7 +22,7 @@ void main() {
         expect(request.url.queryParameters['month'], '2026-06');
         expect(request.url.queryParameters['groupId'], 'family-1');
         return http.Response(
-          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"actualsMetadata":{"uncountedExpenseCount":2,"uncountedSpendByCurrency":{"EUR":12}},"categories":[]}',
+          '{"month":"2026-06","groupId":"family-1","currency":"USD","totalBudget":500,"totalActual":125,"totalRemaining":375,"monthlyIncome":1800,"projectedSurplus":1300,"actualsMetadata":{"uncountedExpenseCount":2,"uncountedSpendByCurrency":{"EUR":12}},"categories":[]}',
           200,
         );
       }
@@ -54,6 +54,8 @@ void main() {
     );
 
     expect(fetched.groupId, 'family-1');
+    expect(fetched.income, 1800);
+    expect(fetched.surplus, 1300);
     expect(fetched.excludedExpenseCount, 2);
     expect(fetched.excludedActualsByCurrency, {'EUR': 12});
     expect(saved.groupId, 'family-1');

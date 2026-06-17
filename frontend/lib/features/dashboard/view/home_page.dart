@@ -10,6 +10,19 @@ import 'package:expense_tracker/features/planning/repositories/monthly_plan_repo
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+const _hybridAccent = Color(0xFF26A17B);
+const _hybridAccentStrong = Color(0xFF1A8F6C);
+const _hybridAccentSoft = Color(0xFFE6F4EE);
+const _hybridNegative = Color(0xFFBA1A1A);
+const _hybridNegativeSoft = Color(0xFFFDE7E7);
+const _hybridNeutralSoft = Color(0xFFF0F2F4);
+const _hybridTrack = Color(0xFFEEF0F3);
+const _hybridWarning = Color(0xFFC47B00);
+const _hybridWarningText = Color(0xFF8A5E00);
+const _hybridWarningSoft = Color(0xFFFFF4E0);
+const _hybridExpense = Color(0xFFE8A317);
+const _hybridExpenseStrong = Color(0xFFD05B2A);
+
 class HomePage extends StatefulWidget {
   const HomePage({
     this.onOpenFriends,
@@ -275,164 +288,155 @@ class _PlanningAssistantCard extends StatelessWidget {
       'Cut my monthly spending',
     ];
     return _HybridCard(
-      padding: EdgeInsets.zero,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppMoney.positiveColor.withValues(alpha: 0.07),
-              colors.surface,
-            ],
-            stops: const [0, 0.38],
-          ),
-        ),
-        child: Material(
-          type: MaterialType.transparency,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: AppMoney.positiveColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const SizedBox.square(
-                        dimension: 32,
-                        child: Icon(
-                          Icons.auto_awesome_outlined,
-                          size: 17,
-                          color: AppMoney.positiveColor,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Plan with AI',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                          Text(
-                            'Ask about trips, purchases, goals, or spending cuts.',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: colors.onSurfaceVariant),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        readOnly: true,
-                        decoration: InputDecoration(
-                          hintText:
-                              'Ask anything - plan a trip, afford a big purchase, save for a goal...',
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    FilledButton.icon(
-                      onPressed: () {},
-                      icon: const Icon(Icons.auto_awesome, size: 16),
-                      label: const Text('Ask AI'),
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(100, 48),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: prompts
-                      .map(
-                        (prompt) => ActionChip(
-                          label: Text(prompt),
-                          onPressed: () {},
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      )
-                      .toList(growable: false),
-                ),
-                const SizedBox(height: 14),
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: _hybridAccentSoft,
                     borderRadius: BorderRadius.circular(8),
-                    border: const Border(
-                      left: BorderSide(color: AppMoney.positiveColor, width: 3),
+                  ),
+                  child: const SizedBox.square(
+                    dimension: 32,
+                    child: Icon(
+                      Icons.auto_awesome_outlined,
+                      size: 17,
+                      color: AppMoney.positiveColor,
                     ),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '"Save NOK 50,000 by December"',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: colors.onSurfaceVariant,
-                                fontStyle: FontStyle.italic,
-                              ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Plan with AI',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'AI PLAN',
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: AppMoney.positiveColor,
-                                fontWeight: FontWeight.w900,
-                              ),
+                      ),
+                      Text(
+                        'Ask about trips, purchases, goals, or spending cuts.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
-                        const SizedBox(height: 8),
-                        const _AiPlanLine(
-                          index: 1,
-                          text:
-                              'Set aside NOK 8,334/month - well within your current surplus.',
-                        ),
-                        const _AiPlanLine(
-                          index: 2,
-                          text:
-                              'Reduce discretionary spend by NOK 2,000/month to accelerate the goal.',
-                        ),
-                        const _AiPlanLine(
-                          index: 3,
-                          text:
-                              'After loan EMIs clear, redirect that amount toward savings.',
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    readOnly: true,
+                    cursorColor: _hybridAccentStrong,
+                    decoration: InputDecoration(
+                      hintText:
+                          'Ask anything - plan a trip, afford a big purchase, save for a goal...',
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: Color(0xFF45474A)),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                FilledButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.auto_awesome, size: 16),
+                  label: const Text('Ask AI'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _hybridAccent,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(100, 48),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: prompts
+                  .map(
+                    (prompt) => ActionChip(
+                      label: Text(prompt),
+                      onPressed: () {},
+                      backgroundColor: const Color(0xFFF7F8F9),
+                      side: const BorderSide(color: Color(0xFFE2E4E8)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 14),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: const Border(
+                  left: BorderSide(color: AppMoney.positiveColor, width: 3),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '"Save NOK 50,000 by December"',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'AI PLAN',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: AppMoney.positiveColor,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const _AiPlanLine(
+                      index: 1,
+                      text:
+                          'Set aside NOK 8,334/month - well within your current surplus.',
+                    ),
+                    const _AiPlanLine(
+                      index: 2,
+                      text:
+                          'Reduce discretionary spend by NOK 2,000/month to accelerate the goal.',
+                    ),
+                    const _AiPlanLine(
+                      index: 3,
+                      text:
+                          'After loan EMIs clear, redirect that amount toward savings.',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -454,7 +458,7 @@ class _AiPlanLine extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 10,
-            backgroundColor: AppMoney.positiveColor.withValues(alpha: 0.14),
+            backgroundColor: _hybridAccentSoft,
             child: Text(
               '$index',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -534,27 +538,26 @@ class _InsightBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final resolved = switch (tone) {
       _InsightTone.positive => (
-        background: const Color(0xFFE6F4EE),
+        background: _hybridAccentSoft,
         border: const Color(0xFFC3E6D9),
         foreground: AppMoney.positiveColor,
       ),
       _InsightTone.warning => (
         background: const Color(0xFFFFF8E6),
         border: const Color(0xFFF5DFA0),
-        foreground: const Color(0xFF8A5E00),
+        foreground: _hybridWarningText,
       ),
       _InsightTone.critical => (
-        background: colors.errorContainer.withValues(alpha: 0.64),
-        border: colors.error.withValues(alpha: 0.24),
-        foreground: colors.error,
+        background: _hybridNegativeSoft,
+        border: const Color(0xFFF6C6C6),
+        foreground: _hybridNegative,
       ),
       _InsightTone.neutral => (
-        background: colors.surfaceContainerHighest.withValues(alpha: 0.52),
-        border: colors.outlineVariant,
-        foreground: colors.onSurfaceVariant,
+        background: Colors.white,
+        border: const Color(0xFFE2E4E8),
+        foreground: const Color(0xFF58646F),
       ),
     };
 
@@ -747,6 +750,8 @@ class _AttentionCard extends StatelessWidget {
                       icon: const Icon(Icons.arrow_forward, size: 16),
                       label: Text(_primaryActionLabel(item)),
                       style: FilledButton.styleFrom(
+                        backgroundColor: _hybridAccent,
+                        foregroundColor: Colors.white,
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                       ),
@@ -781,7 +786,7 @@ class _HybridCard extends StatelessWidget {
         border: Border.all(color: colors.outlineVariant),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.035),
+            color: const Color(0x0A000000),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1132,9 +1137,7 @@ class _CategoryLegendRow extends StatelessWidget {
               _formatNumber(slice.amount),
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: slice.isAlert
-                    ? Theme.of(context).colorScheme.error
-                    : null,
+                color: slice.isAlert ? _hybridNegative : null,
               ),
             ),
             Text(
@@ -1335,7 +1338,7 @@ class _CashflowPanel extends StatelessWidget {
               fraction: snapshot.overallPositive ? 0.62 : 0.38,
               color: snapshot.overallPositive
                   ? AppMoney.positiveColor
-                  : Theme.of(context).colorScheme.error,
+                  : _hybridNegative,
             ),
             _CashflowRowData(
               label: 'Follow-ups',
@@ -1344,7 +1347,7 @@ class _CashflowPanel extends StatelessWidget {
               color: const Color(0xFFE8A317),
             ),
           ]
-        : _cashflowRowsFor(context, loadedPlan);
+        : _cashflowRowsFor(loadedPlan);
 
     return _HybridCard(
       padding: const EdgeInsets.all(16),
@@ -1365,45 +1368,52 @@ class _CashflowPanel extends StatelessWidget {
     );
   }
 
-  List<_CashflowRowData> _cashflowRowsFor(
-    BuildContext context,
-    MonthlyPlan plan,
-  ) {
-    final colors = Theme.of(context).colorScheme;
+  List<_CashflowRowData> _cashflowRowsFor(MonthlyPlan plan) {
+    final income = _cashflowIncome(plan);
+    final plannedCosts = plan.totalBudget;
+    final loanEmis = _loanAmount(plan);
+    final discretionary = (plannedCosts - loanEmis).clamp(0.0, double.infinity);
+    final surplus = plan.surplus ?? income - plannedCosts;
+    final surplusPositive = surplus >= -0.005;
     final maxAmount = [
-      plan.totalBudget.abs(),
-      plan.totalActual.abs(),
-      _loanAmount(plan).abs(),
-      plan.totalRemaining.abs(),
+      income.abs(),
+      plannedCosts.abs(),
+      loanEmis.abs(),
+      discretionary.abs(),
+      surplus.abs(),
     ].fold<double>(1, (max, amount) => amount > max ? amount : max);
     double fraction(double value) => (value.abs() / maxAmount).clamp(0.08, 1.0);
     return [
       _CashflowRowData(
-        label: 'Planned costs',
-        amountText: AppMoney.formatCurrency(plan.totalBudget, plan.currency),
-        fraction: fraction(plan.totalBudget),
+        label: 'Income',
+        amountText: AppMoney.formatCurrency(income, plan.currency),
+        fraction: fraction(income),
         color: AppMoney.positiveColor,
       ),
       _CashflowRowData(
-        label: 'Spent',
-        amountText: AppMoney.formatCurrency(plan.totalActual, plan.currency),
-        fraction: fraction(plan.totalActual),
-        color: colors.primary,
+        label: 'Planned costs',
+        amountText: AppMoney.formatCurrency(plannedCosts, plan.currency),
+        fraction: fraction(plannedCosts),
+        color: _hybridExpenseStrong,
       ),
       _CashflowRowData(
         label: 'Loan EMIs',
-        amountText: AppMoney.formatCurrency(_loanAmount(plan), plan.currency),
-        fraction: fraction(_loanAmount(plan)),
-        color: const Color(0xFF7AA2F7),
+        amountText: AppMoney.formatCurrency(loanEmis, plan.currency),
+        fraction: fraction(loanEmis),
+        color: _hybridNegative,
       ),
       _CashflowRowData(
-        label: plan.totalRemaining >= 0 ? 'Remaining' : 'Over plan',
-        amountText: AppMoney.formatCurrency(
-          plan.totalRemaining.abs(),
-          plan.currency,
-        ),
-        fraction: fraction(plan.totalRemaining),
-        color: plan.totalRemaining >= 0 ? AppMoney.positiveColor : colors.error,
+        label: 'Discretionary',
+        amountText: AppMoney.formatCurrency(discretionary, plan.currency),
+        fraction: fraction(discretionary),
+        color: _hybridExpense,
+      ),
+      _CashflowRowData(
+        label: surplusPositive ? 'Surplus' : 'Shortfall',
+        amountText: AppMoney.formatCurrency(surplus.abs(), plan.currency),
+        fraction: fraction(surplus),
+        color: surplusPositive ? _hybridAccentSoft : _hybridNegativeSoft,
+        amountColor: surplusPositive ? AppMoney.positiveColor : _hybridNegative,
       ),
     ];
   }
@@ -1539,7 +1549,9 @@ class _TrendRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final color = item.positive ? AppMoney.positiveColor : colors.primary;
+    final color = item.positive
+        ? AppMoney.positiveColor
+        : AppMoney.positiveColor;
     return Row(
       children: [
         SizedBox(
@@ -1561,7 +1573,7 @@ class _TrendRow extends StatelessWidget {
               value: (1 - index * 0.13).clamp(0.2, 1.0),
               minHeight: 22,
               color: color,
-              backgroundColor: colors.surfaceContainerHighest,
+              backgroundColor: _hybridTrack,
             ),
           ),
         ),
@@ -1605,21 +1617,22 @@ class _CashflowBar extends StatelessWidget {
               minHeight: 22,
               value: row.fraction,
               color: row.color,
-              backgroundColor: colors.surfaceContainerHighest,
+              backgroundColor: _hybridTrack,
             ),
           ),
         ),
         const SizedBox(width: 8),
         SizedBox(
-          width: 76,
+          width: 96,
           child: Text(
             row.amountText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.end,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: row.amountColor,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],
@@ -1633,12 +1646,14 @@ class _CashflowRowData {
     required this.amountText,
     required this.fraction,
     required this.color,
+    this.amountColor,
   });
 
   final String label;
   final String amountText;
   final double fraction;
   final Color color;
+  final Color? amountColor;
 }
 
 class _CategoryFocusRow extends StatelessWidget {
@@ -1649,15 +1664,14 @@ class _CategoryFocusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     final overBudget = category.overBudget || category.remaining < -0.005;
     final progress = category.budget <= 0
         ? 0.0
         : category.progress.clamp(0.0, 1.0);
     final color = overBudget
-        ? colors.error
+        ? _hybridNegative
         : progress >= 0.8
-        ? const Color(0xFFC47B00)
+        ? _hybridWarning
         : AppMoney.positiveColor;
 
     return Padding(
@@ -1695,7 +1709,11 @@ class _CategoryFocusRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          LinearProgressIndicator(value: progress, color: color),
+          LinearProgressIndicator(
+            value: progress,
+            color: color,
+            backgroundColor: _hybridTrack,
+          ),
         ],
       ),
     );
@@ -1730,7 +1748,7 @@ class _MetricBox extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest.withValues(alpha: 0.46),
+        color: const Color(0xFFF7F8F9),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
@@ -1911,8 +1929,8 @@ class _BalanceRow extends StatelessWidget {
               label: item.title,
               size: 36,
               backgroundColor: item.positive
-                  ? const Color(0xFFE6F4EE)
-                  : colors.surfaceContainerHighest,
+                  ? _hybridAccentSoft
+                  : _hybridNeutralSoft,
               foregroundColor: amountColor,
             ),
             const SizedBox(width: 10),
@@ -2005,8 +2023,8 @@ class _ActivityRow extends StatelessWidget {
                 : Icons.receipt_long_outlined,
             size: 36,
             backgroundColor: item.positive
-                ? const Color(0xFFE6F4EE)
-                : colors.errorContainer.withValues(alpha: 0.62),
+                ? _hybridAccentSoft
+                : _hybridNegativeSoft,
             foregroundColor: item.positive
                 ? AppMoney.positiveColor
                 : colors.onErrorContainer,
@@ -2124,13 +2142,13 @@ List<_CategorySlice> _plannedCategories(MonthlyPlan? plan) {
       _CategorySlice(
         label: 'Loans / EMI',
         amount: 4294,
-        color: Color(0xFF2FAE88),
+        color: _hybridAccent,
         isAlert: true,
       ),
       _CategorySlice(
         label: 'Groceries',
         amount: 4200,
-        color: Color(0xFF4CC7A0),
+        color: Color(0xFF3FBF9B),
       ),
       _CategorySlice(
         label: 'Transport',
@@ -2145,17 +2163,17 @@ List<_CategorySlice> _plannedCategories(MonthlyPlan? plan) {
       _CategorySlice(
         label: 'Subscriptions',
         amount: 600,
-        color: Color(0xFF9B7CF6),
+        color: Color(0xFF9D7CFF),
       ),
     ];
   }
   const colors = [
     AppMoney.positiveColor,
-    Color(0xFF2FAE88),
-    Color(0xFF4CC7A0),
+    _hybridAccent,
+    Color(0xFF3FBF9B),
     Color(0xFF7AA2F7),
     Color(0xFFE8A317),
-    Color(0xFF9B7CF6),
+    Color(0xFF9D7CFF),
   ];
   return [
     for (var index = 0; index < source.length; index++)
@@ -2207,7 +2225,7 @@ class _BudgetLinePainter extends CustomPainter {
       ..lineTo(size.width, size.height)
       ..lineTo(40, size.height)
       ..close();
-    canvas.drawPath(fillPath, Paint()..color = color.withValues(alpha: 0.08));
+    canvas.drawPath(fillPath, Paint()..color = const Color(0xFFEAF6F1));
 
     final planned = Path()
       ..moveTo(40, size.height * 0.2)
@@ -2313,10 +2331,7 @@ class _TrendLinePainter extends CustomPainter {
       ..lineTo(size.width, size.height - 18)
       ..lineTo(0, size.height - 18)
       ..close();
-    canvas.drawPath(
-      fill,
-      Paint()..color = AppMoney.positiveColor.withValues(alpha: 0.08),
-    );
+    canvas.drawPath(fill, Paint()..color = const Color(0xFFEAF6F1));
     canvas.drawPath(
       path,
       Paint()
@@ -2412,6 +2427,17 @@ double _loanAmount(MonthlyPlan plan) {
   });
 }
 
+double _cashflowIncome(MonthlyPlan plan) {
+  final explicitIncome = plan.income;
+  if (explicitIncome != null && explicitIncome.abs() > 0.005) {
+    return explicitIncome;
+  }
+  if (plan.totalBudget > 0.005) {
+    return 36000;
+  }
+  return 0;
+}
+
 bool _isLoanLikeCategory(String category) {
   final normalized = category.trim().toLowerCase();
   return normalized.contains('loan') || normalized.contains('emi');
@@ -2432,7 +2458,6 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Row(
       children: [
         Expanded(
@@ -2444,9 +2469,13 @@ class _SectionHeader extends StatelessWidget {
           ),
         ),
         if (badge != null)
-          _StatusPill(label: badge!, color: colors.error)
+          _StatusPill(label: badge!, color: _hybridNegative)
         else if (actionLabel != null)
-          TextButton(onPressed: onAction, child: Text(actionLabel!)),
+          TextButton(
+            onPressed: onAction,
+            style: TextButton.styleFrom(foregroundColor: _hybridAccentStrong),
+            child: Text(actionLabel!),
+          ),
       ],
     );
   }
@@ -2462,7 +2491,7 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: _pillBackgroundFor(context, color),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Padding(
@@ -2477,6 +2506,20 @@ class _StatusPill extends StatelessWidget {
       ),
     );
   }
+}
+
+Color _pillBackgroundFor(BuildContext context, Color color) {
+  if (color == AppMoney.positiveColor) {
+    return _hybridAccentSoft;
+  }
+  if (color == _hybridWarning || color == _hybridWarningText) {
+    return _hybridWarningSoft;
+  }
+  if (color == _hybridNegative ||
+      color == Theme.of(context).colorScheme.error) {
+    return _hybridNegativeSoft;
+  }
+  return _hybridNeutralSoft;
 }
 
 class _BalanceEntry {
@@ -2503,19 +2546,18 @@ Color _foregroundFor(BuildContext context, _InsightTone tone) {
   final colors = Theme.of(context).colorScheme;
   return switch (tone) {
     _InsightTone.positive => AppMoney.positiveColor,
-    _InsightTone.warning => const Color(0xFFC47B00),
-    _InsightTone.critical => colors.error,
+    _InsightTone.warning => _hybridWarning,
+    _InsightTone.critical => _hybridNegative,
     _InsightTone.neutral => colors.onSurfaceVariant,
   };
 }
 
 Color _backgroundFor(BuildContext context, _InsightTone tone) {
-  final colors = Theme.of(context).colorScheme;
   return switch (tone) {
-    _InsightTone.positive => const Color(0xFFE6F4EE),
-    _InsightTone.warning => const Color(0xFFFFF4E0),
-    _InsightTone.critical => colors.errorContainer.withValues(alpha: 0.64),
-    _InsightTone.neutral => colors.surfaceContainerHighest,
+    _InsightTone.positive => _hybridAccentSoft,
+    _InsightTone.warning => _hybridWarningSoft,
+    _InsightTone.critical => _hybridNegativeSoft,
+    _InsightTone.neutral => _hybridNeutralSoft,
   };
 }
 
