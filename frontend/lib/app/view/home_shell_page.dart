@@ -157,6 +157,7 @@ class _HomeShellPageState extends State<HomeShellPage>
     String? initialDescription,
     double? initialAmount,
     String? initialCurrency,
+    String? initialPaymentMethod,
   }) {
     if (!forcePersonal && _destinations[_selectedIndex].label == 'Family') {
       final category = (initialCategory?.trim().isNotEmpty == true)
@@ -192,6 +193,7 @@ class _HomeShellPageState extends State<HomeShellPage>
                 initialDescription: initialDescription,
                 initialAmount: initialAmount,
                 initialCurrency: initialCurrency,
+                initialPaymentMethod: initialPaymentMethod,
               ),
             ),
           ),
@@ -336,6 +338,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       initialDescription: label,
       initialAmount: amount,
       initialCurrency: currency,
+      initialPaymentMethod: 'paid_previously',
     );
   }
 

@@ -284,7 +284,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Record Groceries payment'));
+    await tester.tap(find.byTooltip('Mark Groceries paid previously'));
     await tester.pumpAndSettle();
 
     expect(selectedCategory, 'Groceries');

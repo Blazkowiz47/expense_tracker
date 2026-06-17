@@ -69,6 +69,7 @@ void main() {
             initialDescription: 'Rent and housing',
             initialAmount: 8000,
             initialCurrency: 'NOK',
+            initialPaymentMethod: 'paid_previously',
           ),
         ),
       ),
@@ -78,6 +79,13 @@ void main() {
     expect(find.widgetWithText(TextField, '8000.00'), findsOneWidget);
     expect(find.text('Rent and housing'), findsWidgets);
     expect(find.text('NOK'), findsWidgets);
+    expect(find.text('Paid previously'), findsOneWidget);
+    expect(
+      find.text(
+        'Counts toward this month without treating it as a new cash, card, or bank payment.',
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Save expense'));
     await tester.pumpAndSettle();
@@ -86,6 +94,7 @@ void main() {
     expect(repository.createdExpense!.category, 'Rent and housing');
     expect(repository.createdExpense!.amount, 8000);
     expect(repository.createdExpense!.currency, 'NOK');
+    expect(repository.createdExpense!.paymentMethod, 'paid_previously');
   });
 
   testWidgets('edit mode updates an existing expense with details', (

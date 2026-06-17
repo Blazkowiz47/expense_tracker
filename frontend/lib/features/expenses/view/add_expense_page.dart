@@ -22,6 +22,7 @@ class AddExpensePage extends StatefulWidget {
     this.initialDescription,
     this.initialAmount,
     this.initialCurrency,
+    this.initialPaymentMethod,
     super.key,
   });
 
@@ -31,6 +32,7 @@ class AddExpensePage extends StatefulWidget {
   final String? initialDescription;
   final double? initialAmount;
   final String? initialCurrency;
+  final String? initialPaymentMethod;
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
@@ -59,6 +61,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     'card',
     'upi',
     'bank_transfer',
+    'paid_previously',
     'other',
   ];
 
@@ -110,6 +113,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       final initialDescription = widget.initialDescription?.trim();
       final initialAmount = widget.initialAmount;
       final initialCurrency = widget.initialCurrency?.trim();
+      final initialPaymentMethod = widget.initialPaymentMethod?.trim();
       if (initialDescription != null && initialDescription.isNotEmpty) {
         _descriptionController.text = initialDescription;
       }
@@ -121,6 +125,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
       }
       if (initialCurrency != null && initialCurrency.isNotEmpty) {
         _currency = _normalizedChoice(initialCurrency, _currencies, 'INR');
+      }
+      if (initialPaymentMethod != null && initialPaymentMethod.isNotEmpty) {
+        _paymentMethod = _normalizedChoice(
+          initialPaymentMethod,
+          _paymentMethods,
+          'cash',
+        );
       }
     }
     if (widget.initialBillUpload && expense == null) {
@@ -512,6 +523,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
                     ),
                   ],
                 ),
+                if (_paymentMethod == 'paid_previously') ...[
+                  const SizedBox(height: 8),
+                  const _PaidPreviouslyNotice(),
+                ],
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -736,6 +751,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
                           ),
                         ),
                       ),
+                      if (_paymentMethod == 'paid_previously')
+                        const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: _PaidPreviouslyNotice(),
+                        ),
                     ],
                   ),
                   TextField(
@@ -776,8 +796,45 @@ class _AddExpensePageState extends State<AddExpensePage> {
       'card' => 'Card',
       'upi' => 'UPI',
       'bank_transfer' => 'Bank transfer',
+      'paid_previously' => 'Paid previously',
       _ => 'Other',
     };
+  }
+}
+
+class _PaidPreviouslyNotice extends StatelessWidget {
+  const _PaidPreviouslyNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.history_toggle_off_outlined,
+              size: 18,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Counts toward this month without treating it as a new cash, card, or bank payment.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

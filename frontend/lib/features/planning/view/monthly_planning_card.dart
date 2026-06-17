@@ -475,11 +475,11 @@ class _BudgetRow extends StatelessWidget {
                   height: 32,
                   width: 32,
                   child: IconButton(
-                    tooltip: 'Record ${category.category} payment',
+                    tooltip: 'Mark ${category.category} paid previously',
                     padding: EdgeInsets.zero,
                     iconSize: 18,
                     onPressed: onRecordPayment,
-                    icon: const Icon(Icons.check_circle_outline),
+                    icon: const Icon(Icons.history_toggle_off_outlined),
                   ),
                 ),
               ],
