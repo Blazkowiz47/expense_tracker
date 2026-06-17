@@ -1287,6 +1287,118 @@ def test_monthly_plan_falls_back_to_recurring_income_when_plan_income_missing(tm
     assert payload["surplus"] == 37000
 
 
+def test_monthly_plan_counts_recurring_income_started_after_payday_in_same_month(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    recurring = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Salary",
+            "kind": "income",
+            "amount": 36000,
+            "currency": "NOK",
+            "category": "Salary",
+            "frequency": "monthly",
+            "dayOfMonth": 15,
+            "startDate": "2026-06-17T00:00:00Z",
+        },
+    )
+    assert recurring.status_code == 201, recurring.text
+    saved = client.put(
+        "/api/v1/planning/monthly",
+        headers=headers,
+        json={
+            "month": "2026-06",
+            "currency": "NOK",
+            "budgets": {"Rent and housing": 8000},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    payload = saved.json()
+    assert payload["income"] == 36000
+    assert payload["surplus"] == 28000
+
+
+def test_expense_list_backfills_current_setup_month_activity(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    salary = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Salary",
+            "kind": "income",
+            "amount": 36000,
+            "currency": "NOK",
+            "category": "Salary",
+            "frequency": "monthly",
+            "dayOfMonth": 15,
+            "startDate": "2026-06-17T00:00:00Z",
+        },
+    )
+    assert salary.status_code == 201, salary.text
+    insurance = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Car insurance",
+            "kind": "expense",
+            "amount": 1642,
+            "currency": "NOK",
+            "category": "Insurance",
+            "frequency": "monthly",
+            "dayOfMonth": 1,
+            "startDate": "2026-06-17T00:00:00Z",
+        },
+    )
+    assert insurance.status_code == 201, insurance.text
+    loan = client.post(
+        "/api/v1/loans",
+        headers=headers,
+        json={
+            "name": "Home loan",
+            "lender": "SBI",
+            "loanType": "home",
+            "principalAmount": 100000,
+            "emiAmount": 4294,
+            "currency": "NOK",
+            "remainingEmis": 24,
+            "dueDay": 5,
+            "startDate": "2026-06-17T00:00:00Z",
+        },
+    )
+    assert loan.status_code == 201, loan.text
+    savings = client.post(
+        "/api/v1/savings/goals",
+        headers=headers,
+        json={
+            "name": "Emergency fund",
+            "targetAmount": 50000,
+            "targetCurrency": "NOK",
+            "sourceCurrency": "NOK",
+            "monthlyTargetAmount": 2000,
+            "startMonth": "2026-06",
+        },
+    )
+    assert savings.status_code == 201, savings.text
+
+    listed = client.get("/api/v1/expenses?page=1&limit=200", headers=headers)
+    assert listed.status_code == 200, listed.text
+    expenses = listed.json()["expenses"]
+    titles = {expense["description"]: expense for expense in expenses}
+    assert titles["Salary"]["sourcePaymentType"] == "income"
+    assert titles["Car insurance"]["category"] == "Insurance"
+    assert titles["Home loan"]["category"] == "Loans / EMI"
+    assert titles["Emergency fund"]["category"] == "Savings - Emergency fund"
+
+    listed_again = client.get("/api/v1/expenses?page=1&limit=200", headers=headers)
+    assert listed_again.status_code == 200, listed_again.text
+    assert len(listed_again.json()["expenses"]) == len(expenses)
+
+
 def test_family_roles_and_expenses_feed_monthly_plan(tmp_path):
     client, _ = make_client(tmp_path)
     headers_a = register(client, "alice@example.com")

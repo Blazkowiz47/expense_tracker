@@ -798,6 +798,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         before_dt = parse_dt(before) if before else None
         server_time = now()
         include_sections = parse_activity_include(include)
+        ensure_setup_month_activity_entries(app.state.db, user["uid"])
         feed = activity_feed_entries(
             app.state.db,
             user["uid"],
@@ -1035,6 +1036,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         to: str | None = None,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
+        ensure_setup_month_activity_entries(app.state.db, user["uid"])
         filters: dict[str, Any] = {"uid": user["uid"]}
         if category.strip():
             filters["category"] = category.strip()
@@ -1584,6 +1586,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
 
     @app.get("/api/v1/dashboard/snapshot")
     async def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        ensure_setup_month_activity_entries(app.state.db, user["uid"])
         docs = [expense_out(doc) for doc in app.state.db.expenses.find({"uid": user["uid"]}).sort("date", -1).limit(20)]
         overall_summary = dashboard_overall_summary(app.state.db, user["uid"])
         action_items = dashboard_action_items(app.state.db, user["uid"])
@@ -4531,6 +4534,7 @@ def monthly_activity_income(db: Any, uid: str, month: str, currency: str) -> flo
 
 def monthly_recurring_income(db: Any, uid: str, month: str, currency: str) -> float:
     total = 0.0
+    start, end = month_range(month)
     templates = db.recurring_templates.find({
         "uid": uid,
         "kind": "income",
@@ -4539,7 +4543,8 @@ def monthly_recurring_income(db: Any, uid: str, month: str, currency: str) -> fl
     for template in templates:
         if not template.get("active", True):
             continue
-        if not recurring_due_dates_for_month(template, month):
+        starts_this_month = start <= aware(template.get("startDate") or start) < end
+        if not recurring_due_dates_for_month(template, month) and not starts_this_month:
             continue
         total += income_amount_for_currency(template, currency)
     return total
@@ -4571,6 +4576,149 @@ def effective_monthly_income(
     if recurring_income > 0.005:
         return recurring_income
     return stored_income
+
+
+def setup_month_entry_date(month: str, day: Any | None = None, fallback: datetime | None = None) -> datetime:
+    year, month_number = [int(part) for part in month.split("-")]
+    if day is not None:
+        try:
+            return month_day_date(year, month_number, int(day))
+        except (TypeError, ValueError):
+            pass
+    fallback_date = aware(fallback or now())
+    start, end = month_range(month)
+    if start <= fallback_date < end:
+        return fallback_date
+    return start
+
+
+def insert_setup_month_entry_if_missing(
+    db: Any,
+    uid: str,
+    *,
+    month: str,
+    setup_key: str,
+    title: str,
+    category: str,
+    amount: float,
+    currency: str,
+    date: datetime,
+    entry_type: str,
+) -> bool:
+    if amount <= 0:
+        return False
+    existing = db.expenses.find_one({
+        "uid": uid,
+        "sourceType": "setup_month_entry",
+        "sourcePeriod": month,
+        "sourceSetupKey": setup_key,
+    })
+    if existing:
+        return False
+    expense = build_expense(
+        {
+            "amount": amount,
+            "currency": currency,
+            "category": category,
+            "description": title,
+            "paymentMethod": "income" if entry_type == "income" else "paid_previously",
+            "date": iso(date),
+            "sourceType": "setup_month_entry",
+            "sourcePaymentType": entry_type,
+            "sourcePeriod": month,
+            "sourceSetupKey": setup_key,
+        },
+        uid,
+    )
+    db.expenses.insert_one(expense)
+    return True
+
+
+def ensure_setup_month_activity_entries(db: Any, uid: str, month: str | None = None) -> int:
+    period = normalize_month(month or current_month())
+    created = 0
+    start, end = month_range(period)
+
+    recurring_templates = db.recurring_templates.find({
+        "uid": uid,
+        "deletedAt": {"$exists": False},
+    })
+    for template in recurring_templates:
+        if not template.get("active", True):
+            continue
+        template_id = str(template.get("id") or "")
+        if template_id and db.recurring_occurrences.find_one({
+            "uid": uid,
+            "templateId": template_id,
+            "status": "confirmed",
+        }):
+            continue
+        due_dates = recurring_due_dates_for_month(template, period)
+        starts_this_month = start <= aware(template.get("startDate") or start) < end
+        if not due_dates and not starts_this_month:
+            continue
+        entry_type = "income" if str(template.get("kind") or "expense").strip().lower() == "income" else "expense"
+        date = due_dates[0] if due_dates else setup_month_entry_date(period, template.get("dayOfMonth"), template.get("startDate"))
+        created += int(insert_setup_month_entry_if_missing(
+            db,
+            uid,
+            month=period,
+            setup_key=f"recurring:{template.get('id')}",
+            title=str(template.get("title") or template.get("category") or "Recurring item"),
+            category=str(template.get("category") or ("Income" if entry_type == "income" else "Personal")),
+            amount=float(template.get("expectedAmount") or template.get("amount") or 0),
+            currency=safe_currency(template.get("currency"), "INR") or "INR",
+            date=date,
+            entry_type=entry_type,
+        ))
+
+    loans = db.loans.find({"uid": uid, "archivedAt": {"$exists": False}})
+    for loan in loans:
+        loan_id = str(loan.get("id") or "")
+        if loan_id and (
+            db.loan_payments.find_one({"uid": uid, "loanId": loan_id})
+            or db.expenses.find_one({"uid": uid, "sourceLoanId": loan_id})
+        ):
+            continue
+        loan_start = aware(loan.get("startDate") or loan.get("trackingStartedAt") or start)
+        if loan_start >= end:
+            continue
+        created += int(insert_setup_month_entry_if_missing(
+            db,
+            uid,
+            month=period,
+            setup_key=f"loan:{loan_id}",
+            title=str(loan.get("name") or "Loan EMI"),
+            category=str(loan.get("category") or "Loans / EMI"),
+            amount=float(loan.get("emiAmount") or 0),
+            currency=safe_currency(loan.get("currency"), "INR") or "INR",
+            date=setup_month_entry_date(period, loan.get("dueDay"), loan_start),
+            entry_type="expense",
+        ))
+
+    savings_goals = db.savings_goals.find({"uid": uid, "archivedAt": {"$exists": False}})
+    for goal in savings_goals:
+        goal_id = str(goal.get("id") or "")
+        if goal_id and db.savings_contributions.find_one({"uid": uid, "goalId": goal_id}):
+            continue
+        start_month = normalize_month(str(goal.get("startMonth") or period))
+        if start_month > period:
+            continue
+        name = str(goal.get("name") or "Savings")
+        created += int(insert_setup_month_entry_if_missing(
+            db,
+            uid,
+            month=period,
+            setup_key=f"savings:{goal_id}",
+            title=name,
+            category=f"Savings - {name}" if name.lower() != "savings" else "Savings",
+            amount=float(goal.get("monthlyTargetAmount") or 0),
+            currency=safe_currency(goal.get("sourceCurrency"), "INR") or "INR",
+            date=setup_month_entry_date(period, fallback=goal.get("createdAt")),
+            entry_type="expense",
+        ))
+
+    return created
 
 
 def monthly_plan_out(db: Any, uid: str, month: str, group_id: str | None = None) -> dict[str, Any]:
