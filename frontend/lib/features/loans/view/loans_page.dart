@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 const _loanCurrencyOptions = <String>['INR', 'USD', 'EUR', 'GBP', 'NOK'];
 const _loanTypeOptions = <String>[
   'Personal',
+  'Consumer loan',
   'Home',
   'Car',
   'Education',

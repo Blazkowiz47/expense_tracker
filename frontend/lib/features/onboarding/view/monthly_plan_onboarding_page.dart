@@ -928,7 +928,14 @@ class _MonthlyPlanOnboardingPageState extends State<MonthlyPlanOnboardingPage> {
   }
 
   String _normalizeLoanType(String value) {
-    const options = ['Car', 'Home', 'Personal', 'Education', 'Other'];
+    const options = [
+      'Car',
+      'Home',
+      'Personal',
+      'Consumer loan',
+      'Education',
+      'Other',
+    ];
     for (final option in options) {
       if (option.toLowerCase() == value.toLowerCase()) {
         return option;
@@ -1960,11 +1967,20 @@ class _LoanDraftEditor extends StatelessWidget {
                 labelText: 'Loan type',
                 border: OutlineInputBorder(),
               ),
-              items: const ['Car', 'Home', 'Personal', 'Education', 'Other']
-                  .map(
-                    (item) => DropdownMenuItem(value: item, child: Text(item)),
-                  )
-                  .toList(growable: false),
+              items:
+                  const [
+                        'Car',
+                        'Home',
+                        'Personal',
+                        'Consumer loan',
+                        'Education',
+                        'Other',
+                      ]
+                      .map(
+                        (item) =>
+                            DropdownMenuItem(value: item, child: Text(item)),
+                      )
+                      .toList(growable: false),
               onChanged: enabled
                   ? (value) {
                       if (value == null) return;

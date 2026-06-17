@@ -49,6 +49,7 @@ class _FakeLoansRepository extends ApiLoansRepository {
   }) async {
     createdLoan = _CreatedLoan(
       name: name,
+      loanType: loanType,
       principalAmount: principalAmount,
       originalPrincipalAmount: originalPrincipalAmount,
       emiAmount: emiAmount,
@@ -170,6 +171,7 @@ class _FakeLoansRepository extends ApiLoansRepository {
 class _CreatedLoan {
   const _CreatedLoan({
     required this.name,
+    required this.loanType,
     required this.principalAmount,
     required this.originalPrincipalAmount,
     required this.emiAmount,
@@ -180,6 +182,7 @@ class _CreatedLoan {
   });
 
   final String name;
+  final String loanType;
   final double principalAmount;
   final double originalPrincipalAmount;
   final double emiAmount;
@@ -257,6 +260,11 @@ void main() {
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'Car loan');
     await tester.enterText(fields.at(1), 'Santander');
+    await tester.ensureVisible(find.text('Personal'));
+    await tester.tap(find.text('Personal').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Consumer loan').last);
+    await tester.pumpAndSettle();
     await tester.enterText(fields.at(2), '146087.67');
     await tester.enterText(fields.at(3), '3733');
     await tester.enterText(fields.at(4), '150534');
@@ -277,6 +285,7 @@ void main() {
     expect(repository.createdLoan?.name, 'Car loan');
     expect(repository.createdLoan?.principalAmount, 146087.67);
     expect(repository.createdLoan?.originalPrincipalAmount, 150534);
+    expect(repository.createdLoan?.loanType, 'Consumer loan');
     expect(repository.createdLoan?.emiAmount, 3733);
     expect(repository.createdLoan?.interestRate, 7.9);
     expect(repository.createdLoan?.rateType, 'floating');
