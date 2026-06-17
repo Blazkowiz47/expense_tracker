@@ -21,7 +21,6 @@ const _hybridWarning = Color(0xFFC47B00);
 const _hybridWarningText = Color(0xFF8A5E00);
 const _hybridWarningSoft = Color(0xFFFFF4E0);
 const _hybridExpense = Color(0xFFE8A317);
-const _hybridExpenseStrong = Color(0xFFD05B2A);
 
 class HomePage extends StatefulWidget {
   const HomePage({
@@ -1354,7 +1353,7 @@ class _CashflowPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: 'Cashflow - ${_monthOnlyLabel(plan?.month)}'),
+          _SectionHeader(title: 'Cashflow — ${_monthOnlyLabel(plan?.month)}'),
           const SizedBox(height: 10),
           for (var index = 0; index < rows.length; index++) ...[
             _CashflowBar(row: rows[index]),
@@ -1397,13 +1396,13 @@ class _CashflowPanel extends StatelessWidget {
         label: 'Planned costs',
         amountText: _formatWhole(plannedCosts, plan.currency),
         fraction: fraction(plannedCosts),
-        color: _hybridExpenseStrong,
+        color: _hybridAccent,
       ),
       _CashflowRowData(
         label: 'Loan EMIs',
         amountText: _formatWhole(loanEmis, plan.currency),
         fraction: fraction(loanEmis),
-        color: _hybridNegative,
+        color: const Color(0xFF7AA2F7),
       ),
       _CashflowRowData(
         label: 'Discretionary',
@@ -1638,6 +1637,7 @@ class _CashflowBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final barTextColor = row.amountColor ?? Colors.white;
     return Row(
       children: [
         SizedBox(
@@ -1653,25 +1653,38 @@ class _CashflowBar extends StatelessWidget {
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              minHeight: 22,
-              value: row.fraction,
-              color: row.color,
-              backgroundColor: _hybridTrack,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 96,
-          child: Text(
-            row.amountText,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: row.amountColor,
-              fontWeight: FontWeight.w700,
+            child: SizedBox(
+              height: 22,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const ColoredBox(color: _hybridTrack),
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: row.fraction,
+                    child: ColoredBox(
+                      color: row.color,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            row.amountText,
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                            softWrap: false,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: barTextColor,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1914,7 +1927,7 @@ class _SharedBalancesPanel extends StatelessWidget {
         _BalanceEntry(item: item, type: 'Group', onTap: onOpenGroups),
     ];
 
-    return AppCard(
+    return _HybridCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2019,7 +2032,7 @@ class _RecentActivityPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    return _HybridCard(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2179,29 +2192,29 @@ List<_CategorySlice> _plannedCategories(MonthlyPlan? plan) {
       _CategorySlice(
         label: 'Rent and housing',
         amount: 8000,
-        color: _hybridExpenseStrong,
+        color: _hybridAccentStrong,
       ),
       _CategorySlice(
         label: 'Loans / EMI',
         amount: 4294,
-        color: _hybridNegative,
+        color: _hybridAccent,
         isAlert: true,
       ),
       _CategorySlice(
         label: 'Groceries',
         amount: 4200,
-        color: Color(0xFFF97316),
+        color: Color(0xFF3FBF9B),
       ),
       _CategorySlice(
         label: 'Transport',
         amount: 1800,
-        color: Color(0xFFFB923C),
+        color: Color(0xFF7AA2F7),
       ),
       _CategorySlice(label: 'Utilities', amount: 1200, color: _hybridExpense),
       _CategorySlice(
         label: 'Subscriptions',
         amount: 600,
-        color: Color(0xFFD97706),
+        color: Color(0xFF9D7CFF),
       ),
     ];
   }
@@ -2219,34 +2232,34 @@ List<_CategorySlice> _plannedCategories(MonthlyPlan? plan) {
 Color _plannedCostColor(String category, int index) {
   final normalized = category.trim().toLowerCase();
   if (_isLoanLikeCategory(category)) {
-    return _hybridNegative;
+    return _hybridAccent;
   }
   if (normalized.contains('rent') ||
       normalized.contains('housing') ||
       normalized.contains('home')) {
-    return _hybridExpenseStrong;
+    return _hybridAccentStrong;
   }
   if (normalized.contains('grocery') ||
       normalized.contains('food') ||
       normalized.contains('rema')) {
-    return const Color(0xFFF97316);
+    return const Color(0xFF3FBF9B);
   }
   if (normalized.contains('transport') ||
       normalized.contains('fuel') ||
       normalized.contains('pass')) {
-    return const Color(0xFFFB923C);
+    return const Color(0xFF7AA2F7);
   }
   if (normalized.contains('subscription') ||
       normalized.contains('membership')) {
-    return const Color(0xFFD97706);
+    return const Color(0xFF9D7CFF);
   }
   const colors = [
-    _hybridExpenseStrong,
-    _hybridNegative,
-    Color(0xFFF97316),
-    Color(0xFFFB923C),
+    _hybridAccentStrong,
+    _hybridAccent,
+    Color(0xFF3FBF9B),
+    Color(0xFF7AA2F7),
     _hybridExpense,
-    Color(0xFFD97706),
+    Color(0xFF9D7CFF),
   ];
   return colors[index % colors.length];
 }

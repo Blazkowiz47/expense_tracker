@@ -155,7 +155,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
-      find.text('Cashflow - June'),
+      find.text('Cashflow — June'),
       500,
       scrollable: find.byType(Scrollable).first,
     );
