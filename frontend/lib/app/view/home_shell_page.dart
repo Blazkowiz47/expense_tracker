@@ -534,10 +534,32 @@ class _HomeShellPageState extends State<HomeShellPage>
     required bool centerTitle,
     String? accountPhotoUrl,
   }) {
+    final colors = Theme.of(context).colorScheme;
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F6F8),
       appBar: AppBar(
         centerTitle: centerTitle,
-        title: Text(_destinations[_selectedIndex].label),
+        title: Text(
+          'Expense tracker',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: colors.primary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Notifications',
+            onPressed: () {},
+            icon: const Icon(Icons.notifications_none_outlined),
+          ),
+          IconButton(
+            tooltip: 'Search',
+            onPressed: () {},
+            icon: const Icon(Icons.search),
+          ),
+          const SizedBox(width: 4),
+        ],
+        shape: Border(bottom: BorderSide(color: colors.outlineVariant)),
       ),
       body: _withActionScrim(
         IndexedStack(
@@ -574,7 +596,9 @@ class _HomeShellPageState extends State<HomeShellPage>
             })
             .toList(growable: false),
       ),
-      floatingActionButton: _showAddExpenseButton ? _buildActionFab() : null,
+      floatingActionButton: _showAddExpenseButton
+          ? _buildActionFab(compact: true)
+          : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
@@ -660,167 +684,206 @@ class _HomeShellPageState extends State<HomeShellPage>
     final shortcuts = _quickActions();
 
     return Scaffold(
+      backgroundColor: const Color(0xFFD5D9DE),
       body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: colors.surface,
-                border: Border(
-                  bottom: BorderSide(color: colors.outlineVariant),
-                ),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final showGreeting = constraints.maxWidth >= 1040;
-                  return Row(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1280),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF4F6F8),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Column(
                     children: [
-                      Text(
-                        'Expense tracker',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: colors.primary,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      const SizedBox(width: 18),
-                      if (showGreeting)
-                        Expanded(
-                          child: Text(
-                            _wideGreeting,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: colors.outline),
+                      Container(
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: colors.surface,
+                          border: Border(
+                            bottom: BorderSide(color: colors.outlineVariant),
                           ),
                         ),
-                      Flexible(
-                        fit: showGreeting ? FlexFit.loose : FlexFit.tight,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              for (final entry
-                                  in _destinations.asMap().entries) ...[
-                                _WideNavChip(
-                                  label: entry.value.label,
-                                  icon: _buildDestinationIcon(
-                                    index: entry.key,
-                                    selected: _selectedIndex == entry.key,
-                                    accountPhotoUrl: accountPhotoUrl,
-                                  ),
-                                  selected: _selectedIndex == entry.key,
-                                  onTap: () =>
-                                      _onDestinationSelected(entry.key),
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final showGreeting = constraints.maxWidth >= 1060;
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minWidth: constraints.maxWidth,
                                 ),
-                                const SizedBox(width: 6),
-                              ],
-                              IconButton(
-                                tooltip: 'Price book',
-                                onPressed: _openPriceBookPage,
-                                icon: const Icon(Icons.price_check_outlined),
+                                child: Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 220,
+                                      child: Text(
+                                        'Expense tracker',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              color: colors.primary,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                    ),
+                                    SizedBox(
+                                      width: showGreeting ? 360 : 24,
+                                      child: showGreeting
+                                          ? Center(
+                                              child: Text(
+                                                _wideGreeting,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: colors
+                                                          .onSurfaceVariant,
+                                                    ),
+                                              ),
+                                            )
+                                          : null,
+                                    ),
+                                    for (final entry
+                                        in _destinations.asMap().entries) ...[
+                                      _WideNavChip(
+                                        label: entry.value.label,
+                                        selected: _selectedIndex == entry.key,
+                                        onTap: () =>
+                                            _onDestinationSelected(entry.key),
+                                      ),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    IconButton(
+                                      tooltip: 'Search',
+                                      onPressed: () {},
+                                      icon: const Icon(Icons.search),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Notifications',
+                                      onPressed: () {},
+                                      icon: const Icon(
+                                        Icons.notifications_none_outlined,
+                                      ),
+                                    ),
+                                    if (_showAddExpenseButton)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 12,
+                                        ),
+                                        child: FilledButton.icon(
+                                          onPressed: _openAddExpense,
+                                          icon: const Icon(Icons.add),
+                                          label: const Text('Add expense'),
+                                          style: FilledButton.styleFrom(
+                                            minimumSize: const Size(146, 40),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                              IconButton(
-                                tooltip: 'Recurring',
-                                onPressed: _openRecurringPage,
-                                icon: const Icon(Icons.event_repeat_outlined),
-                              ),
-                              if (_showAddExpenseButton)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 6),
-                                  child: FilledButton.icon(
-                                    onPressed: _openAddExpense,
-                                    icon: const Icon(Icons.add),
-                                    label: const Text('Add expense'),
+                            );
+                          },
+                        ),
+                      ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 220,
+                              decoration: BoxDecoration(
+                                color: colors.surface,
+                                border: Border(
+                                  right: BorderSide(
+                                    color: colors.outlineVariant,
                                   ),
                                 ),
-                            ],
-                          ),
+                              ),
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                24,
+                                16,
+                                16,
+                              ),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: SingleChildScrollView(
+                                      child: Column(
+                                        children: [
+                                          _SideShortcutTile(
+                                            label: 'Overview',
+                                            icon: Icons.dashboard_outlined,
+                                            selected: _selectedIndex == 0,
+                                            onTap: () =>
+                                                _onDestinationSelected(0),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          for (final action in shortcuts.take(
+                                            3,
+                                          ))
+                                            _SideShortcutTile(
+                                              label: action.label,
+                                              icon: action.icon,
+                                              onTap: action.onTap,
+                                            ),
+                                          const Divider(height: 24),
+                                          for (final action
+                                              in shortcuts.skip(3).take(4))
+                                            _SideShortcutTile(
+                                              label: action.label,
+                                              icon: action.icon,
+                                              onTap: action.onTap,
+                                            ),
+                                          const Divider(height: 24),
+                                          for (final action in shortcuts.skip(
+                                            7,
+                                          ))
+                                            _SideShortcutTile(
+                                              label: action.label,
+                                              icon: action.icon,
+                                              onTap: action.onTap,
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: IndexedStack(
+                                index: _selectedIndex,
+                                children: _destinations
+                                    .asMap()
+                                    .entries
+                                    .map(
+                                      (entry) => _pageForDestination(
+                                        entry.value,
+                                        entry.key,
+                                      ),
+                                    )
+                                    .toList(growable: false),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  );
-                },
+                  ),
+                ),
               ),
             ),
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 220,
-                    decoration: BoxDecoration(
-                      color: colors.surface,
-                      border: Border(
-                        right: BorderSide(color: colors.outlineVariant),
-                      ),
-                    ),
-                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Column(
-                              children: [
-                                _SideShortcutTile(
-                                  label: 'Overview',
-                                  icon: Icons.dashboard_outlined,
-                                  selected: _selectedIndex == 0,
-                                  onTap: () => _onDestinationSelected(0),
-                                ),
-                                const SizedBox(height: 8),
-                                for (final action in shortcuts.take(3))
-                                  _SideShortcutTile(
-                                    label: action.label,
-                                    icon: action.icon,
-                                    onTap: action.onTap,
-                                  ),
-                                const Divider(height: 24),
-                                for (final action in shortcuts.skip(3).take(4))
-                                  _SideShortcutTile(
-                                    label: action.label,
-                                    icon: action.icon,
-                                    onTap: action.onTap,
-                                  ),
-                                const Divider(height: 24),
-                                for (final action in shortcuts.skip(7))
-                                  _SideShortcutTile(
-                                    label: action.label,
-                                    icon: action.icon,
-                                    onTap: action.onTap,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          _widePageSubtitle,
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: colors.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: IndexedStack(
-                      index: _selectedIndex,
-                      children: _destinations
-                          .asMap()
-                          .entries
-                          .map(
-                            (entry) =>
-                                _pageForDestination(entry.value, entry.key),
-                          )
-                          .toList(growable: false),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -905,6 +968,15 @@ class _HomeShellPageState extends State<HomeShellPage>
 
   Widget _buildActionFab({bool compact = false}) {
     final actions = _quickActions();
+
+    if (compact) {
+      return FloatingActionButton(
+        heroTag: 'add-expense-action',
+        tooltip: 'Add expense',
+        onPressed: () => _openAddExpense(),
+        child: const Icon(Icons.add),
+      );
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1086,6 +1158,7 @@ class _HomeShellPageState extends State<HomeShellPage>
     ];
   }
 
+  // ignore: unused_element
   String get _widePageSubtitle {
     switch (_destinations[_selectedIndex].label) {
       case 'Home':
@@ -1203,13 +1276,11 @@ class _QuickActionButton extends StatelessWidget {
 class _WideNavChip extends StatelessWidget {
   const _WideNavChip({
     required this.label,
-    required this.icon,
     required this.selected,
     required this.onTap,
   });
 
   final String label;
-  final Widget icon;
   final bool selected;
   final VoidCallback onTap;
 
@@ -1225,26 +1296,13 @@ class _WideNavChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconTheme(
-                data: IconThemeData(
-                  size: 20,
-                  color: selected ? colors.primary : colors.onSurfaceVariant,
-                ),
-                child: icon,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: selected ? colors.primary : colors.onSurfaceVariant,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: selected ? colors.primary : colors.onSurface,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+            ),
           ),
         ),
       ),

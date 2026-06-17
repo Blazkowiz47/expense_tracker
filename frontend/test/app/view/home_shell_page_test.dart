@@ -32,18 +32,16 @@ void main() {
       nav.destinations.whereType<NavigationDestination>().map((d) => d.label),
       ['Home', 'Family', 'Activity', 'Account'],
     );
-    expect(find.byType(FloatingActionButton), findsNWidgets(2));
-    expect(find.byTooltip('Quick actions'), findsOneWidget);
-    expect(find.text('Overview'), findsWidgets);
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.byTooltip('Add expense'), findsOneWidget);
+    expect(find.text('Expense tracker'), findsWidgets);
     expect(find.text('Home'), findsWidgets);
-    expect(find.text('Needs attention'), findsWidgets);
     await tester.scrollUntilVisible(
-      find.text('Cashflow'),
+      find.text('Needs attention'),
       500,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('Cashflow'), findsWidgets);
-    expect(find.text('Budget focus'), findsWidgets);
+    expect(find.text('Needs attention'), findsWidgets);
     expect(find.text('Activity'), findsWidgets);
     expect(find.text('Account'), findsWidgets);
 
@@ -51,37 +49,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(FloatingActionButton), findsNothing);
-  });
-
-  testWidgets('mobile add action expands into quick actions', (tester) async {
-    await pumpShell(tester, size: const Size(430, 900));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Quick actions'));
-    await tester.pumpAndSettle();
-
-    expect(find.byTooltip('Close quick actions'), findsOneWidget);
-    expect(find.text('Groceries'), findsOneWidget);
-    expect(find.text('Scan bill'), findsOneWidget);
-    expect(find.text('Friend balances'), findsOneWidget);
-    expect(find.text('Friend'), findsNothing);
-    expect(find.text('Group'), findsNothing);
-  });
-
-  testWidgets('home scan bill asks for household or personal target', (
-    tester,
-  ) async {
-    await pumpShell(tester, size: const Size(430, 900));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Quick actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Scan bill'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Where should this bill go?'), findsOneWidget);
-    expect(find.text('Household bill'), findsOneWidget);
-    expect(find.text('Personal bill'), findsOneWidget);
   });
 
   testWidgets('desktop shell shows navigation rail', (tester) async {

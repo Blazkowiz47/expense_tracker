@@ -38,8 +38,13 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Needs attention'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Needs attention'), findsWidgets);
     expect(find.text('2 items'), findsOneWidget);
     expect(find.text('Confirm rent'), findsOneWidget);
@@ -81,8 +86,13 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
+    await tester.scrollUntilVisible(
+      find.text('Confirm rent'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.ensureVisible(find.text('Confirm rent'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Confirm rent'));
