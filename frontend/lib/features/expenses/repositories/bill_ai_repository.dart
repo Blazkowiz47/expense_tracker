@@ -236,7 +236,7 @@ class BillAiRepository {
     }
     final job = jsonDecode(response.body) as Map<String, dynamic>;
     final jobId = job['id'] as String;
-    for (var i = 0; i < 30; i++) {
+    for (var i = 0; i < 120; i++) {
       await Future<void>.delayed(const Duration(seconds: 1));
       final poll = await _client.get(
         Uri.parse('${ApiConfig.baseUrl}/api/v1/bills/$jobId'),
@@ -260,6 +260,6 @@ class BillAiRepository {
         throw Exception(payload['error'] ?? 'Bill extraction failed');
       }
     }
-    throw TimeoutException('Bill extraction timed out.');
+    throw TimeoutException('Bill extraction timed out after 120 seconds.');
   }
 }

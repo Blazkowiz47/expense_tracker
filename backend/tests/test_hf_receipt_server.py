@@ -2,7 +2,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.hf_receipt_server import create_hf_receipt_app
+from app.hf_receipt_server import (
+    HuggingFaceGemmaReceiptExtractor,
+    create_hf_receipt_app,
+    parse_model_json,
+)
 
 
 class FakeReceiptExtractor:
@@ -83,3 +87,35 @@ def test_hf_receipt_sidecar_rejects_missing_file():
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "INVALID_FILE"
+
+
+def test_hf_receipt_parser_unwraps_processor_role_content_response():
+    class WrappedResponseProcessor:
+        def parse_response(self, _decoded: str):
+            return {
+                "role": "assistant",
+                "content": (
+                    '{"merchant":"REMA 1000","date":"2026-06-17",'
+                    '"amount":52.6,"currency":"NOK","category":"Groceries",'
+                    '"notes":"","lineItems":[],"confidence":0.8,"warnings":[]}'
+                ),
+            }
+
+    parsed = HuggingFaceGemmaReceiptExtractor()._parse_response(
+        WrappedResponseProcessor(),
+        "ignored",
+    )
+
+    assert parsed["merchant"] == "REMA 1000"
+    assert parsed["amount"] == 52.6
+    assert parsed["currency"] == "NOK"
+
+
+def test_hf_receipt_parser_tolerates_model_trailing_commas():
+    parsed = parse_model_json(
+        '{"merchant":"REMA 1000","lineItems":[{"itemName":"Brownie","unitPrice":16.,}],}'
+    )
+
+    assert parsed["merchant"] == "REMA 1000"
+    assert parsed["lineItems"][0]["itemName"] == "Brownie"
+    assert parsed["lineItems"][0]["unitPrice"] == 16.0

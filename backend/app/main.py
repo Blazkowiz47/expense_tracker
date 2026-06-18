@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import shutil
+import time
 import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -44,6 +45,17 @@ from app.ai_prompts import load_prompt
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_DIR = ROOT / "data"
 ph = PasswordHasher()
+
+
+def ai_terminal_log(event: str, **fields: Any) -> None:
+    if os.getenv("AI_LOG_INTERACTIONS", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return
+    payload = {
+        "event": event,
+        "at": iso(now()),
+        **fields,
+    }
+    print("[ai] " + json.dumps(payload, default=str, ensure_ascii=False), flush=True)
 
 
 def now() -> datetime:
@@ -335,17 +347,48 @@ class LocalGemmaBillExtractor:
 
     async def extract(self, file_path: Path, original_name: str) -> dict[str, Any]:
         if self.base_url:
+            payload = {"path": str(file_path), "fileName": original_name, "model": self.model}
+            started = time.perf_counter()
+            timeout = float(os.getenv("AI_RECEIPT_TIMEOUT_SECONDS", "180"))
+            ai_terminal_log(
+                "receipt.extract.request",
+                provider="huggingface-sidecar",
+                baseUrl=self.base_url,
+                timeoutSeconds=timeout,
+                payload=payload,
+            )
             try:
-                async with httpx.AsyncClient(timeout=60) as client:
+                async with httpx.AsyncClient(timeout=timeout) as client:
                     response = await client.post(
                         self.base_url.rstrip("/") + "/api/v1/extract-bill",
-                        json={"path": str(file_path), "fileName": original_name, "model": self.model},
+                        json=payload,
+                    )
+                    elapsed_ms = round((time.perf_counter() - started) * 1000)
+                    ai_terminal_log(
+                        "receipt.extract.http_response",
+                        provider="huggingface-sidecar",
+                        statusCode=response.status_code,
+                        elapsedMs=elapsed_ms,
+                        body=response.text,
                     )
                     response.raise_for_status()
                     data = response.json()
                     if isinstance(data, dict):
-                        return self._normalize(data, original_name, [])
+                        normalized = self._normalize(data, original_name, [])
+                        ai_terminal_log(
+                            "receipt.extract.normalized",
+                            provider="huggingface-sidecar",
+                            elapsedMs=round((time.perf_counter() - started) * 1000),
+                            result=normalized,
+                        )
+                        return normalized
             except Exception as exc:  # pragma: no cover - exercised through fake provider tests
+                ai_terminal_log(
+                    "receipt.extract.error",
+                    provider="huggingface-sidecar",
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    error=repr(exc),
+                )
                 return self._fallback(original_name, [f"Local Gemma provider unavailable: {exc}"])
         return self._fallback(original_name, ["Local Gemma provider is not configured."])
 
@@ -442,22 +485,54 @@ class LocalGemmaBillExtractor:
     ) -> dict[str, Any]:
         if not self.base_url:
             return with_ai_warning(fallback, "Local Gemma provider is not configured.")
+        payload = {
+            "task": task,
+            "schemaVersion": self.schema_version,
+            "model": self.model,
+            "instructions": instructions,
+            "context": context,
+        }
+        started = time.perf_counter()
+        ai_terminal_log(
+            "structured.request",
+            provider="huggingface-sidecar",
+            baseUrl=self.base_url,
+            timeoutSeconds=90,
+            payload=payload,
+        )
         try:
             async with httpx.AsyncClient(timeout=90) as client:
                 response = await client.post(
                     self.base_url.rstrip("/") + "/api/v1/finance-ai",
-                    json={
-                        "task": task,
-                        "schemaVersion": self.schema_version,
-                        "model": self.model,
-                        "instructions": instructions,
-                        "context": context,
-                    },
+                    json=payload,
+                )
+                ai_terminal_log(
+                    "structured.http_response",
+                    provider="huggingface-sidecar",
+                    task=task,
+                    statusCode=response.status_code,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    body=response.text,
                 )
                 response.raise_for_status()
                 data = response.json()
-                return normalize_structured_ai_response(task, data, fallback)
+                normalized = normalize_structured_ai_response(task, data, fallback)
+                ai_terminal_log(
+                    "structured.normalized",
+                    provider="huggingface-sidecar",
+                    task=task,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    result=normalized,
+                )
+                return normalized
         except Exception as exc:  # pragma: no cover - exercised through fake provider tests
+            ai_terminal_log(
+                "structured.error",
+                provider="huggingface-sidecar",
+                task=task,
+                elapsedMs=round((time.perf_counter() - started) * 1000),
+                error=repr(exc),
+            )
             return with_ai_warning(fallback, f"Local Gemma provider unavailable: {exc}")
 
 
@@ -468,8 +543,32 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
     async def extract(self, file_path: Path, original_name: str) -> dict[str, Any]:
         if not self.base_url:
             return self._fallback(original_name, ["Local llama-server provider is not configured."])
+        system_prompt = load_prompt("receipt_extraction_system.md")
+        user_prompt = load_prompt("receipt_extraction_user.md")
+        started = time.perf_counter()
         try:
             data_url = self._file_data_url(file_path, original_name)
+            log_payload = {
+                "model": self.model,
+                "temperature": 0,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": f"[redacted {len(data_url)} chars data URL]"}},
+                            {"type": "text", "text": user_prompt},
+                        ],
+                    },
+                ],
+            }
+            ai_terminal_log(
+                "receipt.extract.request",
+                provider="llama-server",
+                baseUrl=self.base_url,
+                timeoutSeconds=120,
+                payload=log_payload,
+            )
             async with httpx.AsyncClient(timeout=120) as client:
                 response = await client.post(
                     self.base_url.rstrip("/") + "/v1/chat/completions",
@@ -479,7 +578,7 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
                         "messages": [
                             {
                                 "role": "system",
-                                "content": load_prompt("receipt_extraction_system.md"),
+                                "content": system_prompt,
                             },
                             {
                                 "role": "user",
@@ -487,17 +586,43 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
                                     {"type": "image_url", "image_url": {"url": data_url}},
                                     {
                                         "type": "text",
-                                        "text": load_prompt("receipt_extraction_user.md"),
+                                        "text": user_prompt,
                                     },
                                 ],
                             },
                         ],
                     },
                 )
+                ai_terminal_log(
+                    "receipt.extract.http_response",
+                    provider="llama-server",
+                    statusCode=response.status_code,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    body=response.text,
+                )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
-                return self._normalize(parse_model_json(content), original_name, [])
+                ai_terminal_log(
+                    "receipt.extract.raw_model_text",
+                    provider="llama-server",
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    content=content,
+                )
+                normalized = self._normalize(parse_model_json(content), original_name, [])
+                ai_terminal_log(
+                    "receipt.extract.normalized",
+                    provider="llama-server",
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    result=normalized,
+                )
+                return normalized
         except Exception as exc:  # pragma: no cover - network path is covered by integration tests
+            ai_terminal_log(
+                "receipt.extract.error",
+                provider="llama-server",
+                elapsedMs=round((time.perf_counter() - started) * 1000),
+                error=repr(exc),
+            )
             return self._fallback(original_name, [f"Local llama-server provider unavailable: {exc}"])
 
     def _file_data_url(self, file_path: Path, original_name: str) -> str:
@@ -514,32 +639,67 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
     ) -> dict[str, Any]:
         if not self.base_url:
             return with_ai_warning(fallback, "Local llama-server provider is not configured.")
+        system_prompt = load_prompt("structured_json_system.md").format(
+            schema_version=self.schema_version,
+            instructions=instructions,
+        )
+        payload = {
+            "model": self.model,
+            "temperature": 0.2,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(context, default=str)},
+            ],
+        }
+        started = time.perf_counter()
+        ai_terminal_log(
+            "structured.request",
+            provider="llama-server",
+            task=task,
+            baseUrl=self.base_url,
+            timeoutSeconds=90,
+            payload=payload,
+        )
         try:
             async with httpx.AsyncClient(timeout=90) as client:
                 response = await client.post(
                     self.base_url.rstrip("/") + "/v1/chat/completions",
-                    json={
-                        "model": self.model,
-                        "temperature": 0.2,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": load_prompt("structured_json_system.md").format(
-                                    schema_version=self.schema_version,
-                                    instructions=instructions,
-                                ),
-                            },
-                            {
-                                "role": "user",
-                                "content": json.dumps(context, default=str),
-                            },
-                        ],
-                    },
+                    json=payload,
+                )
+                ai_terminal_log(
+                    "structured.http_response",
+                    provider="llama-server",
+                    task=task,
+                    statusCode=response.status_code,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    body=response.text,
                 )
                 response.raise_for_status()
                 content = response.json()["choices"][0]["message"]["content"]
-                return normalize_structured_ai_response(task, parse_model_json(content), fallback)
+                ai_terminal_log(
+                    "structured.raw_model_text",
+                    provider="llama-server",
+                    task=task,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    content=content,
+                )
+                normalized = normalize_structured_ai_response(task, parse_model_json(content), fallback)
+                ai_terminal_log(
+                    "structured.normalized",
+                    provider="llama-server",
+                    task=task,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    result=normalized,
+                )
+                return normalized
         except Exception as exc:  # pragma: no cover - network path is covered by integration tests
+            ai_terminal_log(
+                "structured.error",
+                provider="llama-server",
+                task=task,
+                elapsedMs=round((time.perf_counter() - started) * 1000),
+                error=repr(exc),
+            )
             return with_ai_warning(fallback, f"Local llama-server provider unavailable: {exc}")
 
 
@@ -550,6 +710,8 @@ def parse_model_json(content: Any) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text).strip()
+    text = re.sub(r",(\s*[}\]])", r"\1", text)
+    text = re.sub(r"(:\s*-?\d+)\.(?=\s*[,}\]])", r"\1.0", text)
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
@@ -5798,14 +5960,33 @@ async def run_bill_extraction(app: FastAPI, job_id: str) -> None:
     if not job:
         return
     app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"status": "processing", "updatedAt": now()}})
+    started = time.perf_counter()
+    ai_terminal_log(
+        "bill_job.processing",
+        jobId=job_id,
+        fileUrl=job.get("fileUrl"),
+        fileName=job.get("fileName"),
+    )
     try:
         file_path = upload_path_from_url(app, job["fileUrl"])
         result = await app.state.ai_provider.extract(file_path, job.get("fileName") or "bill")
         if isinstance(result, dict) and result.get("task") != "receipt_extraction":
             result = LocalGemmaBillExtractor(None, "")._normalize(result, job.get("fileName") or "bill", [])
         app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"status": "completed", "result": result, "updatedAt": now()}})
+        ai_terminal_log(
+            "bill_job.completed",
+            jobId=job_id,
+            elapsedMs=round((time.perf_counter() - started) * 1000),
+            result=result,
+        )
     except Exception as exc:
         app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"status": "failed", "error": str(exc), "updatedAt": now()}})
+        ai_terminal_log(
+            "bill_job.failed",
+            jobId=job_id,
+            elapsedMs=round((time.perf_counter() - started) * 1000),
+            error=repr(exc),
+        )
 
 
 app = create_app()
