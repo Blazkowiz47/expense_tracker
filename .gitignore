@@ -2,8 +2,10 @@
 .env
 .env.*
 *.local
+*credentials*.env
 
 # Firebase / GCP secrets and diagnostics
+.firebase/
 firebase-debug.log
 firebase-debug.*.log
 *serviceAccount*.json
