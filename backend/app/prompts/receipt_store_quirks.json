@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "rema-1000-app-registration-line",
+      "description": "REMA 1000 prints a customer/app registration id line that is not a purchased item.",
+      "merchantPatterns": [
+        "\\brema\\s*1000\\b"
+      ],
+      "lineItemOriginalTextPatterns": [
+        "\\bREMA-appen\\s+er\\s+registrert\\b"
+      ],
+      "action": "drop_line_item",
+      "warning": "Ignored REMA 1000 app registration line."
+    }
+  ]
+}

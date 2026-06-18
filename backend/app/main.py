@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo import ASCENDING, DESCENDING, MongoClient
 
-from app.ai_prompts import load_prompt
+from app.ai_prompts import load_prompt, load_prompt_json
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -210,6 +210,50 @@ def parse_optional_float(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
+def receipt_reference_date(original_name: str) -> datetime | None:
+    match = re.search(r"(20\d{2})[-_. ](\d{2})[-_. ](\d{2})", original_name or "")
+    if not match:
+        return None
+    try:
+        return datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)), tzinfo=UTC)
+    except ValueError:
+        return None
+
+
+def normalize_receipt_date(raw_date: Any, original_name: str, warnings: list[str]) -> str:
+    text = str(raw_date or "").strip()
+    if not text:
+        return ""
+    iso_text = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(iso_text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return text if "T" in text else parsed.date().isoformat()
+    except ValueError:
+        pass
+
+    parsed_date: datetime | None = None
+    for pattern in ("%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            parsed_date = datetime.strptime(text, pattern).replace(tzinfo=UTC)
+            break
+        except ValueError:
+            continue
+    if parsed_date is None:
+        warnings.append("Receipt date could not be parsed; date field stays editable.")
+        return ""
+
+    reference = receipt_reference_date(original_name) or now()
+    corrected = parsed_date
+    if parsed_date.year < reference.year - 1:
+        candidate = parsed_date.replace(year=reference.year)
+        if abs((candidate.date() - reference.date()).days) <= 45 and candidate.date() <= now().date() + timedelta(days=1):
+            corrected = candidate
+            warnings.append(f"Adjusted receipt year from {parsed_date.year} to {candidate.year}.")
+    return corrected.date().isoformat()
+
+
 def normalized_text(value: Any) -> str:
     text = str(value or "").strip().lower()
     text = unicodedata.normalize("NFKD", text)
@@ -338,6 +382,50 @@ def normalize_receipt_line_items(raw_items: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def receipt_store_quirk_rules() -> list[dict[str, Any]]:
+    data = load_prompt_json("receipt_store_quirks.json")
+    rules = data.get("rules", [])
+    return rules if isinstance(rules, list) else []
+
+
+def text_matches_any_pattern(text: str, patterns: Any) -> bool:
+    if not isinstance(patterns, list):
+        return False
+    for pattern in patterns:
+        try:
+            if re.search(str(pattern), text, re.IGNORECASE):
+                return True
+        except re.error:
+            continue
+    return False
+
+
+def apply_receipt_store_quirks(merchant: str, line_items: list[dict[str, Any]], warnings: list[str]) -> list[dict[str, Any]]:
+    filtered = line_items
+    for rule in receipt_store_quirk_rules():
+        if not isinstance(rule, dict) or rule.get("action") != "drop_line_item":
+            continue
+        if not text_matches_any_pattern(merchant, rule.get("merchantPatterns")):
+            continue
+        kept: list[dict[str, Any]] = []
+        dropped = False
+        for item in filtered:
+            searchable = " ".join(
+                str(item.get(key) or "")
+                for key in ("originalText", "itemName", "normalizedName")
+            )
+            if text_matches_any_pattern(searchable, rule.get("lineItemOriginalTextPatterns")):
+                dropped = True
+                continue
+            kept.append(item)
+        if dropped:
+            warning = str(rule.get("warning") or "").strip()
+            if warning and warning not in warnings:
+                warnings.append(warning)
+        filtered = kept
+    return filtered
+
+
 class LocalGemmaBillExtractor:
     schema_version = "finance-ai-v1"
 
@@ -417,16 +505,20 @@ class LocalGemmaBillExtractor:
         except (TypeError, ValueError):
             amount = 0
             warnings.append("Amount could not be parsed.")
-        line_items = normalize_receipt_line_items(raw.get("lineItems"))
-        date = str(raw.get("date") or iso(now()))
         merchant = str(raw.get("merchant") or Path(original_name).stem or "Uploaded bill").strip()
+        line_items = apply_receipt_store_quirks(
+            merchant,
+            normalize_receipt_line_items(raw.get("lineItems")),
+            warnings,
+        )
+        date = normalize_receipt_date(raw.get("date"), original_name, warnings)
         currency = str(raw.get("currency") or "INR")
         category = str(raw.get("category") or "Personal")
         notes = str(raw.get("notes") or "")
         result = {
             "task": "receipt_extraction",
             "schemaVersion": self.schema_version,
-            "merchant": str(raw.get("merchant") or Path(original_name).stem or "Uploaded bill").strip(),
+            "merchant": merchant,
             "date": date,
             "amount": amount,
             "currency": currency,

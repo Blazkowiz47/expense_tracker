@@ -1,6 +1,6 @@
 import pytest
 
-from app.ai_prompts import load_prompt
+from app.ai_prompts import load_prompt, load_prompt_json
 from app.hf_receipt_server import SYSTEM_PROMPT, USER_PROMPT
 
 
@@ -61,6 +61,22 @@ def test_receipt_prompt_declares_required_schema_keys():
         "confidence",
     ]:
         assert f'"{key}"' in prompt
+
+
+def test_receipt_prompt_mentions_known_store_quirks():
+    prompt = load_prompt("receipt_extraction_user.md")
+
+    assert "REMA-appen er registrert" in prompt
+    assert "loyalty/app/customer registration" in prompt
+
+
+def test_receipt_store_quirks_file_declares_rema_registration_rule():
+    quirks = load_prompt_json("receipt_store_quirks.json")
+    rules = quirks["rules"]
+
+    rema_rule = next(rule for rule in rules if rule["id"] == "rema-1000-app-registration-line")
+    assert rema_rule["action"] == "drop_line_item"
+    assert "REMA-appen" in rema_rule["lineItemOriginalTextPatterns"][0]
 
 
 def test_structured_json_prompt_has_shared_contract_placeholders():

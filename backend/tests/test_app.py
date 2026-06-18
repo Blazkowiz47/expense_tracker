@@ -7,6 +7,7 @@ import mongomock
 from fastapi.testclient import TestClient
 
 from app.main import (
+    LocalGemmaBillExtractor,
     build_ai_financial_context,
     create_app,
     current_month,
@@ -1130,6 +1131,45 @@ def test_parse_model_json_handles_wrapped_json():
 
     parsed = parse_model_json('Result: {"merchant": "Bakery", "amount": "8.5"}')
     assert parsed["merchant"] == "Bakery"
+
+
+def test_receipt_normalization_applies_date_and_store_quirks():
+    result = LocalGemmaBillExtractor(None, "")._normalize(
+        {
+            "merchant": "REMA 1000",
+            "date": "17.06.2016",
+            "amount": 52.6,
+            "currency": "NOK",
+            "category": "Groceries",
+            "lineItems": [
+                {
+                    "originalText": "SOFT BROWNIE 16 52,60",
+                    "itemName": "Soft Brownie",
+                    "normalizedName": "soft brownie",
+                    "quantity": 1,
+                    "unit": "",
+                    "lineTotal": 52.6,
+                    "confidence": 0.9,
+                },
+                {
+                    "originalText": "REMA-appen er registrert 17498360",
+                    "itemName": "",
+                    "normalizedName": "",
+                    "confidence": 0.5,
+                },
+            ],
+            "confidence": 0.7,
+            "warnings": [],
+        },
+        "scaled_WhatsApp_Image_2026-06-17_at_19.42.15.jpeg",
+        [],
+    )
+
+    assert result["date"] == "2026-06-17"
+    assert result["expenseDraft"]["date"] == "2026-06-17"
+    assert [item["itemName"] for item in result["lineItems"]] == ["Soft Brownie"]
+    assert "Adjusted receipt year from 2016 to 2026." in result["warnings"]
+    assert "Ignored REMA 1000 app registration line." in result["warnings"]
 
 
 def test_monthly_plan_returns_budget_actuals_and_remaining(tmp_path):

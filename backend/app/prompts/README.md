@@ -4,4 +4,5 @@ Prompt files used by backend AI providers live here so they can be edited and te
 
 - `receipt_extraction_system.md`: system prompt for receipt/bill image extraction.
 - `receipt_extraction_user.md`: user prompt and JSON schema contract for receipt/bill extraction.
+- `receipt_store_quirks.json`: merchant/store-specific receipt cleanup rules gathered from user feedback.
 - `structured_json_system.md`: reusable system prompt for structured finance AI responses.
