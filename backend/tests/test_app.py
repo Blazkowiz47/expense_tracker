@@ -1088,6 +1088,7 @@ def test_receipt_items_can_be_saved_with_personal_expense(tmp_path):
             "currency": "NOK",
             "category": "Groceries",
             "description": "Kiwi",
+            "tags": ["Grocery", "weekly", "weekly"],
             "date": "2026-06-15T12:00:00Z",
             "receiptItems": [
                 {
@@ -1097,6 +1098,7 @@ def test_receipt_items_can_be_saved_with_personal_expense(tmp_path):
                     "quantity": 1,
                     "unit": "kg",
                     "lineTotal": 19,
+                    "tags": ["fruit", "staple"],
                 },
                 {
                     "originalText": "Melk 1L",
@@ -1110,9 +1112,13 @@ def test_receipt_items_can_be_saved_with_personal_expense(tmp_path):
         },
     )
     assert created.status_code == 201, created.text
+    assert created.json()["tags"] == ["grocery", "weekly"]
 
     comparison = client.get("/api/v1/receipt-items/compare?q=banana&currency=NOK", headers=headers)
     assert comparison.status_code == 200, comparison.text
+    items = client.get("/api/v1/receipt-items?q=banana&currency=NOK", headers=headers)
+    assert items.status_code == 200, items.text
+    assert items.json()["items"][0]["tags"] == ["fruit", "staple"]
     payload = comparison.json()
     assert payload["normalizedName"] == "banana"
     assert payload["items"][0]["merchant"] == "Kiwi"

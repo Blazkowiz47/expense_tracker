@@ -387,6 +387,7 @@ def normalize_receipt_line_item(raw: Any) -> dict[str, Any] | None:
         "discount": discount,
         "unitPriceNormalized": normalized_unit_price,
         "category": str(raw.get("category") or "").strip(),
+        "tags": normalize_tags(raw.get("tags")),
         "confidence": max(0.0, min(confidence, 1.0)),
     }
 
@@ -1565,6 +1566,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 "currency": card_currency,
                 "category": str(body.get("category") or "Personal").strip() or "Personal",
                 "description": str(body.get("description") or card.get("name") or "Credit card spend").strip(),
+                "tags": body.get("tags"),
                 "date": str(body.get("date") or iso(now())),
                 "paymentMethod": "card",
                 "sourceType": "credit_card_spend",
@@ -3582,6 +3584,28 @@ def is_loan_payment_expense(expense: dict[str, Any]) -> bool:
     )
 
 
+def normalize_tags(raw: Any, limit: int = 24) -> list[str]:
+    values: list[Any]
+    if isinstance(raw, list):
+        values = raw
+    elif isinstance(raw, str):
+        values = re.split(r"[,;#\n]", raw)
+    else:
+        values = []
+    tags: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        tag = re.sub(r"\s+", " ", str(value or "").strip().lower())
+        tag = tag.removeprefix("#").strip()
+        if not tag or tag in seen:
+            continue
+        tags.append(tag)
+        seen.add(tag)
+        if len(tags) >= limit:
+            break
+    return tags
+
+
 def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None, created_at: datetime | None = None) -> dict[str, Any]:
     amount = positive_number(body.get("amount"), "amount")
     current = now()
@@ -3593,6 +3617,7 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "category": str(body.get("category") or "Personal").strip() or "Personal",
         "description": str(body.get("description") or "").strip(),
         "paymentMethod": str(body.get("paymentMethod") or "cash").strip() or "cash",
+        "tags": normalize_tags(body.get("tags")),
         "date": parse_dt(str(body.get("date") or iso(current))),
         "createdAt": created_at or current,
         "updatedAt": current,
@@ -3626,6 +3651,7 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "category",
             "description",
             "paymentMethod",
+            "tags",
             "date",
             "sourceType",
             "sourceLoanId",
@@ -3763,6 +3789,7 @@ def receipt_item_out(doc: dict[str, Any]) -> dict[str, Any]:
                 "discount",
                 "unitPriceNormalized",
                 "category",
+                "tags",
                 "confidence",
                 "createdAt",
                 "updatedAt",

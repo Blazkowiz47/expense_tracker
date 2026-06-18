@@ -229,6 +229,18 @@ class _ReceiptLineItemEditor extends StatelessWidget {
                   );
                 },
               ),
+              const SizedBox(height: 8),
+              TextFormField(
+                key: ValueKey('receipt-tags-$index'),
+                initialValue: item.tags.join(', '),
+                decoration: const InputDecoration(
+                  labelText: 'Tags',
+                  hintText: 'chocolate, guilty pleasure',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) =>
+                    onChanged(item.copyWith(tags: _parseTags(value))),
+              ),
             ],
           ),
         ),
@@ -250,4 +262,16 @@ double? _parseNumber(String value) {
     return null;
   }
   return double.tryParse(cleaned);
+}
+
+List<String> _parseTags(String value) {
+  final tags = <String>[];
+  final seen = <String>{};
+  for (final raw in value.split(RegExp(r'[,;#\n]'))) {
+    final tag = raw.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    if (tag.isEmpty || seen.contains(tag)) continue;
+    tags.add(tag);
+    seen.add(tag);
+  }
+  return tags;
 }

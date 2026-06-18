@@ -30,6 +30,7 @@ void main() {
         'description': 'A nice meal with friends',
         'updatedAt': null,
         'paymentMethod': 'Cash',
+        'tags': ['guilty pleasure', 'chocolate'],
         'isSynced': true,
         'deleted': false,
       };
@@ -41,6 +42,7 @@ void main() {
       expect(expense.createdAt, DateTime.parse('2024-06-15T12:30:00Z'));
       expect(expense.description, 'A nice meal with friends');
       expect(expense.paymentMethod, 'Cash');
+      expect(expense.tags, ['guilty pleasure', 'chocolate']);
       expect(expense.isSynced, true);
       expect(expense.deleted, false);
     });
@@ -51,6 +53,7 @@ void main() {
         description: 'A nice meal with friends',
         updatedAt: null,
         paymentMethod: 'Cash',
+        tags: const ['restaurant'],
         isSynced: false,
         deleted: false,
       );
@@ -62,6 +65,7 @@ void main() {
       expect(json['core']['category'], 'Food');
       expect(json['description'], 'A nice meal with friends');
       expect(json['paymentMethod'], 'Cash');
+      expect(json['tags'], ['restaurant']);
       expect(json['isSynced'], false);
       expect(json['deleted'], false);
     });

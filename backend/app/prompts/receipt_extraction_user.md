@@ -33,7 +33,9 @@ Rules:
   - "lineTotal"
   - "discount"
   - "category"
+  - "tags"
   - "confidence"
+- "tags" must be an array of short lowercase labels for item-level analysis. Examples: ["chocolate", "guilty pleasure"], ["vegetables"], ["staple"], ["household"]. Use [] when unsure.
 - "normalizedName" should be stable English for comparison across stores and languages:
   - melk, milk, doodh -> milk
   - brod, bread -> bread

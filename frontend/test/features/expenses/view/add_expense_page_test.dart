@@ -89,6 +89,7 @@ class _FakeCreditCardsRepository extends ApiCreditCardsRepository {
     required String category,
     required String description,
     required DateTime date,
+    List<String> tags = const [],
   }) async {
     loggedCardId = cardId;
     loggedAmount = amount;
@@ -159,6 +160,48 @@ void main() {
     expect(repository.createdExpense!.amount, 8000);
     expect(repository.createdExpense!.currency, 'NOK');
     expect(repository.createdExpense!.paymentMethod, 'paid_previously');
+  });
+
+  testWidgets('manual expense saves normalized tags', (tester) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            accountsRepository: _FakeAccountsRepository(),
+            creditCardsRepository: _FakeCreditCardsRepository(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField).first, 'Brownie');
+    await tester.enterText(find.byType(TextField).at(1), '52.60');
+    await tester.enterText(
+      _tagFieldFinder(),
+      'Guilty Pleasure, chocolate, chocolate',
+    );
+    await tester.tap(find.text('Save expense'));
+    await tester.pumpAndSettle();
+
+    expect(repository.createdExpense, isNotNull);
+    expect(repository.createdExpense!.tags, ['guilty pleasure', 'chocolate']);
   });
 
   testWidgets('edit mode updates an existing expense with details', (
@@ -312,6 +355,8 @@ void main() {
       await tester.tap(find.text('Bank transfer'));
       await tester.pumpAndSettle();
 
+      await tester.ensureVisible(find.text('Save expense'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Save expense'));
       await tester.pumpAndSettle();
 
@@ -447,6 +492,12 @@ void main() {
       'DNB savings - DNB',
     );
   });
+}
+
+Finder _tagFieldFinder() {
+  return find.byWidgetPredicate(
+    (widget) => widget is TextField && widget.decoration?.labelText == 'Tags',
+  );
 }
 
 FinancialAccount _account({

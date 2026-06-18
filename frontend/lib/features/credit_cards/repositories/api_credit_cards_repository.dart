@@ -141,6 +141,7 @@ class ApiCreditCardsRepository {
     required String category,
     required String description,
     required DateTime date,
+    List<String> tags = const [],
   }) async {
     final uri = Uri.parse(
       '${ApiConfig.baseUrl}/api/v1/credit-cards/$cardId/spend',
@@ -153,6 +154,7 @@ class ApiCreditCardsRepository {
         'category': category,
         'description': description,
         'date': BackendDateCodec.encodeDate(date),
+        if (tags.isNotEmpty) 'tags': tags,
       }),
     );
     if (response.statusCode != 201) {

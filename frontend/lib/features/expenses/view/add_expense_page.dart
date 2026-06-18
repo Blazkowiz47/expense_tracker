@@ -79,6 +79,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
   final _notesController = TextEditingController();
+  final _tagsController = TextEditingController();
   final _billRepository = BillAiRepository();
   final _picker = ImagePicker();
   late final ApiAccountsRepository _accountsRepository;
@@ -127,6 +128,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       );
       _descriptionController.text = descriptionParts.title;
       _notesController.text = descriptionParts.notes;
+      _tagsController.text = _formatTags(expense.tags);
       _amountController.text = expense.amount.toStringAsFixed(2);
       _expenseDate = expense.createdAt;
       _category = _normalizedCategory(expense.category ?? 'Personal');
@@ -184,6 +186,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     _descriptionController.dispose();
     _amountController.dispose();
     _notesController.dispose();
+    _tagsController.dispose();
     _client?.close();
     super.dispose();
   }
@@ -193,7 +196,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       final results = await Future.wait([
         _accountsRepository.fetchAccounts(),
         _creditCardsRepository.fetchCards(),
-      ]);
+      ]).timeout(const Duration(seconds: 5));
       if (!mounted) return;
       setState(() {
         _accounts = results[0] as List<FinancialAccount>;
@@ -235,6 +238,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     final selectedCard = _selectedCreditCard;
     final selectedAccount = _selectedAccount;
     final selectedDestinationAccount = _selectedDestinationAccount;
+    final tags = _parseTags(_tagsController.text);
     final effectiveCurrency = selectedCard?.currency ?? _currency;
     final effectivePaymentMethod = selectedCard == null
         ? _paymentMethod
@@ -267,6 +271,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       sourcePaymentType: existing?.sourcePaymentType,
       sourcePeriod: existing?.sourcePeriod,
       sourceSetupKey: existing?.sourceSetupKey,
+      tags: tags,
       updatedAt: DateTime.now(),
       isSynced: false,
       deleted: existing?.deleted ?? false,
@@ -290,6 +295,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           category: _category,
           description: _composeDescription(description, notes),
           date: _expenseDate,
+          tags: tags,
         );
         bloc.add(const RefreshExpenses());
       } else if (_editing) {
@@ -320,6 +326,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           _descriptionController.clear();
           _amountController.clear();
           _notesController.clear();
+          _tagsController.clear();
           _billResult = null;
           _receiptItems = const [];
           _billMessage = 'Saved. Ready for the next expense.';
@@ -382,6 +389,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
       setState(() {
         _billResult = result;
         _receiptItems = result.lineItems;
+        if (_tagsController.text.trim().isEmpty) {
+          _tagsController.text = _formatTags(_suggestExpenseTags(result));
+        }
         if (result.dateExtracted) {
           _expenseDate = result.date;
         }
@@ -503,6 +513,35 @@ class _AddExpensePageState extends State<AddExpensePage> {
     }
     return '$description\n$notes';
   }
+
+  List<String> _suggestExpenseTags(BillExtractionResult result) {
+    final tags = <String>[];
+    for (final item in result.lineItems) {
+      tags.addAll(item.tags);
+    }
+    return _normalizeTags(tags);
+  }
+
+  List<String> _parseTags(String value) => _normalizeTags(
+    value
+        .split(RegExp(r'[,;#\n]'))
+        .map((tag) => tag.trim())
+        .where((tag) => tag.isNotEmpty),
+  );
+
+  List<String> _normalizeTags(Iterable<String> values) {
+    final tags = <String>[];
+    final seen = <String>{};
+    for (final value in values) {
+      final tag = value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+      if (tag.isEmpty || seen.contains(tag)) continue;
+      tags.add(tag);
+      seen.add(tag);
+    }
+    return tags;
+  }
+
+  String _formatTags(List<String> tags) => tags.join(', ');
 
   String _normalizedChoice(
     String value,
@@ -796,6 +835,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   _PaymentSourceNotice(message: _paymentSourcesError!),
                 ],
                 const SizedBox(height: 12),
+                TextField(
+                  controller: _tagsController,
+                  decoration: const InputDecoration(
+                    labelText: 'Tags',
+                    hintText: 'guilty pleasure, chocolate, vegetables',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -1017,6 +1065,14 @@ class _AddExpensePageState extends State<AddExpensePage> {
                                 'This will update the selected credit card balance.',
                           ),
                         ),
+                      CupertinoFormRow(
+                        prefix: const Text('Tags'),
+                        child: CupertinoTextField(
+                          controller: _tagsController,
+                          placeholder: 'guilty pleasure, chocolate',
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
                     ],
                   ),
                   TextField(

@@ -74,6 +74,7 @@ void main() {
         createdAt: DateTime(2026, 2, 25, 12, 30),
       ),
       description: 'Lunch',
+      tags: const ['guilty pleasure', 'restaurant'],
     );
 
     when(
@@ -89,6 +90,7 @@ void main() {
           'amount': 120,
           'category': 'Personal',
           'description': 'Lunch',
+          'tags': ['guilty pleasure', 'restaurant'],
           'date': '2026-02-25T12:30:00Z',
           'updatedAt': '2026-02-25T12:30:00Z',
         }),
@@ -99,6 +101,10 @@ void main() {
     await repository.createExpense(expense);
 
     expect(repository.getExpenseById('api-id'), isNotNull);
+    expect(repository.getExpenseById('api-id')!.tags, [
+      'guilty pleasure',
+      'restaurant',
+    ]);
     final body =
         verify(
               () => client.post(
@@ -115,6 +121,7 @@ void main() {
     expect(payload['description'], 'Lunch');
     expect(payload['paymentMethod'], 'cash');
     expect(payload['date'], '2026-02-25T12:30:00.000Z');
+    expect(payload['tags'], ['guilty pleasure', 'restaurant']);
   });
 
   test('updateExpense sends PUT and replaces cached expense', () async {

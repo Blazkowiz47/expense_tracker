@@ -66,6 +66,7 @@ class ExpenseRepository {
               'sourcePeriod': expense.sourcePeriod!.trim(),
             if (expense.sourceSetupKey?.trim().isNotEmpty == true)
               'sourceSetupKey': expense.sourceSetupKey!.trim(),
+            if (expense.tags.isNotEmpty) 'tags': expense.tags,
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )
@@ -117,6 +118,7 @@ class ExpenseRepository {
               'sourcePeriod': expense.sourcePeriod!.trim(),
             if (expense.sourceSetupKey?.trim().isNotEmpty == true)
               'sourceSetupKey': expense.sourceSetupKey!.trim(),
+            'tags': expense.tags,
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
           }),
         )

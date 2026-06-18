@@ -17,6 +17,7 @@ class Expense {
   final String? sourcePaymentType;
   final String? sourcePeriod;
   final String? sourceSetupKey;
+  final List<String> tags;
   final bool isSynced;
   final bool deleted;
 
@@ -33,6 +34,7 @@ class Expense {
     this.sourcePaymentType,
     this.sourcePeriod,
     this.sourceSetupKey,
+    this.tags = const [],
     this.isSynced = true,
     this.deleted = false,
   });
@@ -64,6 +66,7 @@ class Expense {
     final sourcePaymentType = (json['sourcePaymentType'] as String?)?.trim();
     final sourcePeriod = (json['sourcePeriod'] as String?)?.trim();
     final sourceSetupKey = (json['sourceSetupKey'] as String?)?.trim();
+    final tags = _readTags(json['tags']);
     final dateRaw = (json['date'] as String?) ?? '';
     final createdAt = DateTime.tryParse(dateRaw)?.toLocal() ?? DateTime.now();
     final updatedRaw = json['updatedAt'] as String?;
@@ -103,6 +106,7 @@ class Expense {
       sourceSetupKey: sourceSetupKey?.isNotEmpty == true
           ? sourceSetupKey
           : null,
+      tags: tags,
       isSynced: true,
       deleted: false,
     );
@@ -127,6 +131,7 @@ class Expense {
     String? sourcePaymentType,
     String? sourcePeriod,
     String? sourceSetupKey,
+    List<String>? tags,
     bool? isSynced,
     bool? deleted,
   }) {
@@ -145,8 +150,29 @@ class Expense {
       sourcePaymentType: sourcePaymentType ?? this.sourcePaymentType,
       sourcePeriod: sourcePeriod ?? this.sourcePeriod,
       sourceSetupKey: sourceSetupKey ?? this.sourceSetupKey,
+      tags: tags ?? this.tags,
       isSynced: isSynced ?? this.isSynced,
       deleted: deleted ?? this.deleted,
     );
   }
+}
+
+List<String> _readTags(Object? value) {
+  final raw = value is List
+      ? value
+      : value is String
+      ? value.split(RegExp(r'[,;#\n]'))
+      : const [];
+  final tags = <String>[];
+  final seen = <String>{};
+  for (final item in raw) {
+    final tag = item.toString().trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+    if (tag.isEmpty || seen.contains(tag)) continue;
+    tags.add(tag);
+    seen.add(tag);
+  }
+  return tags;
 }

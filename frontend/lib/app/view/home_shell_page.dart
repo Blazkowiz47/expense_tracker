@@ -61,6 +61,8 @@ class _HomeShellPageState extends State<HomeShellPage>
   final _onboardingDraftRepository = OnboardingDraftRepository();
   bool _actionMenuOpen = false;
   bool _hasOnboardingDraft = false;
+  bool _addExpenseOpen = false;
+  bool _pendingShellBackgroundLoad = false;
 
   static const _destinations = <_ShellDestination>[
     _ShellDestination(
@@ -99,7 +101,7 @@ class _HomeShellPageState extends State<HomeShellPage>
     _actionHttpClient = http.Client();
     _ownsHttpClient = widget.repository == null;
     final repository = widget.repository ?? _buildApiRepository();
-    _dashboardCubit = DashboardSnapshotCubit(repository: repository)..load();
+    _dashboardCubit = DashboardSnapshotCubit(repository: repository);
     _actionMenuController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 180),
@@ -110,7 +112,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
-    unawaited(_loadOnboardingDraftStatus());
+    unawaited(_startShellBackgroundLoads());
   }
 
   DashboardSnapshotRepository _buildApiRepository() {
@@ -162,6 +164,31 @@ class _HomeShellPageState extends State<HomeShellPage>
     action();
   }
 
+  Future<void> _startShellBackgroundLoads() async {
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
+    if (_addExpenseOpen) {
+      _pendingShellBackgroundLoad = true;
+      return;
+    }
+    _pendingShellBackgroundLoad = false;
+    unawaited(_dashboardCubit.load());
+    unawaited(_loadOnboardingDraftStatus());
+  }
+
+  void _resumeShellBackgroundLoads({bool forceRefresh = false}) {
+    if (!mounted || _addExpenseOpen) return;
+    if (_pendingShellBackgroundLoad) {
+      _pendingShellBackgroundLoad = false;
+      unawaited(_dashboardCubit.load());
+      unawaited(_loadOnboardingDraftStatus());
+      return;
+    }
+    if (forceRefresh) {
+      unawaited(_dashboardCubit.load(showLoading: false));
+    }
+  }
+
   Future<bool> _openAddExpense({
     bool initialBillUpload = false,
     bool forcePersonal = false,
@@ -194,6 +221,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       return Future.value(false);
     }
     final expensesBloc = context.read<ExpensesBloc>();
+    _addExpenseOpen = true;
     return Navigator.of(context)
         .push<bool>(
           platformPageRoute(
@@ -210,7 +238,12 @@ class _HomeShellPageState extends State<HomeShellPage>
             ),
           ),
         )
-        .then((value) => value == true);
+        .then((value) {
+          _addExpenseOpen = false;
+          final changed = value == true;
+          _resumeShellBackgroundLoads(forceRefresh: changed);
+          return changed;
+        });
   }
 
   void _openHouseholdGroceries() {

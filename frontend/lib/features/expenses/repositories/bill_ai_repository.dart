@@ -70,6 +70,7 @@ class BillLineItem {
     this.normalizedUnit = '',
     this.unitPriceNormalized,
     this.category = '',
+    this.tags = const [],
     this.confidence = 0,
   });
 
@@ -87,6 +88,7 @@ class BillLineItem {
   final String normalizedUnit;
   final double? unitPriceNormalized;
   final String category;
+  final List<String> tags;
   final double confidence;
 
   double? get amount => lineTotal;
@@ -112,6 +114,7 @@ class BillLineItem {
       normalizedUnit: (json['normalizedUnit'] ?? '').toString(),
       unitPriceNormalized: _readDouble(json['unitPriceNormalized']),
       category: (json['category'] ?? '').toString(),
+      tags: _readTags(json['tags']),
       confidence: _readDouble(json['confidence']) ?? 0,
     );
   }
@@ -132,6 +135,7 @@ class BillLineItem {
       'normalizedUnit': normalizedUnit,
       'unitPriceNormalized': unitPriceNormalized,
       'category': category,
+      'tags': tags,
       'confidence': confidence,
     };
   }
@@ -151,6 +155,7 @@ class BillLineItem {
     String? normalizedUnit,
     Object? unitPriceNormalized = _unset,
     String? category,
+    List<String>? tags,
     double? confidence,
   }) {
     return BillLineItem(
@@ -180,6 +185,7 @@ class BillLineItem {
           ? this.unitPriceNormalized
           : unitPriceNormalized as double?,
       category: category ?? this.category,
+      tags: tags ?? this.tags,
       confidence: confidence ?? this.confidence,
     );
   }
@@ -195,6 +201,26 @@ double? _readDouble(Object? value) {
     return double.tryParse(value.trim().replaceAll(',', '.'));
   }
   return null;
+}
+
+List<String> _readTags(Object? value) {
+  final raw = value is List
+      ? value
+      : value is String
+      ? value.split(RegExp(r'[,;#\n]'))
+      : const [];
+  final tags = <String>[];
+  final seen = <String>{};
+  for (final item in raw) {
+    final tag = item.toString().trim().toLowerCase().replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+    if (tag.isEmpty || seen.contains(tag)) continue;
+    tags.add(tag);
+    seen.add(tag);
+  }
+  return tags;
 }
 
 class BillAiRepository {
