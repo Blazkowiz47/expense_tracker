@@ -3079,7 +3079,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=403, detail=api_error("FORBIDDEN", "upload not available to this user"))
         return FileResponse(full)
 
-    frontend_dist = Path(os.getenv("FRONTEND_DIST", str(ROOT.parent / "frontend" / "build" / "web")))
+    frontend_dist = Path(os.getenv("FRONTEND_DIST", str(ROOT / "frontend" / "build" / "web")))
     if frontend_dist.exists():
         app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
 

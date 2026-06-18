@@ -175,6 +175,28 @@ def make_client(tmp_path):
     return TestClient(app), app
 
 
+def test_serves_release_frontend_bundle_from_configured_dist(tmp_path, monkeypatch):
+    frontend_dist = tmp_path / "web"
+    (frontend_dist / "assets").mkdir(parents=True)
+    (frontend_dist / "index.html").write_text("<html>release app</html>", encoding="utf-8")
+    (frontend_dist / "flutter_bootstrap.js").write_text("bootstrap", encoding="utf-8")
+    (frontend_dist / "assets" / "AssetManifest.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("FRONTEND_DIST", str(frontend_dist))
+
+    mongo = mongomock.MongoClient()
+    app = create_app(database=mongo.expense_tracker_test, ai_provider=FakeExtractor())
+    client = TestClient(app)
+
+    root = client.get("/")
+    assert root.status_code == 200, root.text
+    assert "release app" in root.text
+    deep_link = client.get("/home")
+    assert deep_link.status_code == 200, deep_link.text
+    asset = client.get("/flutter_bootstrap.js")
+    assert asset.status_code == 200, asset.text
+    assert asset.text == "bootstrap"
+
+
 def register(client, email="user@example.com"):
     response = client.post(
         "/api/v1/auth/register",
