@@ -119,7 +119,7 @@ void main() {
     expect(payload['currency'], 'INR');
     expect(payload['category'], 'Personal');
     expect(payload['description'], 'Lunch');
-    expect(payload['paymentMethod'], 'cash');
+    expect(payload.containsKey('paymentMethod'), isFalse);
     expect(payload['date'], '2026-02-25T12:30:00.000Z');
     expect(payload['tags'], ['guilty pleasure', 'restaurant']);
     expect(payload['billJobId'], 'bill-job-1');

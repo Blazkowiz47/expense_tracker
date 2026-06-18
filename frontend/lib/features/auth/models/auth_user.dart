@@ -8,6 +8,7 @@ class AuthUser extends Equatable {
     this.photoUrl,
     this.phone,
     this.onboardingCompleted = false,
+    this.defaultPaymentMethod = 'cash',
   });
 
   final String uid;
@@ -16,6 +17,7 @@ class AuthUser extends Equatable {
   final String? photoUrl;
   final String? phone;
   final bool onboardingCompleted;
+  final String defaultPaymentMethod;
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     return AuthUser(
@@ -25,6 +27,10 @@ class AuthUser extends Equatable {
       photoUrl: json['photoUrl'] as String?,
       phone: json['phone'] as String?,
       onboardingCompleted: (json['onboardingCompleted'] as bool?) ?? false,
+      defaultPaymentMethod:
+          (json['defaultPaymentMethod'] as String?)?.trim().isNotEmpty == true
+          ? (json['defaultPaymentMethod'] as String).trim()
+          : 'cash',
     );
   }
 
@@ -36,6 +42,7 @@ class AuthUser extends Equatable {
       'photoUrl': photoUrl,
       'phone': phone,
       'onboardingCompleted': onboardingCompleted,
+      'defaultPaymentMethod': defaultPaymentMethod,
     };
   }
 
@@ -43,6 +50,7 @@ class AuthUser extends Equatable {
     String? displayName,
     String? photoUrl,
     bool? onboardingCompleted,
+    String? defaultPaymentMethod,
   }) {
     return AuthUser(
       uid: uid,
@@ -51,6 +59,7 @@ class AuthUser extends Equatable {
       photoUrl: photoUrl ?? this.photoUrl,
       phone: phone,
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
+      defaultPaymentMethod: defaultPaymentMethod ?? this.defaultPaymentMethod,
     );
   }
 
@@ -62,5 +71,6 @@ class AuthUser extends Equatable {
     photoUrl,
     phone,
     onboardingCompleted,
+    defaultPaymentMethod,
   ];
 }

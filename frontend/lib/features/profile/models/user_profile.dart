@@ -5,6 +5,7 @@ class UserProfile {
     required this.email,
     this.photoUrl,
     this.onboardingCompleted = false,
+    this.defaultPaymentMethod = 'cash',
   });
 
   final String uid;
@@ -12,4 +13,5 @@ class UserProfile {
   final String email;
   final String? photoUrl;
   final bool onboardingCompleted;
+  final String defaultPaymentMethod;
 }

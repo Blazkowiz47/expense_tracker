@@ -92,6 +92,7 @@ class _FakeCreditCardsRepository extends ApiCreditCardsRepository {
     required String description,
     required DateTime date,
     List<String> tags = const [],
+    Map<String, dynamic>? reimbursement,
   }) async {
     loggedCardId = cardId;
     loggedAmount = amount;
@@ -204,6 +205,58 @@ void main() {
 
     expect(repository.createdExpense, isNotNull);
     expect(repository.createdExpense!.tags, ['guilty pleasure', 'chocolate']);
+  });
+
+  testWidgets('manual expense can be marked reimbursable', (tester) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            accountsRepository: _FakeAccountsRepository(),
+            creditCardsRepository: _FakeCreditCardsRepository(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField).first, 'Client taxi');
+    await tester.enterText(find.byType(TextField).at(1), '500');
+    final reimbursableSwitch = find.widgetWithText(
+      SwitchListTile,
+      'Reimbursable',
+    );
+    await tester.ensureVisible(reimbursableSwitch);
+    await tester.pumpAndSettle();
+    await tester.tap(reimbursableSwitch);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Company'), 'ACME');
+    await tester.enterText(find.widgetWithText(TextField, '500').last, '450');
+
+    await tester.tap(find.text('Save expense'));
+    await tester.pumpAndSettle();
+
+    final reimbursement = repository.createdExpense?.reimbursement;
+    expect(reimbursement, isNotNull);
+    expect(reimbursement!.payer, 'ACME');
+    expect(reimbursement.expectedAmount, 450);
+    expect(reimbursement.currency, 'INR');
   });
 
   testWidgets('edit mode updates an existing expense with details', (
@@ -357,9 +410,7 @@ void main() {
       await tester.tap(find.text('Bank transfer'));
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.text('Save expense'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Save expense'));
+      await tester.tap(find.widgetWithText(CupertinoButton, 'Save'));
       await tester.pumpAndSettle();
 
       expect(repository.updatedExpense, isNotNull);

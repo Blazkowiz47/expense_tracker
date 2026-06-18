@@ -6,12 +6,15 @@ import 'package:expense_tracker/core/utils/date_formatter.dart';
 import 'package:expense_tracker/core/utils/platform_widget.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
+import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/accounts/models/financial_account.dart';
 import 'package:expense_tracker/features/accounts/repositories/api_accounts_repository.dart';
 import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
 import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
+import 'package:expense_tracker/features/profile/models/user_profile.dart';
+import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/receipts/widgets/receipt_line_items_review.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -80,7 +83,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final _amountController = TextEditingController();
   final _notesController = TextEditingController();
   final _tagsController = TextEditingController();
+  final _reimbursementPayerController = TextEditingController(text: 'Company');
+  final _reimbursementAmountController = TextEditingController();
   final _billRepository = BillAiRepository();
+  final _profileRepository = UserProfileRepository();
   final _picker = ImagePicker();
   late final ApiAccountsRepository _accountsRepository;
   late final ApiCreditCardsRepository _creditCardsRepository;
@@ -101,6 +107,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
   String _currency = 'INR';
   String _paymentMethod = 'cash';
   String _destinationAccount = '';
+  bool _loadedDefaultPayment = false;
+  bool _savePaymentAsDefault = false;
+  bool _reimbursable = false;
 
   bool get _editing => widget.expense != null;
   bool get _isSelfTransfer =>
@@ -131,6 +140,13 @@ class _AddExpensePageState extends State<AddExpensePage> {
       _notesController.text = descriptionParts.notes;
       _tagsController.text = _formatTags(expense.tags);
       _amountController.text = expense.amount.toStringAsFixed(2);
+      final reimbursement = expense.reimbursement;
+      if (reimbursement?.isActive == true) {
+        _reimbursable = true;
+        _reimbursementPayerController.text = reimbursement!.payer;
+        _reimbursementAmountController.text = reimbursement.expectedAmount
+            .toStringAsFixed(2);
+      }
       _expenseDate = expense.createdAt;
       _category = _normalizedCategory(expense.category ?? 'Personal');
       _currency = _normalizedChoice(expense.currency, _currencies, 'INR');
@@ -183,13 +199,52 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadDefaultPaymentMethod();
+  }
+
+  @override
   void dispose() {
     _descriptionController.dispose();
     _amountController.dispose();
     _notesController.dispose();
     _tagsController.dispose();
+    _reimbursementPayerController.dispose();
+    _reimbursementAmountController.dispose();
     _client?.close();
     super.dispose();
+  }
+
+  Future<void> _loadDefaultPaymentMethod() async {
+    if (_loadedDefaultPayment ||
+        _editing ||
+        widget.initialPaymentMethod?.trim().isNotEmpty == true) {
+      return;
+    }
+    _loadedDefaultPayment = true;
+    final user = context.read<AuthCubit?>()?.state.user;
+    if (user == null) return;
+    UserProfile? profile;
+    try {
+      profile = await _profileRepository.fetchProfile(fallback: user);
+    } catch (_) {
+      profile = UserProfile(
+        uid: user.uid,
+        displayName: user.displayName,
+        email: user.email,
+        photoUrl: user.photoUrl,
+        onboardingCompleted: user.onboardingCompleted,
+        defaultPaymentMethod: user.defaultPaymentMethod,
+      );
+    }
+    if (!mounted) return;
+    final method = profile.defaultPaymentMethod.trim();
+    if (method.isEmpty) return;
+    setState(() {
+      _paymentMethod = _normalizedChoice(method, _paymentChoices, 'cash');
+      _currency = _currencyForPayment(_paymentMethod) ?? _currency;
+    });
   }
 
   Future<void> _loadPaymentSources() async {
@@ -202,6 +257,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       setState(() {
         _accounts = results[0] as List<FinancialAccount>;
         _creditCards = results[1] as List<CreditCardAccount>;
+        _currency = _currencyForPayment(_paymentMethod) ?? _currency;
         if (_isSelfTransfer &&
             _destinationAccount.isEmpty &&
             _accounts.any((account) => !account.archived)) {
@@ -247,6 +303,20 @@ class _AddExpensePageState extends State<AddExpensePage> {
         ? _paymentMethod
         : 'card';
     final preservedSourceAccount = effectivePaymentMethod == 'paid_previously';
+    final reimbursement = _reimbursable
+        ? ReimbursementInfo(
+            status: 'expected',
+            payer: _reimbursementPayerController.text.trim().isEmpty
+                ? 'Company'
+                : _reimbursementPayerController.text.trim(),
+            expectedAmount:
+                _parseAmount(_reimbursementAmountController.text) ?? amount,
+            receivedAmount: existing?.reimbursement?.receivedAmount ?? 0,
+            currency: effectiveCurrency,
+            linkedIncomeIds:
+                existing?.reimbursement?.linkedIncomeIds ?? const [],
+          )
+        : null;
     final expense = Expense(
       core: ExpenseCore(
         id: existing?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
@@ -274,7 +344,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
       sourcePaymentType: existing?.sourcePaymentType,
       sourcePeriod: existing?.sourcePeriod,
       sourceSetupKey: existing?.sourceSetupKey,
+      sourceExpenseId: existing?.sourceExpenseId,
       tags: tags,
+      reimbursement: reimbursement,
       updatedAt: DateTime.now(),
       isSynced: false,
       deleted: existing?.deleted ?? false,
@@ -299,6 +371,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           description: _composeDescription(description, notes),
           date: _expenseDate,
           tags: tags,
+          reimbursement: reimbursement?.toJson(),
         );
         bloc.add(const RefreshExpenses());
       } else if (_editing) {
@@ -335,6 +408,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
         return;
       }
 
+      await _saveDefaultPaymentIfRequested(effectivePaymentMethod);
+      if (!mounted) return;
+
       if (addAnother && !_editing) {
         setState(() {
           _saving = false;
@@ -366,6 +442,16 @@ class _AddExpensePageState extends State<AddExpensePage> {
         _error = error.toString();
       });
     }
+  }
+
+  Future<void> _saveDefaultPaymentIfRequested(String paymentMethod) async {
+    if (!_savePaymentAsDefault || paymentMethod.trim().isEmpty) return;
+    final user = context.read<AuthCubit?>()?.state.user;
+    if (user == null) return;
+    await _profileRepository.updateDefaultPaymentMethod(
+      user: user,
+      paymentMethod: paymentMethod,
+    );
   }
 
   Future<void> _uploadBill() async {
@@ -842,6 +928,73 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   const SizedBox(height: 8),
                   _PaymentSourceNotice(message: _paymentSourcesError!),
                 ],
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: _savePaymentAsDefault,
+                  title: const Text('Use this as my default payment method'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  onChanged: _saving
+                      ? null
+                      : (value) {
+                          setState(
+                            () => _savePaymentAsDefault = value ?? false,
+                          );
+                        },
+                ),
+                SwitchListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  value: _reimbursable,
+                  title: const Text('Reimbursable'),
+                  subtitle: const Text(
+                    'Track money you expect back from work or someone else.',
+                  ),
+                  onChanged: _saving
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _reimbursable = value;
+                            if (value &&
+                                _reimbursementAmountController.text
+                                    .trim()
+                                    .isEmpty) {
+                              _reimbursementAmountController.text =
+                                  _amountController.text.trim();
+                            }
+                          });
+                        },
+                ),
+                if (_reimbursable) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _reimbursementPayerController,
+                          decoration: const InputDecoration(
+                            labelText: 'Expected from',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _reimbursementAmountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: 'Expected amount',
+                            prefixText: '$_currency ',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 if (_billResult == null) ...[
                   const SizedBox(height: 12),
                   TextField(
@@ -1075,6 +1228,57 @@ class _AddExpensePageState extends State<AddExpensePage> {
                                 'This will update the selected credit card balance.',
                           ),
                         ),
+                      CupertinoFormRow(
+                        prefix: const Text('Default payment'),
+                        child: CupertinoSwitch(
+                          value: _savePaymentAsDefault,
+                          onChanged: _saving
+                              ? null
+                              : (value) => setState(
+                                  () => _savePaymentAsDefault = value,
+                                ),
+                        ),
+                      ),
+                      CupertinoFormRow(
+                        prefix: const Text('Reimbursable'),
+                        child: CupertinoSwitch(
+                          value: _reimbursable,
+                          onChanged: _saving
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _reimbursable = value;
+                                    if (value &&
+                                        _reimbursementAmountController.text
+                                            .trim()
+                                            .isEmpty) {
+                                      _reimbursementAmountController.text =
+                                          _amountController.text.trim();
+                                    }
+                                  });
+                                },
+                        ),
+                      ),
+                      if (_reimbursable) ...[
+                        CupertinoFormRow(
+                          prefix: const Text('Expected from'),
+                          child: CupertinoTextField(
+                            controller: _reimbursementPayerController,
+                            textAlign: TextAlign.end,
+                          ),
+                        ),
+                        CupertinoFormRow(
+                          prefix: const Text('Expected amount'),
+                          child: CupertinoTextField(
+                            controller: _reimbursementAmountController,
+                            placeholder: _amountController.text,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            textAlign: TextAlign.end,
+                          ),
+                        ),
+                      ],
                       if (_billResult == null)
                         CupertinoFormRow(
                           prefix: const Text('Tags'),

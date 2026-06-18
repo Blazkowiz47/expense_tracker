@@ -17,7 +17,9 @@ class Expense {
   final String? sourcePaymentType;
   final String? sourcePeriod;
   final String? sourceSetupKey;
+  final String? sourceExpenseId;
   final List<String> tags;
+  final ReimbursementInfo? reimbursement;
   final bool isSynced;
   final bool deleted;
 
@@ -34,7 +36,9 @@ class Expense {
     this.sourcePaymentType,
     this.sourcePeriod,
     this.sourceSetupKey,
+    this.sourceExpenseId,
     this.tags = const [],
+    this.reimbursement,
     this.isSynced = true,
     this.deleted = false,
   });
@@ -66,7 +70,13 @@ class Expense {
     final sourcePaymentType = (json['sourcePaymentType'] as String?)?.trim();
     final sourcePeriod = (json['sourcePeriod'] as String?)?.trim();
     final sourceSetupKey = (json['sourceSetupKey'] as String?)?.trim();
+    final sourceExpenseId = (json['sourceExpenseId'] as String?)?.trim();
     final tags = _readTags(json['tags']);
+    final reimbursement = json['reimbursement'] is Map<String, dynamic>
+        ? ReimbursementInfo.fromJson(
+            json['reimbursement'] as Map<String, dynamic>,
+          )
+        : null;
     final dateRaw = (json['date'] as String?) ?? '';
     final createdAt = DateTime.tryParse(dateRaw)?.toLocal() ?? DateTime.now();
     final updatedRaw = json['updatedAt'] as String?;
@@ -106,7 +116,11 @@ class Expense {
       sourceSetupKey: sourceSetupKey?.isNotEmpty == true
           ? sourceSetupKey
           : null,
+      sourceExpenseId: sourceExpenseId?.isNotEmpty == true
+          ? sourceExpenseId
+          : null,
       tags: tags,
+      reimbursement: reimbursement?.isActive == true ? reimbursement : null,
       isSynced: true,
       deleted: false,
     );
@@ -131,7 +145,9 @@ class Expense {
     String? sourcePaymentType,
     String? sourcePeriod,
     String? sourceSetupKey,
+    String? sourceExpenseId,
     List<String>? tags,
+    ReimbursementInfo? reimbursement,
     bool? isSynced,
     bool? deleted,
   }) {
@@ -150,10 +166,60 @@ class Expense {
       sourcePaymentType: sourcePaymentType ?? this.sourcePaymentType,
       sourcePeriod: sourcePeriod ?? this.sourcePeriod,
       sourceSetupKey: sourceSetupKey ?? this.sourceSetupKey,
+      sourceExpenseId: sourceExpenseId ?? this.sourceExpenseId,
       tags: tags ?? this.tags,
+      reimbursement: reimbursement ?? this.reimbursement,
       isSynced: isSynced ?? this.isSynced,
       deleted: deleted ?? this.deleted,
     );
+  }
+}
+
+class ReimbursementInfo {
+  const ReimbursementInfo({
+    this.status = 'expected',
+    this.payer = 'Company',
+    this.expectedAmount = 0,
+    this.receivedAmount = 0,
+    this.currency = '',
+    this.linkedIncomeIds = const [],
+  });
+
+  final String status;
+  final String payer;
+  final double expectedAmount;
+  final double receivedAmount;
+  final String currency;
+  final List<String> linkedIncomeIds;
+
+  bool get isActive => status.trim().toLowerCase() != 'none';
+  bool get isReimbursed => status.trim().toLowerCase() == 'reimbursed';
+
+  factory ReimbursementInfo.fromJson(Map<String, dynamic> json) {
+    return ReimbursementInfo(
+      status: (json['status'] ?? 'expected').toString(),
+      payer: (json['payer'] ?? 'Company').toString(),
+      expectedAmount: (json['expectedAmount'] as num?)?.toDouble() ?? 0,
+      receivedAmount: (json['receivedAmount'] as num?)?.toDouble() ?? 0,
+      currency: (json['currency'] ?? '').toString(),
+      linkedIncomeIds:
+          (json['linkedIncomeIds'] as List<dynamic>?)
+              ?.map((item) => item.toString())
+              .where((item) => item.trim().isNotEmpty)
+              .toList(growable: false) ??
+          const [],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'status': status,
+      'payer': payer,
+      'expectedAmount': expectedAmount,
+      'receivedAmount': receivedAmount,
+      'currency': currency,
+      'linkedIncomeIds': linkedIncomeIds,
+    };
   }
 }
 

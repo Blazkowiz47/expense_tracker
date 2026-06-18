@@ -200,6 +200,7 @@ def user_public(user: dict[str, Any]) -> dict[str, Any]:
         "photoUrl": user.get("photoUrl"),
         "phone": user.get("phone", ""),
         "onboardingCompleted": bool(user.get("onboardingCompleted", False)),
+        "defaultPaymentMethod": normalize_default_payment_method(user.get("defaultPaymentMethod")),
     }
 
 
@@ -1582,6 +1583,16 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         )
         return user_public(app.state.db.users.find_one({"uid": user["uid"]}))
 
+    @app.put("/api/v1/profile/preferences")
+    def update_profile_preferences(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        updates: dict[str, Any] = {"updatedAt": now()}
+        if "defaultPaymentMethod" in body:
+            updates["defaultPaymentMethod"] = normalize_default_payment_method(body.get("defaultPaymentMethod"))
+        if len(updates) == 1:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "no supported preference fields supplied"))
+        app.state.db.users.update_one({"uid": user["uid"]}, {"$set": updates})
+        return user_public(app.state.db.users.find_one({"uid": user["uid"]}))
+
     @app.post("/api/v1/profile/photo")
     async def upload_profile_photo(file: UploadFile = File(...), user: dict[str, Any] = Depends(current_user)) -> dict[str, str]:
         url = await save_upload(app, file, f"users/{user['uid']}")
@@ -1693,6 +1704,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 "category": str(body.get("category") or "Personal").strip() or "Personal",
                 "description": str(body.get("description") or card.get("name") or "Credit card spend").strip(),
                 "tags": body.get("tags"),
+                "reimbursement": body.get("reimbursement"),
                 "date": str(body.get("date") or iso(now())),
                 "paymentMethod": "card",
                 "sourceType": "credit_card_spend",
@@ -1746,7 +1758,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         background_tasks: BackgroundTasks,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
-        expense = build_expense(body, user["uid"])
+        expense = build_expense(body, user["uid"], user=user)
         if expense.get("sourceType") == "setup_month_entry" and expense.get("sourcePeriod") and expense.get("sourceSetupKey"):
             existing = app.state.db.expenses.find_one({
                 "uid": user["uid"],
@@ -1792,7 +1804,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
         if is_loan_payment_expense(existing):
             raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be updated from Loans"))
-        updated = build_expense({**existing, **body}, user["uid"], expense_id=expense_id, created_at=existing["createdAt"])
+        updated = build_expense({**existing, **body}, user["uid"], expense_id=expense_id, created_at=existing["createdAt"], user=user)
         reconcile_credit_card_expense_update(app.state.db, user["uid"], existing, updated)
         app.state.db.expenses.replace_one({"id": expense_id, "uid": user["uid"]}, updated)
         if receipt_items_in_body(body):
@@ -1814,6 +1826,68 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 bill_job_id=str(body.get("billJobId") or ""),
             )
         return expense_out(updated)
+
+    @app.post("/api/v1/expenses/{expense_id}/reimbursement", status_code=201)
+    def record_expense_reimbursement(expense_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        existing = app.state.db.expenses.find_one({"id": expense_id, "uid": user["uid"]})
+        if not existing:
+            raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
+        current_reimbursement = normalize_reimbursement(
+            existing.get("reimbursement") or {
+                "status": "expected",
+                "payer": body.get("payer") or "Company",
+                "expectedAmount": existing.get("amount"),
+                "currency": existing.get("currency"),
+            },
+            amount=float(existing.get("amount") or 0),
+            currency=normalize_currency(existing.get("currency"), "INR"),
+        )
+        if not current_reimbursement:
+            current_reimbursement = {
+                "status": "expected",
+                "payer": str(body.get("payer") or "Company").strip() or "Company",
+                "expectedAmount": float(existing.get("amount") or 0),
+                "receivedAmount": 0.0,
+                "currency": normalize_currency(existing.get("currency"), "INR"),
+                "linkedIncomeIds": [],
+            }
+        amount = positive_number(body.get("amount") or body.get("receivedAmount") or current_reimbursement.get("expectedAmount"), "amount")
+        income = build_expense(
+            {
+                "amount": amount,
+                "currency": body.get("currency") or current_reimbursement.get("currency") or existing.get("currency"),
+                "category": body.get("category") or "Reimbursement",
+                "description": body.get("description") or f"Reimbursement: {existing.get('description') or existing.get('category') or 'Expense'}",
+                "paymentMethod": body.get("paymentMethod") if "paymentMethod" in body else user.get("defaultPaymentMethod"),
+                "date": body.get("date") or iso(now()),
+                "sourceType": "reimbursement",
+                "sourcePaymentType": "income",
+                "sourceExpenseId": expense_id,
+            },
+            user["uid"],
+            user=user,
+        )
+        app.state.db.expenses.insert_one(income)
+        received_total = round(float(current_reimbursement.get("receivedAmount") or 0) + amount, 2)
+        expected_total = float(current_reimbursement.get("expectedAmount") or existing.get("amount") or amount)
+        status = "reimbursed" if received_total >= expected_total else "partially_reimbursed"
+        linked_ids = list(current_reimbursement.get("linkedIncomeIds") or [])
+        linked_ids.append(income["id"])
+        updated_reimbursement = {
+            **current_reimbursement,
+            "status": status,
+            "receivedAmount": received_total,
+            "linkedIncomeIds": linked_ids,
+        }
+        app.state.db.expenses.update_one(
+            {"id": expense_id, "uid": user["uid"]},
+            {"$set": {"reimbursement": updated_reimbursement, "updatedAt": now()}},
+        )
+        updated = app.state.db.expenses.find_one({"id": expense_id, "uid": user["uid"]}) or existing
+        return {
+            "expense": expense_out(updated),
+            "income": expense_out(income),
+        }
 
     @app.delete("/api/v1/expenses/{expense_id}", status_code=204)
     def delete_expense(expense_id: str, user: dict[str, Any] = Depends(current_user)) -> Response:
@@ -3824,22 +3898,98 @@ def normalize_tags(raw: Any, limit: int = 24) -> list[str]:
     return tags
 
 
-def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None, created_at: datetime | None = None) -> dict[str, Any]:
+def normalize_default_payment_method(value: Any) -> str:
+    method = str(value or "").strip().lower()
+    if not method:
+        return "cash"
+    aliases = {
+        "card": "card",
+        "credit-card": "card",
+        "credit_card": "card",
+        "bank transfer": "bank_transfer",
+        "bank-transfer": "bank_transfer",
+        "paid previously": "paid_previously",
+        "paid-previously": "paid_previously",
+    }
+    method = aliases.get(method, method)
+    if method.startswith("account:") or method.startswith("credit_card:"):
+        identifier = method.split(":", 1)[1].strip()
+        return f"{method.split(':', 1)[0]}:{identifier}" if identifier else "cash"
+    if method in {"cash", "card", "upi", "bank_transfer", "paid_previously", "other", "income"}:
+        return method
+    return "cash"
+
+
+def payment_method_for_expense(body: dict[str, Any], user: dict[str, Any] | None = None) -> str:
+    if "paymentMethod" in body:
+        return normalize_default_payment_method(body.get("paymentMethod"))
+    if user:
+        return normalize_default_payment_method(user.get("defaultPaymentMethod"))
+    return "cash"
+
+
+def normalize_reimbursement(raw: Any, *, amount: float, currency: str) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    status = str(raw.get("status") or "").strip().lower()
+    payer = str(raw.get("payer") or raw.get("expectedFrom") or "").strip()
+    expected_amount = parse_optional_float(raw.get("expectedAmount"))
+    received_amount = parse_optional_float(raw.get("receivedAmount")) or 0.0
+    if not status:
+        status = "expected" if payer or expected_amount else "none"
+    allowed = {"none", "expected", "submitted", "approved", "partially_reimbursed", "reimbursed", "rejected"}
+    if status not in allowed:
+        status = "expected"
+    if status == "none":
+        return None
+    if expected_amount is None or expected_amount <= 0:
+        expected_amount = amount
+    linked_ids_raw = raw.get("linkedIncomeIds")
+    linked_income_ids = [
+        str(item).strip()
+        for item in (linked_ids_raw if isinstance(linked_ids_raw, list) else [])
+        if str(item).strip()
+    ]
+    if received_amount >= expected_amount:
+        status = "reimbursed"
+    elif received_amount > 0 and status not in {"submitted", "approved", "rejected"}:
+        status = "partially_reimbursed"
+    return {
+        "status": status,
+        "payer": payer or "Company",
+        "expectedAmount": round(float(expected_amount), 2),
+        "receivedAmount": round(float(received_amount), 2),
+        "currency": normalize_currency(raw.get("currency"), currency),
+        "linkedIncomeIds": linked_income_ids,
+    }
+
+
+def build_expense(
+    body: dict[str, Any],
+    uid: str,
+    expense_id: str | None = None,
+    created_at: datetime | None = None,
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     amount = positive_number(body.get("amount"), "amount")
     current = now()
+    currency = normalize_currency(body.get("currency"), "INR")
     expense = {
         "id": expense_id or uuid.uuid4().hex,
         "uid": uid,
         "amount": amount,
-        "currency": normalize_currency(body.get("currency"), "INR"),
+        "currency": currency,
         "category": str(body.get("category") or "Personal").strip() or "Personal",
         "description": str(body.get("description") or "").strip(),
-        "paymentMethod": str(body.get("paymentMethod") or "cash").strip() or "cash",
+        "paymentMethod": payment_method_for_expense(body, user),
         "tags": normalize_tags(body.get("tags")),
         "date": parse_dt(str(body.get("date") or iso(current))),
         "createdAt": created_at or current,
         "updatedAt": current,
     }
+    reimbursement = normalize_reimbursement(body.get("reimbursement"), amount=amount, currency=currency)
+    if reimbursement:
+        expense["reimbursement"] = reimbursement
     for key in [
         "sourceType",
         "sourceLoanId",
@@ -3852,6 +4002,7 @@ def build_expense(body: dict[str, Any], uid: str, expense_id: str | None = None,
         "sourcePaymentType",
         "sourcePeriod",
         "sourceSetupKey",
+        "sourceExpenseId",
     ]:
         value = str(body.get(key) or "").strip()
         if value:
@@ -3882,6 +4033,8 @@ def expense_out(doc: dict[str, Any]) -> dict[str, Any]:
             "sourcePaymentType",
             "sourcePeriod",
             "sourceSetupKey",
+            "sourceExpenseId",
+            "reimbursement",
             "createdAt",
             "updatedAt",
         ]

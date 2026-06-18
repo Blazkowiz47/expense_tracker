@@ -46,7 +46,8 @@ class ExpenseRepository {
             'currency': expense.currency,
             'category': expense.category ?? 'Personal',
             'description': expense.description ?? expense.title,
-            'paymentMethod': expense.paymentMethod ?? 'cash',
+            if (expense.paymentMethod?.trim().isNotEmpty == true)
+              'paymentMethod': expense.paymentMethod!.trim(),
             'date': BackendDateCodec.encodeDate(expense.createdAt),
             if (expense.sourceType?.trim().isNotEmpty == true)
               'sourceType': expense.sourceType!.trim(),
@@ -67,7 +68,11 @@ class ExpenseRepository {
               'sourcePeriod': expense.sourcePeriod!.trim(),
             if (expense.sourceSetupKey?.trim().isNotEmpty == true)
               'sourceSetupKey': expense.sourceSetupKey!.trim(),
+            if (expense.sourceExpenseId?.trim().isNotEmpty == true)
+              'sourceExpenseId': expense.sourceExpenseId!.trim(),
             if (expense.tags.isNotEmpty) 'tags': expense.tags,
+            if (expense.reimbursement?.isActive == true)
+              'reimbursement': expense.reimbursement!.toJson(),
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
             if (billJobId.trim().isNotEmpty) 'billJobId': billJobId.trim(),
           }),
@@ -105,7 +110,8 @@ class ExpenseRepository {
             'currency': expense.currency,
             'category': expense.category ?? 'Personal',
             'description': expense.description ?? expense.title,
-            'paymentMethod': expense.paymentMethod ?? 'cash',
+            if (expense.paymentMethod?.trim().isNotEmpty == true)
+              'paymentMethod': expense.paymentMethod!.trim(),
             'date': BackendDateCodec.encodeDate(expense.createdAt),
             if (expense.sourceType?.trim().isNotEmpty == true)
               'sourceType': expense.sourceType!.trim(),
@@ -121,7 +127,10 @@ class ExpenseRepository {
               'sourcePeriod': expense.sourcePeriod!.trim(),
             if (expense.sourceSetupKey?.trim().isNotEmpty == true)
               'sourceSetupKey': expense.sourceSetupKey!.trim(),
+            if (expense.sourceExpenseId?.trim().isNotEmpty == true)
+              'sourceExpenseId': expense.sourceExpenseId!.trim(),
             'tags': expense.tags,
+            'reimbursement': expense.reimbursement?.toJson(),
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
             if (billJobId.trim().isNotEmpty) 'billJobId': billJobId.trim(),
           }),

@@ -45,6 +45,7 @@ class UserProfileRepository {
         email: fallback.email,
         photoUrl: fallback.photoUrl,
         onboardingCompleted: fallback.onboardingCompleted,
+        defaultPaymentMethod: fallback.defaultPaymentMethod,
       );
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -56,7 +57,37 @@ class UserProfileRepository {
       onboardingCompleted:
           (json['onboardingCompleted'] as bool?) ??
           fallback.onboardingCompleted,
+      defaultPaymentMethod:
+          (json['defaultPaymentMethod'] as String?)?.trim().isNotEmpty == true
+          ? (json['defaultPaymentMethod'] as String).trim()
+          : fallback.defaultPaymentMethod,
     );
+  }
+
+  Future<AuthUser> updateDefaultPaymentMethod({
+    required AuthUser user,
+    required String paymentMethod,
+  }) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.put(
+      Uri.parse('${ApiConfig.baseUrl}/api/v1/profile/preferences'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'defaultPaymentMethod': paymentMethod.trim()}),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'Failed to save preferences (${response.statusCode}): ${response.body}',
+      );
+    }
+    final updated = AuthUser.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    await _sessionStore.saveUser(updated);
+    return updated;
   }
 
   Future<AuthUser> updateOnboardingCompleted({

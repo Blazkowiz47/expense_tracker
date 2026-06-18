@@ -486,6 +486,80 @@ def test_expenses_persist_in_mongo(tmp_path):
     assert listed.json()["expenses"][0]["id"] == expense_id
 
 
+def test_profile_default_payment_method_is_applied_to_new_expenses(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    updated_profile = client.put(
+        "/api/v1/profile/preferences",
+        headers=headers,
+        json={"defaultPaymentMethod": "account:salary-1"},
+    )
+    assert updated_profile.status_code == 200, updated_profile.text
+    assert updated_profile.json()["defaultPaymentMethod"] == "account:salary-1"
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 99.5,
+            "currency": "NOK",
+            "category": "Food",
+            "description": "Dinner",
+            "date": "2026-05-30T12:00:00Z",
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["paymentMethod"] == "account:salary-1"
+
+
+def test_reimbursable_expense_records_linked_income(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 500,
+            "currency": "NOK",
+            "category": "Work",
+            "description": "Client taxi",
+            "paymentMethod": "credit_card:card-1",
+            "date": "2026-06-10T12:00:00Z",
+            "reimbursement": {
+                "status": "expected",
+                "payer": "Company",
+                "expectedAmount": 500,
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    expense = created.json()
+    assert expense["reimbursement"]["status"] == "expected"
+    assert expense["reimbursement"]["payer"] == "Company"
+
+    recorded = client.post(
+        f"/api/v1/expenses/{expense['id']}/reimbursement",
+        headers=headers,
+        json={
+            "amount": 500,
+            "paymentMethod": "account:salary-1",
+            "date": "2026-06-18T12:00:00Z",
+        },
+    )
+
+    assert recorded.status_code == 201, recorded.text
+    payload = recorded.json()
+    assert payload["expense"]["reimbursement"]["status"] == "reimbursed"
+    assert payload["expense"]["reimbursement"]["receivedAmount"] == 500
+    assert payload["income"]["sourceType"] == "reimbursement"
+    assert payload["income"]["sourcePaymentType"] == "income"
+    assert payload["income"]["sourceExpenseId"] == expense["id"]
+    assert payload["income"]["paymentMethod"] == "account:salary-1"
+
+
 def test_setup_month_activity_entries_are_idempotent_and_mark_income(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)

@@ -63,6 +63,7 @@ class _HomeShellPageState extends State<HomeShellPage>
   bool _hasOnboardingDraft = false;
   bool _addExpenseOpen = false;
   bool _pendingShellBackgroundLoad = false;
+  Timer? _shellBackgroundLoadTimer;
 
   static const _destinations = <_ShellDestination>[
     _ShellDestination(
@@ -112,7 +113,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
     );
-    unawaited(_startShellBackgroundLoads());
+    _startShellBackgroundLoads();
   }
 
   DashboardSnapshotRepository _buildApiRepository() {
@@ -122,6 +123,7 @@ class _HomeShellPageState extends State<HomeShellPage>
 
   @override
   void dispose() {
+    _shellBackgroundLoadTimer?.cancel();
     _dashboardCubit.close();
     _actionMenuController.dispose();
     if (_ownsHttpClient) {
@@ -164,16 +166,18 @@ class _HomeShellPageState extends State<HomeShellPage>
     action();
   }
 
-  Future<void> _startShellBackgroundLoads() async {
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    if (!mounted) return;
-    if (_addExpenseOpen) {
-      _pendingShellBackgroundLoad = true;
-      return;
-    }
-    _pendingShellBackgroundLoad = false;
-    unawaited(_dashboardCubit.load());
-    unawaited(_loadOnboardingDraftStatus());
+  void _startShellBackgroundLoads() {
+    _shellBackgroundLoadTimer?.cancel();
+    _shellBackgroundLoadTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      if (_addExpenseOpen) {
+        _pendingShellBackgroundLoad = true;
+        return;
+      }
+      _pendingShellBackgroundLoad = false;
+      unawaited(_dashboardCubit.load());
+      unawaited(_loadOnboardingDraftStatus());
+    });
   }
 
   void _resumeShellBackgroundLoads({bool forceRefresh = false}) {
@@ -799,7 +803,7 @@ class _HomeShellPageState extends State<HomeShellPage>
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1280),
+              constraints: const BoxConstraints(maxWidth: 1440),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: DecoratedBox(

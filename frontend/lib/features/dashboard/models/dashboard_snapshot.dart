@@ -72,6 +72,21 @@ class DashboardSnapshot extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'overallLabel': overallLabel,
+      'overallAmountText': overallAmountText,
+      'overallPositive': overallPositive,
+      'friendItems': friendItems.map((item) => item.toJson()).toList(),
+      'groupItems': groupItems.map((item) => item.toJson()).toList(),
+      'actionItems': actionItems.map((item) => item.toJson()).toList(),
+      'activityItems': activityItems.map((item) => item.toJson()).toList(),
+      'aiInsights': aiInsights.map((item) => item.toJson()).toList(),
+      'accountName': accountName,
+      'accountEmail': accountEmail,
+    };
+  }
+
   DashboardSnapshot copyWith({
     String? overallLabel,
     String? overallAmountText,
@@ -141,6 +156,15 @@ class AiInsight extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'label': label,
+      'message': message,
+      'tone': tone,
+      'actions': actions.map((action) => action.toJson()).toList(),
+    };
+  }
+
   @override
   List<Object?> get props => [label, message, tone, actions];
 }
@@ -156,6 +180,10 @@ class AiInsightAction extends Equatable {
       label: (json['label'] ?? '').toString(),
       prompt: (json['prompt'] ?? '').toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'label': label, 'prompt': prompt};
   }
 
   @override
@@ -182,6 +210,15 @@ class BalanceItem extends Equatable {
       amountText: (json['amountText'] ?? '').toString(),
       positive: json['positive'] as bool? ?? true,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'subtitle': subtitle,
+      'amountText': amountText,
+      'positive': positive,
+    };
   }
 
   @override
@@ -234,6 +271,23 @@ class DailyActionItem extends Equatable {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'subtitle': subtitle,
+      'severity': severity,
+      'destination': destination,
+      'actionType': actionType,
+      'occurrenceId': occurrenceId,
+      'period': period,
+      'groupId': groupId,
+      'expenseId': expenseId,
+      'friendUid': friendUid,
+      'memberUid': memberUid,
+      'category': category,
+    };
+  }
+
   @override
   List<Object?> get props => [
     title,
@@ -271,6 +325,15 @@ class ActivityItem extends Equatable {
       amountText: (json['amountText'] ?? '').toString(),
       positive: json['positive'] as bool? ?? false,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'subtitle': subtitle,
+      'amountText': amountText,
+      'positive': positive,
+    };
   }
 
   @override

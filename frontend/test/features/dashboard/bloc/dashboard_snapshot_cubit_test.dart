@@ -3,9 +3,14 @@ import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hydrated_bloc/hydrated_bloc.dart';
 
 void main() {
   group('DashboardSnapshotCubit', () {
+    setUp(() async {
+      await HydratedBloc.storage.clear();
+    });
+
     blocTest<DashboardSnapshotCubit, DashboardSnapshotState>(
       'emits loading then loaded snapshot',
       build: () => DashboardSnapshotCubit(
@@ -43,6 +48,29 @@ void main() {
         await cubit.close();
       },
     );
+
+    test('hydrates the last loaded snapshot for instant home paint', () async {
+      final first = DashboardSnapshotCubit(
+        repository: const MockDashboardSnapshotRepository(),
+      );
+      await first.load();
+      await Future<void>.delayed(Duration.zero);
+      expect(first.state, isA<DashboardSnapshotLoaded>());
+      await first.close();
+
+      final restored = DashboardSnapshotCubit(
+        repository: const MockDashboardSnapshotRepository(),
+      );
+      addTearDown(restored.close);
+
+      final state = restored.state;
+      expect(state, isA<DashboardSnapshotLoaded>());
+      expect(
+        (state as DashboardSnapshotLoaded).snapshot.accountName,
+        'Sushrut Patwardhan',
+      );
+      expect(state.loadingAiInsights, isFalse);
+    });
   });
 }
 

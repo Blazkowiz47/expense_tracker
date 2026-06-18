@@ -213,7 +213,7 @@ class _HomePageState extends State<HomePage> {
 
     if (state is DashboardSnapshotFailure) {
       return AppPageContainer(
-        maxWidth: 1120,
+        maxWidth: 1280,
         onRefresh: () => _refreshDashboard(dashboardCubit),
         onAutoRefresh: () => _autoRefreshDashboard(dashboardCubit),
         autoRefresh: widget.autoRefresh,
@@ -345,7 +345,7 @@ class _HomePageState extends State<HomePage> {
           ];
 
     return AppPageContainer(
-      maxWidth: compact ? double.infinity : 1040,
+      maxWidth: compact ? double.infinity : 1280,
       padding: EdgeInsets.fromLTRB(
         compact ? 16 : 20,
         compact ? 16 : 20,
