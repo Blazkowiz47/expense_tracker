@@ -248,32 +248,48 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   Future<void> _loadPaymentSources() async {
-    try {
-      final results = await Future.wait([
-        _accountsRepository.fetchAccounts(),
-        _creditCardsRepository.fetchCards(),
-      ]).timeout(const Duration(seconds: 5));
-      if (!mounted) return;
-      setState(() {
-        _accounts = results[0] as List<FinancialAccount>;
-        _creditCards = results[1] as List<CreditCardAccount>;
-        _currency = _currencyForPayment(_paymentMethod) ?? _currency;
-        if (_isSelfTransfer &&
-            _destinationAccount.isEmpty &&
-            _accounts.any((account) => !account.archived)) {
-          _destinationAccount = _accountPaymentValue(
-            _accounts.firstWhere((account) => !account.archived).id,
-          );
-        }
-        _paymentSourcesError = null;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _paymentSourcesError =
-            'Bank accounts and credit cards could not be loaded.';
-      });
-    }
+    List<FinancialAccount>? accounts;
+    List<CreditCardAccount>? creditCards;
+    Object? accountsError;
+    Object? creditCardsError;
+
+    await Future.wait<void>([
+      _accountsRepository
+          .fetchAccounts()
+          .timeout(const Duration(seconds: 15))
+          .then<void>((value) => accounts = value)
+          .catchError((Object error) {
+            accountsError = error;
+          }),
+      _creditCardsRepository
+          .fetchCards()
+          .timeout(const Duration(seconds: 15))
+          .then<void>((value) => creditCards = value)
+          .catchError((Object error) {
+            creditCardsError = error;
+          }),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      if (accounts != null) {
+        _accounts = accounts!;
+      }
+      if (creditCards != null) {
+        _creditCards = creditCards!;
+      }
+      _currency = _currencyForPayment(_paymentMethod) ?? _currency;
+      if (_isSelfTransfer &&
+          _destinationAccount.isEmpty &&
+          _accounts.any((account) => !account.archived)) {
+        _destinationAccount = _accountPaymentValue(
+          _accounts.firstWhere((account) => !account.archived).id,
+        );
+      }
+      _paymentSourcesError = _paymentSourcesMessage(
+        accountsError: accountsError,
+        creditCardsError: creditCardsError,
+      );
+    });
   }
 
   Future<void> _save({bool addAnother = false}) async {
@@ -636,6 +652,29 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   String _formatTags(List<String> tags) => tags.join(', ');
+
+  String? _paymentSourcesMessage({
+    required Object? accountsError,
+    required Object? creditCardsError,
+  }) {
+    if (accountsError == null && creditCardsError == null) {
+      return null;
+    }
+    final details = [
+      accountsError,
+      creditCardsError,
+    ].whereType<Object>().map((error) => error.toString()).join(' ');
+    if (details.contains('(401)') || details.contains('MISSING_TOKEN')) {
+      return 'Sign in again to load bank accounts and credit cards.';
+    }
+    if (accountsError != null && creditCardsError != null) {
+      return 'Bank accounts and credit cards could not be loaded. You can still save with Cash.';
+    }
+    if (accountsError != null) {
+      return 'Bank accounts could not be loaded. Credit cards are still available.';
+    }
+    return 'Credit cards could not be loaded. Bank accounts are still available.';
+  }
 
   String _normalizedChoice(
     String value,

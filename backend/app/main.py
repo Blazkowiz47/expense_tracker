@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import calendar
 import base64
 import csv
@@ -914,7 +915,7 @@ class OpenRouterAiProvider(LocalGemmaBillExtractor):
                 },
             ],
         }
-        content = await self._chat_completion("receipt.extract", payload, log_payload, timeout=float(os.getenv("AI_RECEIPT_TIMEOUT_SECONDS", "120")))
+        content = await self._chat_completion("receipt.extract", payload, log_payload, timeout=float(os.getenv("AI_RECEIPT_TIMEOUT_SECONDS", "60")))
         return self._normalize(parse_model_json(content), original_name, [])
 
     async def dashboard_summary(self, context: dict[str, Any]) -> dict[str, Any]:
@@ -1045,9 +1046,29 @@ class AiProviderChain(LocalGemmaBillExtractor):
 
     async def extract(self, file_path: Path, original_name: str) -> dict[str, Any]:
         warnings: list[str] = []
+        chain_timeout = float(os.getenv("AI_RECEIPT_CHAIN_TIMEOUT_SECONDS", "180"))
+        deadline = time.perf_counter() + chain_timeout
         for provider in self.providers:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                ai_terminal_log(
+                    "provider_chain.timeout",
+                    task="receipt.extract",
+                    timeoutSeconds=chain_timeout,
+                )
+                break
             try:
-                return await provider.extract(file_path, original_name)
+                return await asyncio.wait_for(provider.extract(file_path, original_name), timeout=remaining)
+            except TimeoutError as exc:
+                provider_name = getattr(provider, "provider_name", type(provider).__name__)
+                warnings.append(f"{provider_name} unavailable: timed out")
+                ai_terminal_log(
+                    "provider_chain.fallback",
+                    provider=provider_name,
+                    retryable=True,
+                    error=f"timed out after {round(remaining, 1)} seconds",
+                )
+                break
             except HostedAiProviderError as exc:
                 warnings.append(f"{exc.provider} unavailable: {exc}")
                 ai_terminal_log("provider_chain.fallback", provider=exc.provider, retryable=exc.retryable, error=str(exc))

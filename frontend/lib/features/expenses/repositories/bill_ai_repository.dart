@@ -232,6 +232,9 @@ class BillAiRepository {
       _authTokenProvider =
           authTokenProvider ?? const SessionAuthTokenProvider();
 
+  static const extractionTimeout = Duration(minutes: 3);
+  static const pollInterval = Duration(seconds: 1);
+
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;
 
@@ -265,8 +268,9 @@ class BillAiRepository {
     }
     final job = jsonDecode(response.body) as Map<String, dynamic>;
     final jobId = job['id'] as String;
-    for (var i = 0; i < 120; i++) {
-      await Future<void>.delayed(const Duration(seconds: 1));
+    final deadline = DateTime.now().add(extractionTimeout);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(pollInterval);
       final poll = await _client.get(
         Uri.parse('${ApiConfig.baseUrl}/api/v1/bills/$jobId'),
         headers: {
@@ -290,6 +294,8 @@ class BillAiRepository {
         throw Exception(payload['error'] ?? 'Bill extraction failed');
       }
     }
-    throw TimeoutException('Bill extraction timed out after 120 seconds.');
+    throw TimeoutException(
+      'Bill extraction timed out after ${extractionTimeout.inSeconds} seconds.',
+    );
   }
 }

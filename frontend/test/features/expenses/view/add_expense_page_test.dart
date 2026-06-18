@@ -53,15 +53,19 @@ class _FakeExpenseRepository extends ExpenseRepository {
 }
 
 class _FakeAccountsRepository extends ApiAccountsRepository {
-  _FakeAccountsRepository([this.accounts = const []])
+  _FakeAccountsRepository([this.accounts = const [], this.error])
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   final List<FinancialAccount> accounts;
+  final Object? error;
 
   @override
   Future<List<FinancialAccount>> fetchAccounts({
     bool includeArchived = false,
   }) async {
+    if (error != null) {
+      throw error!;
+    }
     return accounts;
   }
 }
@@ -474,6 +478,52 @@ void main() {
     expect(cardRepository.loggedAmount, 59);
     expect(cardRepository.loggedCategory, 'Personal');
     expect(cardRepository.loggedDescription, 'Coffee');
+  });
+
+  testWidgets('payment sources keep cards when accounts fail', (tester) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            accountsRepository: _FakeAccountsRepository(
+              const [],
+              Exception('accounts request failed (500): backend unavailable'),
+            ),
+            creditCardsRepository: _FakeCreditCardsRepository([
+              _card(id: 'card-1', name: 'Morrow', issuer: 'Morrow'),
+            ]),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Bank accounts could not be loaded. Credit cards are still available.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cash'));
+    await tester.pumpAndSettle();
+    expect(find.text('Morrow - Morrow'), findsOneWidget);
   });
 
   testWidgets('edit mode preserves setup account and custom category', (
