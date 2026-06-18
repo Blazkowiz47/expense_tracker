@@ -113,9 +113,24 @@ def test_hf_receipt_parser_unwraps_processor_role_content_response():
 
 def test_hf_receipt_parser_tolerates_model_trailing_commas():
     parsed = parse_model_json(
-        '{"merchant":"REMA 1000","lineItems":[{"itemName":"Brownie","unitPrice":16.,}],}'
+        """
+        {
+          "merchant": "REMA 1000",
+          "amount": 52.60,,
+          "lineItems": [
+            {
+              "itemName": "Brownie",
+              "brand": null,,,
+              "unit": null,,,
+              "unitPrice": 16.,,
+            }
+          ],
+        }
+        """
     )
 
     assert parsed["merchant"] == "REMA 1000"
+    assert parsed["amount"] == 52.6
     assert parsed["lineItems"][0]["itemName"] == "Brownie"
+    assert parsed["lineItems"][0]["brand"] is None
     assert parsed["lineItems"][0]["unitPrice"] == 16.0

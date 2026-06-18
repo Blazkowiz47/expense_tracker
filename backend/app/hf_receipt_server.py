@@ -57,18 +57,24 @@ def parse_model_json(content: Any) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text).strip()
-    text = re.sub(r",(\s*[}\]])", r"\1", text)
-    text = re.sub(r"(:\s*-?\d+)\.(?=\s*[,}\]])", r"\1.0", text)
+    text = repair_model_json_text(text)
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if not match:
             raise
-        parsed = json.loads(match.group(0))
+        parsed = json.loads(repair_model_json_text(match.group(0)))
     if not isinstance(parsed, dict):
         raise ValueError("model response must be a JSON object")
     return parsed
+
+
+def repair_model_json_text(text: str) -> str:
+    text = re.sub(r"(:\s*-?\d+)\.(?=\s*[,}\]])", r"\1.0", text)
+    text = re.sub(r",+(?=\s*,)", "", text)
+    text = re.sub(r",+(\s*[}\]])", r"\1", text)
+    return text
 
 
 class HuggingFaceGemmaReceiptExtractor:
