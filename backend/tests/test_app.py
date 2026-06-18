@@ -1,19 +1,26 @@
 import asyncio
 import calendar
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import mongomock
 from fastapi.testclient import TestClient
 
+import app.main as main_module
 from app.main import (
+    AiProviderChain,
+    HostedAiProviderError,
     LocalGemmaBillExtractor,
+    OpenRouterAiProvider,
     build_ai_financial_context,
+    build_ai_provider,
     create_app,
     current_month,
     ensure_indexes,
     iso,
     now,
+    openrouter_model_names,
     parse_model_json,
     run_bill_extraction,
 )
@@ -86,6 +93,43 @@ class CapturingAiProvider(FakeExtractor):
             "title": "AI plan",
             "answer": "Context received.",
             "steps": ["Use the compact context packet."],
+            "suggestions": [],
+            "warnings": [],
+        }
+
+
+class FailingHostedProvider:
+    def __init__(self, provider_name="openrouter:model-a", retryable=True):
+        self.provider_name = provider_name
+        self.retryable = retryable
+
+    async def extract(self, file_path: Path, original_name: str):
+        raise HostedAiProviderError(self.provider_name, "quota exceeded", retryable=self.retryable)
+
+    async def dashboard_summary(self, context):
+        raise HostedAiProviderError(self.provider_name, "quota exceeded", retryable=self.retryable)
+
+    async def finance_chat(self, context, question: str):
+        raise HostedAiProviderError(self.provider_name, "quota exceeded", retryable=self.retryable)
+
+
+class SuccessfulHostedProvider(FakeExtractor):
+    async def dashboard_summary(self, context):
+        return {
+            "task": "dashboard_summary",
+            "schemaVersion": "finance-ai-v1",
+            "cards": [{"label": "AI", "message": "Fallback worked.", "tone": "neutral", "actions": []}],
+            "warnings": [],
+        }
+
+    async def finance_chat(self, context, question: str):
+        return {
+            "task": "finance_chat",
+            "schemaVersion": "finance-ai-v1",
+            "question": question,
+            "title": "Fallback",
+            "answer": "Fallback worked.",
+            "steps": [],
             "suggestions": [],
             "warnings": [],
         }
@@ -1131,6 +1175,164 @@ def test_parse_model_json_handles_wrapped_json():
 
     parsed = parse_model_json('Result: {"merchant": "Bakery", "amount": "8.5"}')
     assert parsed["merchant"] == "Bakery"
+
+
+def test_openrouter_models_are_configurable_and_deduplicated(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_MODELS", "model-a, model-b, model-a")
+    assert openrouter_model_names() == ["model-a", "model-b"]
+
+    monkeypatch.delenv("OPENROUTER_MODELS", raising=False)
+    monkeypatch.setenv("OPENROUTER_MODEL", "primary-model")
+    monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "fallback-one, fallback-two, primary-model")
+    assert openrouter_model_names() == ["primary-model", "fallback-one", "fallback-two"]
+
+
+def test_build_ai_provider_uses_openrouter_model_chain(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "model-a")
+    monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "model-b,model-c")
+    monkeypatch.delenv("OPENROUTER_MODELS", raising=False)
+    monkeypatch.delenv("AI_FALLBACK_PROVIDERS", raising=False)
+
+    provider = build_ai_provider()
+
+    assert isinstance(provider, AiProviderChain)
+    assert [item.model for item in provider.providers] == ["model-a", "model-b", "model-c"]
+
+
+def test_build_ai_provider_treats_gemini_setting_as_openrouter(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "openrouter-only")
+    monkeypatch.delenv("OPENROUTER_FALLBACK_MODELS", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODELS", raising=False)
+    monkeypatch.delenv("AI_FALLBACK_PROVIDERS", raising=False)
+
+    provider = build_ai_provider()
+
+    assert isinstance(provider, AiProviderChain)
+    assert [item.model for item in provider.providers] == ["openrouter-only"]
+
+
+def test_provider_chain_falls_back_between_models(tmp_path):
+    receipt = tmp_path / "receipt.jpg"
+    receipt.write_bytes(b"fake-image")
+    provider = AiProviderChain(
+        [
+            FailingHostedProvider("openrouter:model-a"),
+            SuccessfulHostedProvider(),
+        ]
+    )
+
+    result = asyncio.run(provider.extract(receipt, "receipt.jpg"))
+
+    assert result["merchant"] == "Cafe Oslo"
+    assert "openrouter:model-a unavailable: quota exceeded" in result["warnings"]
+
+
+def test_provider_chain_stops_after_non_retryable_error(tmp_path):
+    receipt = tmp_path / "receipt.jpg"
+    receipt.write_bytes(b"fake-image")
+    provider = AiProviderChain(
+        [
+            FailingHostedProvider("openrouter:model-a", retryable=False),
+            SuccessfulHostedProvider(),
+        ]
+    )
+
+    result = asyncio.run(provider.extract(receipt, "receipt.jpg"))
+
+    assert result["merchant"] == "Receipt"
+    assert "openrouter:model-a unavailable: quota exceeded" in result["warnings"]
+
+
+def test_openrouter_requests_use_temperature_zero(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        text = '{"choices":[{"message":{"content":"{}"}}]}'
+
+        def __init__(self, content):
+            self._content = content
+            self.text = json.dumps(content)
+
+        def json(self):
+            return self._content
+
+        def raise_for_status(self):
+            return None
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, headers=None, json=None):
+            calls.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            if isinstance(json.get("messages", [])[1].get("content"), list):
+                content = {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json_module.dumps(
+                                    {
+                                        "merchant": "REMA 1000",
+                                        "date": "2026-06-17",
+                                        "amount": 52.6,
+                                        "currency": "NOK",
+                                        "category": "Groceries",
+                                        "lineItems": [],
+                                        "confidence": 0.9,
+                                        "warnings": [],
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+            else:
+                content = {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json_module.dumps(
+                                    {
+                                        "cards": [
+                                            {
+                                                "label": "AI summary",
+                                                "message": "Looks calm.",
+                                                "tone": "positive",
+                                                "actions": [],
+                                            }
+                                        ]
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+            return FakeResponse(content)
+
+    json_module = json
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+    receipt = tmp_path / "receipt.jpg"
+    receipt.write_bytes(b"fake-image")
+    provider = OpenRouterAiProvider("test-key", "model-a")
+
+    receipt_result = asyncio.run(provider.extract(receipt, "receipt.jpg"))
+    summary_result = asyncio.run(provider.dashboard_summary({"monthlyPlan": {}}))
+
+    assert receipt_result["merchant"] == "REMA 1000"
+    assert summary_result["cards"][0]["message"] == "Looks calm."
+    assert [call["json"]["temperature"] for call in calls] == [0, 0]
+    assert [call["json"]["model"] for call in calls] == ["model-a", "model-a"]
 
 
 def test_receipt_normalization_applies_date_and_store_quirks():

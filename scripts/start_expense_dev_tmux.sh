@@ -6,6 +6,13 @@ ROOT="/Users/sushrutpatwardhan/1Projects/expense_tracker"
 BACKEND_DIR="$ROOT/backend"
 FRONTEND_DIR="$ROOT/frontend"
 
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
 AUTH_MODE_USED="${AUTH_MODE:-local}"
 BACKEND_HOST_USED="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT_USED="${BACKEND_PORT:-8080}"
@@ -16,7 +23,7 @@ MONGO_HOST_USED="${MONGO_HOST:-127.0.0.1}"
 MONGO_PORT_USED="${MONGO_PORT:-27017}"
 MONGO_URI_USED="${MONGO_URI:-mongodb://$MONGO_HOST_USED:$MONGO_PORT_USED}"
 MONGO_DB_USED="${MONGO_DB:-expense_tracker_local}"
-AI_PROVIDER_USED="${AI_PROVIDER:-custom}"
+AI_PROVIDER_USED="${AI_PROVIDER:-openrouter}"
 START_HF_AI_USED="${START_HF_AI:-0}"
 HF_AI_HOST_USED="${HF_AI_HOST:-127.0.0.1}"
 HF_AI_PORT_USED="${HF_AI_PORT:-8001}"

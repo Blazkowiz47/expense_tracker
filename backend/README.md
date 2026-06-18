@@ -101,6 +101,24 @@ HF_TORCH_DTYPE=bfloat16       # or float16/float32/auto
 HF_RECEIPT_MAX_NEW_TOKENS=1536
 ```
 
+### Hosted receipt AI via OpenRouter
+
+The default hosted AI provider is OpenRouter. Configure one primary model and
+any number of fallbacks; the backend tries them in order when a model is at
+capacity or unavailable. All model calls use `temperature=0` for predictable
+JSON extraction and planning responses.
+
+```sh
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=...
+OPENROUTER_MODEL=google/gemma-4-31b-it:free
+OPENROUTER_FALLBACK_MODELS=meta-llama/llama-3.2-11b-vision-instruct:free,qwen/qwen2.5-vl-72b-instruct:free
+```
+
+You can also provide a complete ordered list with `OPENROUTER_MODELS`; when it
+is set, it takes precedence over `OPENROUTER_MODEL` and
+`OPENROUTER_FALLBACK_MODELS`.
+
 ### Gemma 4 E4B via llama-server
 
 The backend can call a local OpenAI-compatible `llama-server` directly:

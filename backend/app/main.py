@@ -47,6 +47,26 @@ DEFAULT_DATA_DIR = ROOT / "data"
 ph = PasswordHasher()
 
 
+def load_local_env() -> None:
+    if os.getenv("LOAD_DOTENV", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_local_env()
+
+
 def ai_terminal_log(event: str, **fields: Any) -> None:
     if os.getenv("AI_LOG_INTERACTIONS", "1").strip().lower() in {"0", "false", "no", "off"}:
         return
@@ -795,6 +815,262 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
             return with_ai_warning(fallback, f"Local llama-server provider unavailable: {exc}")
 
 
+class HostedAiProviderError(Exception):
+    def __init__(self, provider: str, message: str, *, retryable: bool = True):
+        super().__init__(message)
+        self.provider = provider
+        self.retryable = retryable
+
+
+def hosted_ai_response_text(payload: dict[str, Any]) -> str:
+    candidates = payload.get("candidates")
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            content = candidate.get("content") if isinstance(candidate, dict) else None
+            parts = content.get("parts") if isinstance(content, dict) else None
+            if not isinstance(parts, list):
+                continue
+            text = "".join(
+                str(part.get("text") or "")
+                for part in parts
+                if isinstance(part, dict) and part.get("text") is not None
+            ).strip()
+            if text:
+                return text
+    choices = payload.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str) and content.strip():
+                    return content.strip()
+                if isinstance(content, list):
+                    text = "".join(
+                        str(part.get("text") or "")
+                        for part in content
+                        if isinstance(part, dict) and part.get("text") is not None
+                    ).strip()
+                    if text:
+                        return text
+    raise ValueError("hosted AI response did not contain text")
+
+
+class OpenRouterAiProvider(LocalGemmaBillExtractor):
+    def __init__(self, api_key: str, model: str):
+        super().__init__(None, model)
+        self.api_key = api_key.strip()
+        self.model = model.strip() or "google/gemma-4-31b-it:free"
+        self.provider_name = f"openrouter:{self.model}"
+
+    async def extract(self, file_path: Path, original_name: str) -> dict[str, Any]:
+        if not self.api_key:
+            raise HostedAiProviderError(self.provider_name, "OPENROUTER_API_KEY is not configured.", retryable=False)
+        system_prompt = load_prompt("receipt_extraction_system.md")
+        user_prompt = load_prompt("receipt_extraction_user.md")
+        data_url = self._file_data_url(file_path, original_name)
+        payload = {
+            "model": self.model,
+            "temperature": 0,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+        }
+        log_payload = {
+            **payload,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt},
+                        {"type": "image_url", "image_url": {"url": f"[redacted {len(data_url)} chars data URL]"}},
+                    ],
+                },
+            ],
+        }
+        content = await self._chat_completion("receipt.extract", payload, log_payload, timeout=float(os.getenv("AI_RECEIPT_TIMEOUT_SECONDS", "120")))
+        return self._normalize(parse_model_json(content), original_name, [])
+
+    async def dashboard_summary(self, context: dict[str, Any]) -> dict[str, Any]:
+        fallback = fallback_ai_dashboard_summary(context)
+        return await self._complete_structured(
+            "dashboard_summary",
+            context,
+            (
+                "Write two concise finance summary cards for the home screen. "
+                "Use the provided finance-context-v1 packet; do not request raw transactions. "
+                "Return JSON with cards: [{label, message, tone, actions}]. "
+                "Use tone positive, warning, critical, or neutral. Keep each message under 150 characters."
+            ),
+            fallback,
+        )
+
+    async def finance_chat(self, context: dict[str, Any], question: str) -> dict[str, Any]:
+        fallback = fallback_ai_finance_chat(context, question)
+        return await self._complete_structured(
+            "finance_chat",
+            {**context, "question": question},
+            (
+                "Answer a personal finance planning question for an expense tracker. "
+                "Use the provided finance-context-v1 packet; backend math is authoritative. "
+                "Return JSON with question, title, answer, steps, and suggestions. "
+                "steps must be short actionable strings. Use only facts in the provided context."
+            ),
+            fallback,
+        )
+
+    async def _complete_structured(
+        self,
+        task: str,
+        context: dict[str, Any],
+        instructions: str,
+        fallback: dict[str, Any],
+    ) -> dict[str, Any]:
+        system_prompt = load_prompt("structured_json_system.md").format(
+            schema_version=self.schema_version,
+            instructions=instructions,
+        )
+        payload = {
+            "model": self.model,
+            "temperature": 0,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(context, default=str)},
+            ],
+        }
+        content = await self._chat_completion(f"structured.{task}", payload, payload, timeout=90)
+        return normalize_structured_ai_response(task, parse_model_json(content), fallback)
+
+    async def _chat_completion(self, event_prefix: str, payload: dict[str, Any], log_payload: dict[str, Any], timeout: float) -> str:
+        started = time.perf_counter()
+        ai_terminal_log(
+            f"{event_prefix}.request",
+            provider=self.provider_name,
+            model=self.model,
+            timeoutSeconds=timeout,
+            payload=log_payload,
+        )
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "http://127.0.0.1:7357"),
+                        "X-OpenRouter-Title": os.getenv("OPENROUTER_APP_TITLE", "Expense Tracker"),
+                    },
+                    json=payload,
+                )
+                ai_terminal_log(
+                    f"{event_prefix}.http_response",
+                    provider=self.provider_name,
+                    model=self.model,
+                    statusCode=response.status_code,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    body=response.text,
+                )
+                if response.status_code in {400, 401, 403}:
+                    retryable = response.status_code == 400
+                    raise HostedAiProviderError(
+                        self.provider_name,
+                        f"OpenRouter request failed with {response.status_code}.",
+                        retryable=retryable,
+                    )
+                if response.status_code in {408, 409, 429, 500, 502, 503, 504}:
+                    raise HostedAiProviderError(self.provider_name, f"OpenRouter request failed with {response.status_code}.")
+                response.raise_for_status()
+                content = hosted_ai_response_text(response.json())
+                ai_terminal_log(
+                    f"{event_prefix}.raw_model_text",
+                    provider=self.provider_name,
+                    model=self.model,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    content=content,
+                )
+                return content
+        except HostedAiProviderError:
+            raise
+        except Exception as exc:
+            raise HostedAiProviderError(self.provider_name, f"OpenRouter provider unavailable: {exc}") from exc
+
+    def _file_data_url(self, file_path: Path, original_name: str) -> str:
+        mime_type = mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+
+class AiProviderChain(LocalGemmaBillExtractor):
+    def __init__(self, providers: list[Any]):
+        super().__init__(None, "")
+        self.providers = providers
+
+    async def extract(self, file_path: Path, original_name: str) -> dict[str, Any]:
+        warnings: list[str] = []
+        for provider in self.providers:
+            try:
+                result = await provider.extract(file_path, original_name)
+                if warnings:
+                    result["warnings"] = warnings + [str(item) for item in result.get("warnings", []) if str(item).strip()]
+                    if isinstance(result.get("expenseDraft"), dict):
+                        result["expenseDraft"]["warnings"] = result["warnings"]
+                return result
+            except HostedAiProviderError as exc:
+                warnings.append(f"{exc.provider} unavailable: {exc}")
+                ai_terminal_log("provider_chain.fallback", provider=exc.provider, retryable=exc.retryable, error=str(exc))
+                if not exc.retryable:
+                    break
+            except Exception as exc:
+                provider_name = getattr(provider, "provider_name", type(provider).__name__)
+                warnings.append(f"{provider_name} unavailable: {exc}")
+                ai_terminal_log("provider_chain.fallback", provider=provider_name, retryable=True, error=repr(exc))
+                continue
+        return self._fallback(original_name, warnings or ["No AI providers are configured."])
+
+    async def dashboard_summary(self, context: dict[str, Any]) -> dict[str, Any]:
+        return await self._structured_with_fallback("dashboard_summary", context, None)
+
+    async def finance_chat(self, context: dict[str, Any], question: str) -> dict[str, Any]:
+        return await self._structured_with_fallback("finance_chat", context, question)
+
+    async def _structured_with_fallback(self, task: str, context: dict[str, Any], question: str | None) -> dict[str, Any]:
+        warnings: list[str] = []
+        fallback = fallback_ai_finance_chat(context, question or "") if task == "finance_chat" else fallback_ai_dashboard_summary(context)
+        for provider in self.providers:
+            try:
+                if task == "finance_chat":
+                    result = await provider.finance_chat(context, question or "")
+                else:
+                    result = await provider.dashboard_summary(context)
+                return with_ai_warnings(result, warnings) if warnings else result
+            except HostedAiProviderError as exc:
+                warnings.append(f"{exc.provider} unavailable: {exc}")
+                ai_terminal_log("provider_chain.fallback", provider=exc.provider, task=task, retryable=exc.retryable, error=str(exc))
+                if not exc.retryable:
+                    break
+            except Exception as exc:
+                provider_name = getattr(provider, "provider_name", type(provider).__name__)
+                warnings.append(f"{provider_name} unavailable: {exc}")
+                ai_terminal_log("provider_chain.fallback", provider=provider_name, task=task, retryable=True, error=repr(exc))
+                continue
+        return with_ai_warnings(fallback, warnings or ["No AI providers are configured."])
+
+
+def with_ai_warnings(payload: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
+    existing = [str(item) for item in payload.get("warnings", []) if str(item).strip()]
+    return {**payload, "warnings": warnings + existing}
+
+
 def parse_model_json(content: Any) -> dict[str, Any]:
     if isinstance(content, dict):
         return content
@@ -944,10 +1220,55 @@ def fallback_ai_finance_chat(context: dict[str, Any], question: str) -> dict[str
     }
 
 
+def split_env_list(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def openrouter_model_names() -> list[str]:
+    configured_models = split_env_list(os.getenv("OPENROUTER_MODELS", ""))
+    if configured_models:
+        raw_models = configured_models
+    else:
+        raw_models = [
+            os.getenv("OPENROUTER_MODEL", "google/gemma-4-31b-it:free").strip(),
+            *split_env_list(os.getenv("OPENROUTER_FALLBACK_MODELS", "")),
+        ]
+    models: list[str] = []
+    seen: set[str] = set()
+    for model_name in raw_models:
+        if model_name and model_name not in seen:
+            models.append(model_name)
+            seen.add(model_name)
+    return models or ["google/gemma-4-31b-it:free"]
+
+
 def build_ai_provider() -> LocalGemmaBillExtractor:
     base_url = os.getenv("AI_BASE_URL")
     model = os.getenv("AI_MODEL", "unsloth/gemma-4-E4B-it-GGUF")
-    provider = os.getenv("AI_PROVIDER", "custom").strip().lower()
+    provider = os.getenv("AI_PROVIDER", "openrouter").strip().lower()
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+
+    def provider_for(name: str) -> Any | None:
+        normalized = name.strip().lower().replace("_", "-")
+        if normalized in {"llama-server", "llama-cpp", "openai-compatible"}:
+            return LlamaServerBillExtractor(base_url, model)
+        if normalized in {"hf-local", "huggingface", "custom", "local-gemma"}:
+            return LocalGemmaBillExtractor(base_url, model)
+        return None
+
+    if provider in {"gemini", "google-gemini"}:
+        provider = "openrouter"
+    if provider in {"openrouter", "open-router"}:
+        providers: list[Any] = []
+        if openrouter_key:
+            providers.extend(OpenRouterAiProvider(openrouter_key, model_name) for model_name in openrouter_model_names())
+        providers.extend(
+            candidate
+            for name in split_env_list(os.getenv("AI_FALLBACK_PROVIDERS", ""))
+            if (candidate := provider_for(name)) is not None
+        )
+        if providers:
+            return AiProviderChain(providers)
     if provider in {"llama-server", "llama_cpp", "openai-compatible", "openai_compatible"}:
         return LlamaServerBillExtractor(base_url, model)
     return LocalGemmaBillExtractor(base_url, model)
