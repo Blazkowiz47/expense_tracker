@@ -2165,7 +2165,43 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         return monthly_plan_out(app.state.db, owner_uid, plan_month, group_id=group_id)
 
     @app.get("/api/v1/dashboard/snapshot")
-    async def dashboard(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async def dashboard(
+        include_ai: bool = Query(True, alias="includeAi"),
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
+        ensure_setup_month_activity_entries(app.state.db, user["uid"])
+        docs = [expense_out(doc) for doc in app.state.db.expenses.find({"uid": user["uid"]}).sort("date", -1).limit(20)]
+        overall_summary = dashboard_overall_summary(app.state.db, user["uid"])
+        action_items = dashboard_action_items(app.state.db, user["uid"])
+        ai_summary = (
+            await generate_ai_dashboard_summary(
+                app.state.ai_provider,
+                build_ai_financial_context(
+                    app.state.db,
+                    user["uid"],
+                    purpose="home_summary",
+                    overall_summary=overall_summary,
+                    action_items=action_items,
+                    activity_items=docs,
+                ),
+            )
+            if include_ai
+            else {}
+        )
+        return {
+            **overall_summary,
+            "friendItems": friend_balance_items(app.state.db, user["uid"]),
+            "groupItems": group_balance_items(app.state.db, user["uid"]),
+            "actionItems": action_items,
+            "activityItems": [personal_dashboard_activity_item(doc) for doc in docs],
+            "accountName": user.get("displayName") or "User",
+            "accountEmail": user.get("email") or "",
+            "aiInsights": ai_summary.get("cards", []),
+            "aiSummary": ai_summary,
+        }
+
+    @app.get("/api/v1/dashboard/ai-insights")
+    async def dashboard_ai_insights(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         ensure_setup_month_activity_entries(app.state.db, user["uid"])
         docs = [expense_out(doc) for doc in app.state.db.expenses.find({"uid": user["uid"]}).sort("date", -1).limit(20)]
         overall_summary = dashboard_overall_summary(app.state.db, user["uid"])
@@ -2182,13 +2218,6 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             ),
         )
         return {
-            **overall_summary,
-            "friendItems": friend_balance_items(app.state.db, user["uid"]),
-            "groupItems": group_balance_items(app.state.db, user["uid"]),
-            "actionItems": action_items,
-            "activityItems": [personal_dashboard_activity_item(doc) for doc in docs],
-            "accountName": user.get("displayName") or "User",
-            "accountEmail": user.get("email") or "",
             "aiInsights": ai_summary.get("cards", []),
             "aiSummary": ai_summary,
         }

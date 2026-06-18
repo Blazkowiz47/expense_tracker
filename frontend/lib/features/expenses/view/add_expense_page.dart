@@ -691,7 +691,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
         ],
       ),
       body: AppPageContainer(
-        maxWidth: 700,
+        maxWidth: 920,
         children: [
           AppCard(
             padding: const EdgeInsets.all(20),
@@ -886,7 +886,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 10, 16, 18),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 700),
+          constraints: const BoxConstraints(maxWidth: 920),
           child: Row(
             children: [
               if (!_editing) ...[
@@ -937,7 +937,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
+              constraints: const BoxConstraints(maxWidth: 920),
               child: ListView(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 children: [

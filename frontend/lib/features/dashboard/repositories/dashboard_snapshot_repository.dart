@@ -2,6 +2,8 @@ import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dar
 
 abstract class DashboardSnapshotRepository {
   Future<DashboardSnapshot> fetchSnapshot();
+
+  Future<List<AiInsight>> fetchAiInsights() async => const [];
 }
 
 class MockDashboardSnapshotRepository implements DashboardSnapshotRepository {
@@ -70,4 +72,7 @@ class MockDashboardSnapshotRepository implements DashboardSnapshotRepository {
       accountEmail: 'sushrutpatwardhan@gmail.com',
     );
   }
+
+  @override
+  Future<List<AiInsight>> fetchAiInsights() async => const [];
 }

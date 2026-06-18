@@ -14,7 +14,16 @@ void main() {
       act: (cubit) => cubit.load(),
       expect: () => [
         const DashboardSnapshotLoading(),
-        isA<DashboardSnapshotLoaded>(),
+        isA<DashboardSnapshotLoaded>().having(
+          (state) => state.loadingAiInsights,
+          'loadingAiInsights',
+          isTrue,
+        ),
+        isA<DashboardSnapshotLoaded>().having(
+          (state) => state.loadingAiInsights,
+          'loadingAiInsights',
+          isFalse,
+        ),
       ],
     );
 
@@ -24,6 +33,7 @@ void main() {
         final repository = _FailingAfterFirstSnapshotRepository();
         final cubit = DashboardSnapshotCubit(repository: repository);
         await cubit.load();
+        await Future<void>.delayed(Duration.zero);
         final loadedState = cubit.state;
 
         await cubit.load(showLoading: false);
@@ -48,4 +58,7 @@ class _FailingAfterFirstSnapshotRepository
     }
     throw Exception('offline');
   }
+
+  @override
+  Future<List<AiInsight>> fetchAiInsights() async => const [];
 }

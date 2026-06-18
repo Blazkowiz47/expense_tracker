@@ -19,7 +19,9 @@ class ApiDashboardSnapshotRepository implements DashboardSnapshotRepository {
 
   @override
   Future<DashboardSnapshot> fetchSnapshot() async {
-    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/dashboard/snapshot');
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/api/v1/dashboard/snapshot',
+    ).replace(queryParameters: const {'includeAi': 'false'});
     final token = await _authTokenProvider.getBearerToken();
     final response = await _client.get(
       uri,
@@ -37,5 +39,32 @@ class ApiDashboardSnapshotRepository implements DashboardSnapshotRepository {
 
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     return DashboardSnapshot.fromJson(payload);
+  }
+
+  @override
+  Future<List<AiInsight>> fetchAiInsights() async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/dashboard/ai-insights');
+    final token = await _authTokenProvider.getBearerToken();
+    final response = await _client.get(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'ai insights request failed (${response.statusCode}): ${response.body}',
+      );
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    final rawInsights = payload['aiInsights'];
+    if (rawInsights is! List) return const [];
+    return rawInsights
+        .whereType<Map<String, dynamic>>()
+        .map(AiInsight.fromJson)
+        .toList(growable: false);
   }
 }

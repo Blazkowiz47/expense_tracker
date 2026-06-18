@@ -987,6 +987,42 @@ def test_dashboard_snapshot_includes_ai_summary_cards(tmp_path):
     assert "planned budget" in payload["aiInsights"][0]["message"]
 
 
+def test_dashboard_snapshot_can_skip_ai_summary(tmp_path):
+    mongo = mongomock.MongoClient()
+    provider = CapturingAiProvider()
+    app = create_app(database=mongo.expense_tracker_test, ai_provider=provider)
+    app.state.upload_dir = tmp_path / "uploads"
+    client = TestClient(app)
+    ensure_indexes(app.state.db)
+    headers = register(client)
+
+    dashboard = client.get("/api/v1/dashboard/snapshot?includeAi=false", headers=headers)
+
+    assert dashboard.status_code == 200, dashboard.text
+    payload = dashboard.json()
+    assert payload["aiInsights"] == []
+    assert payload["aiSummary"] == {}
+    assert provider.dashboard_context is None
+
+
+def test_dashboard_ai_insights_endpoint_returns_ai_cards(tmp_path):
+    mongo = mongomock.MongoClient()
+    provider = CapturingAiProvider()
+    app = create_app(database=mongo.expense_tracker_test, ai_provider=provider)
+    app.state.upload_dir = tmp_path / "uploads"
+    client = TestClient(app)
+    ensure_indexes(app.state.db)
+    headers = register(client)
+
+    response = client.get("/api/v1/dashboard/ai-insights", headers=headers)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["aiInsights"][0]["label"] == "AI summary"
+    assert payload["aiSummary"]["task"] == "dashboard_summary"
+    assert provider.dashboard_context["purpose"] == "home_summary"
+
+
 def test_ai_chat_returns_structured_plan(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)

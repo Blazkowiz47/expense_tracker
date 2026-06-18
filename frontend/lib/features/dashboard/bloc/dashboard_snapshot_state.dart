@@ -12,12 +12,16 @@ final class DashboardSnapshotLoading extends DashboardSnapshotState {
 }
 
 final class DashboardSnapshotLoaded extends DashboardSnapshotState {
-  const DashboardSnapshotLoaded({required this.snapshot});
+  const DashboardSnapshotLoaded({
+    required this.snapshot,
+    this.loadingAiInsights = false,
+  });
 
   final DashboardSnapshot snapshot;
+  final bool loadingAiInsights;
 
   @override
-  List<Object?> get props => [snapshot];
+  List<Object?> get props => [snapshot, loadingAiInsights];
 }
 
 final class DashboardSnapshotFailure extends DashboardSnapshotState {

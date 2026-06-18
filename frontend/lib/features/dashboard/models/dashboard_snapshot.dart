@@ -72,6 +72,32 @@ class DashboardSnapshot extends Equatable {
     );
   }
 
+  DashboardSnapshot copyWith({
+    String? overallLabel,
+    String? overallAmountText,
+    bool? overallPositive,
+    List<BalanceItem>? friendItems,
+    List<BalanceItem>? groupItems,
+    List<DailyActionItem>? actionItems,
+    List<ActivityItem>? activityItems,
+    List<AiInsight>? aiInsights,
+    String? accountName,
+    String? accountEmail,
+  }) {
+    return DashboardSnapshot(
+      overallLabel: overallLabel ?? this.overallLabel,
+      overallAmountText: overallAmountText ?? this.overallAmountText,
+      overallPositive: overallPositive ?? this.overallPositive,
+      friendItems: friendItems ?? this.friendItems,
+      groupItems: groupItems ?? this.groupItems,
+      actionItems: actionItems ?? this.actionItems,
+      activityItems: activityItems ?? this.activityItems,
+      aiInsights: aiInsights ?? this.aiInsights,
+      accountName: accountName ?? this.accountName,
+      accountEmail: accountEmail ?? this.accountEmail,
+    );
+  }
+
   @override
   List<Object?> get props => [
     overallLabel,

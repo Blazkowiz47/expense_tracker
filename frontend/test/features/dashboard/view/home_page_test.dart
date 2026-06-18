@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
@@ -15,6 +17,38 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  testWidgets('home page renders core content while AI insights load', (
+    tester,
+  ) async {
+    final repository = _DelayedAiSnapshotRepository();
+    final cubit = DashboardSnapshotCubit(repository: repository);
+    await cubit.load();
+    addTearDown(() {
+      repository.completeAiInsights();
+      cubit.close();
+    });
+
+    await tester.pumpWidget(
+      BlocProvider.value(
+        value: cubit,
+        child: MaterialApp(
+          home: Scaffold(
+            body: HomePage(
+              monthlyPlanRepository: _FakeMonthlyPlanRepository(),
+              creditCardsRepository: _FakeCreditCardsRepository(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('AI SUMMARY'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('Plan with AI'), findsOneWidget);
+  });
+
   testWidgets('home page renders daily action items and opens targets', (
     tester,
   ) async {
@@ -619,6 +653,9 @@ class _EmptySnapshotRepository implements DashboardSnapshotRepository {
       accountEmail: 'sushrut@example.com',
     );
   }
+
+  @override
+  Future<List<AiInsight>> fetchAiInsights() async => const [];
 }
 
 class _ActionSnapshotRepository implements DashboardSnapshotRepository {
@@ -657,6 +694,9 @@ class _ActionSnapshotRepository implements DashboardSnapshotRepository {
       accountEmail: 'sushrut@example.com',
     );
   }
+
+  @override
+  Future<List<AiInsight>> fetchAiInsights() async => const [];
 }
 
 class _CountingSnapshotRepository implements DashboardSnapshotRepository {
@@ -666,6 +706,27 @@ class _CountingSnapshotRepository implements DashboardSnapshotRepository {
   Future<DashboardSnapshot> fetchSnapshot() async {
     fetchCount += 1;
     return const _ActionSnapshotRepository().fetchSnapshot();
+  }
+
+  @override
+  Future<List<AiInsight>> fetchAiInsights() async => const [];
+}
+
+class _DelayedAiSnapshotRepository implements DashboardSnapshotRepository {
+  final Completer<List<AiInsight>> _aiCompleter = Completer<List<AiInsight>>();
+
+  @override
+  Future<DashboardSnapshot> fetchSnapshot() async {
+    return const _ActionSnapshotRepository().fetchSnapshot();
+  }
+
+  @override
+  Future<List<AiInsight>> fetchAiInsights() => _aiCompleter.future;
+
+  void completeAiInsights() {
+    if (!_aiCompleter.isCompleted) {
+      _aiCompleter.complete(const []);
+    }
   }
 }
 

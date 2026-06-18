@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
@@ -18,11 +20,33 @@ class DashboardSnapshotCubit extends Cubit<DashboardSnapshotState> {
     }
     try {
       final snapshot = await _repository.fetchSnapshot();
-      emit(DashboardSnapshotLoaded(snapshot: snapshot));
+      emit(
+        DashboardSnapshotLoaded(snapshot: snapshot, loadingAiInsights: true),
+      );
+      unawaited(_loadAiInsights());
     } catch (error) {
       if (showLoading || state is! DashboardSnapshotLoaded) {
         emit(DashboardSnapshotFailure(message: error.toString()));
       }
+    }
+  }
+
+  Future<void> _loadAiInsights() async {
+    try {
+      final insights = await _repository.fetchAiInsights();
+      if (isClosed) return;
+      final current = state;
+      if (current is! DashboardSnapshotLoaded) return;
+      emit(
+        DashboardSnapshotLoaded(
+          snapshot: current.snapshot.copyWith(aiInsights: insights),
+        ),
+      );
+    } catch (_) {
+      if (isClosed) return;
+      final current = state;
+      if (current is! DashboardSnapshotLoaded) return;
+      emit(DashboardSnapshotLoaded(snapshot: current.snapshot));
     }
   }
 }

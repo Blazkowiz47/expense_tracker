@@ -230,6 +230,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     final snapshot = state.snapshot;
+    final loadingAiInsights = state.loadingAiInsights;
     final compact = MediaQuery.sizeOf(context).width < 700;
     final showContinueSetup =
         widget.showContinueSetup ||
@@ -238,7 +239,10 @@ class _HomePageState extends State<HomePage> {
             _setupLooksIncomplete(_monthlyPlan));
     final children = compact
         ? <Widget>[
-            _InsightStrip(snapshot: snapshot),
+            _InsightStrip(
+              snapshot: snapshot,
+              loadingAiInsights: loadingAiInsights,
+            ),
             const SizedBox(height: 10),
             _MobileBudgetSummary(plan: _monthlyPlan, snapshot: snapshot),
             const SizedBox(height: 10),
@@ -277,7 +281,10 @@ class _HomePageState extends State<HomePage> {
             _RecentActivityPanel(items: snapshot.activityItems),
           ]
         : <Widget>[
-            _InsightStrip(snapshot: snapshot),
+            _InsightStrip(
+              snapshot: snapshot,
+              loadingAiInsights: loadingAiInsights,
+            ),
             const SizedBox(height: 16),
             const _PlanningAssistantCard(),
             const SizedBox(height: 16),
@@ -628,9 +635,13 @@ class _AiPlanLine extends StatelessWidget {
 }
 
 class _InsightStrip extends StatelessWidget {
-  const _InsightStrip({required this.snapshot});
+  const _InsightStrip({
+    required this.snapshot,
+    required this.loadingAiInsights,
+  });
 
   final DashboardSnapshot snapshot;
+  final bool loadingAiInsights;
 
   @override
   Widget build(BuildContext context) {
@@ -673,9 +684,10 @@ class _InsightStrip extends StatelessWidget {
       children: [
         _InsightBanner(
           icon: Icons.auto_awesome_outlined,
-          label: 'Summary',
+          label: loadingAiInsights ? 'AI summary' : 'Summary',
           message: balanceMessage,
           tone: _InsightTone.positive,
+          loading: loadingAiInsights,
         ),
         _InsightBanner(
           icon: firstAction == null
@@ -713,12 +725,14 @@ class _InsightBanner extends StatelessWidget {
     required this.label,
     required this.message,
     required this.tone,
+    this.loading = false,
   });
 
   final IconData icon;
   final String label;
   final String message;
   final _InsightTone tone;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -760,14 +774,27 @@ class _InsightBanner extends StatelessWidget {
               children: [
                 Icon(icon, size: 16, color: resolved.foreground),
                 const SizedBox(width: 6),
-                Text(
-                  label.toUpperCase(),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: resolved.foreground,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
+                Expanded(
+                  child: Text(
+                    label.toUpperCase(),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: resolved.foreground,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                    ),
                   ),
                 ),
+                if (loading)
+                  SizedBox(
+                    width: 70,
+                    child: LinearProgressIndicator(
+                      minHeight: 3,
+                      color: resolved.foreground,
+                      backgroundColor: resolved.foreground.withValues(
+                        alpha: 0.16,
+                      ),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
