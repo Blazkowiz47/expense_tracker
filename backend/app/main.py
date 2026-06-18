@@ -38,6 +38,8 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo import ASCENDING, DESCENDING, MongoClient
 
+from app.ai_prompts import load_prompt
+
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_DIR = ROOT / "data"
@@ -477,12 +479,7 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
                         "messages": [
                             {
                                 "role": "system",
-                                "content": (
-                                    "You extract receipt and bill fields for an expense tracker. "
-                                    "Return only valid JSON. Do not include reasoning or markdown. "
-                                    "Receipts may be Norwegian, English, Hindi, or Indian English. "
-                                    "Preserve original row text and normalize grocery names for comparison."
-                                ),
+                                "content": load_prompt("receipt_extraction_system.md"),
                             },
                             {
                                 "role": "user",
@@ -490,17 +487,7 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
                                     {"type": "image_url", "image_url": {"url": data_url}},
                                     {
                                         "type": "text",
-                                        "text": (
-                                            "Extract merchant, date, amount, currency, category, notes, "
-                                            "lineItems, confidence, and warnings from this bill. "
-                                            "Use ISO 8601 for date when visible. category should be a short "
-                                            "expense category. lineItems must be an array of objects with "
-                                            "originalText, detectedLanguage, itemName, normalizedName, brand, "
-                                            "quantity, unit, unitPrice, lineTotal, discount, category, and "
-                                            "confidence when visible. normalizedName should be English and "
-                                            "stable across stores and languages, for example melk/milk/doodh "
-                                            "as milk, brod/bread as bread, kylling/chicken as chicken."
-                                        ),
+                                        "text": load_prompt("receipt_extraction_user.md"),
                                     },
                                 ],
                             },
@@ -537,10 +524,9 @@ class LlamaServerBillExtractor(LocalGemmaBillExtractor):
                         "messages": [
                             {
                                 "role": "system",
-                                "content": (
-                                    "You are the AI service for an expense tracker. "
-                                    "Return only valid JSON. Do not include markdown. "
-                                    f"Schema version: {self.schema_version}. {instructions}"
+                                "content": load_prompt("structured_json_system.md").format(
+                                    schema_version=self.schema_version,
+                                    instructions=instructions,
                                 ),
                             },
                             {

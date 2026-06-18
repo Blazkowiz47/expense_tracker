@@ -10,23 +10,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.ai_prompts import load_prompt
+
 
 DEFAULT_MODEL = "google/gemma-4-E4B-it"
-SYSTEM_PROMPT = (
-    "You extract receipt and bill fields for an expense tracker. "
-    "Return only valid JSON. Do not include markdown or reasoning. "
-    "Receipts may be Norwegian, English, Hindi, Marathi, or Indian English."
-)
-USER_PROMPT = (
-    "Read this receipt image carefully and return JSON with exactly these keys: "
-    "merchant, date, amount, currency, category, notes, lineItems, confidence, warnings. "
-    "Use ISO 8601 for date when visible. amount is the final receipt total. "
-    "lineItems must be an array of objects with originalText, detectedLanguage, itemName, "
-    "normalizedName, brand, quantity, unit, unitPrice, lineTotal, discount, category, and "
-    "confidence when visible. normalizedName should be stable English for comparison, for "
-    "example melk/milk/doodh as milk, brod/bread as bread, kylling/chicken as chicken. "
-    "For OCR, prefer accuracy over guessing; put uncertainty in warnings."
-)
+SYSTEM_PROMPT = load_prompt("receipt_extraction_system.md")
+USER_PROMPT = load_prompt("receipt_extraction_user.md")
 
 
 class ExtractBillRequest(BaseModel):
