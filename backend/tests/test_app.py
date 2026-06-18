@@ -26,6 +26,7 @@ from app.main import (
 )
 
 OPENROUTER_CONFIG_MODELS = [
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "nex-agi/nex-n2-pro:free",
     "google/gemma-4-31b-it:free",
     "google/gemma-4-26b-a4b-it:free",
