@@ -86,6 +86,7 @@ class _ReceiptLineItemEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final confidence = (item.confidence * 100).round();
+    final tagChoices = _tagChoicesFor(item);
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: DecoratedBox(
@@ -141,45 +142,33 @@ class _ReceiptLineItemEditor extends StatelessWidget {
                     ),
                     _FieldSpec(
                       flex: 3,
-                      child: TextFormField(
-                        key: ValueKey('receipt-normalized-$index'),
-                        initialValue: item.normalizedName,
-                        decoration: const InputDecoration(
-                          labelText: 'Compare as',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) =>
-                            onChanged(item.copyWith(normalizedName: value)),
+                      child: _ReceiptItemTagsField(
+                        key: ValueKey('receipt-tags-$index'),
+                        selectedTags: item.tags,
+                        suggestions: tagChoices,
+                        onChanged: (tags) =>
+                            onChanged(item.copyWith(tags: tags)),
                       ),
                     ),
                     _FieldSpec(
                       flex: 2,
                       child: TextFormField(
-                        key: ValueKey('receipt-quantity-$index'),
-                        initialValue: item.quantity?.toString() ?? '',
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
+                        key: ValueKey('receipt-quantity-unit-$index'),
+                        initialValue: _formatQuantityUnit(item),
                         decoration: const InputDecoration(
-                          labelText: 'Qty',
+                          labelText: 'Qty / unit',
+                          hintText: '1 U',
                           border: OutlineInputBorder(),
                         ),
-                        onChanged: (value) => onChanged(
-                          item.copyWith(quantity: _parseNumber(value)),
-                        ),
-                      ),
-                    ),
-                    _FieldSpec(
-                      flex: 2,
-                      child: TextFormField(
-                        key: ValueKey('receipt-unit-$index'),
-                        initialValue: item.unit,
-                        decoration: const InputDecoration(
-                          labelText: 'Unit',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (value) =>
-                            onChanged(item.copyWith(unit: value)),
+                        onChanged: (value) {
+                          final parsed = _parseQuantityUnit(value);
+                          onChanged(
+                            item.copyWith(
+                              quantity: parsed.quantity,
+                              unit: parsed.unit,
+                            ),
+                          );
+                        },
                       ),
                     ),
                     _FieldSpec(
@@ -229,23 +218,149 @@ class _ReceiptLineItemEditor extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: 8),
-              TextFormField(
-                key: ValueKey('receipt-tags-$index'),
-                initialValue: item.tags.join(', '),
-                decoration: const InputDecoration(
-                  labelText: 'Tags',
-                  hintText: 'chocolate, guilty pleasure',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) =>
-                    onChanged(item.copyWith(tags: _parseTags(value))),
-              ),
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class _ReceiptItemTagsField extends StatelessWidget {
+  const _ReceiptItemTagsField({
+    required this.selectedTags,
+    required this.suggestions,
+    required this.onChanged,
+    super.key,
+  });
+
+  final List<String> selectedTags;
+  final List<String> suggestions;
+  final ValueChanged<List<String>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final selected = _normalizeTags(selectedTags);
+    final available = suggestions
+        .where((tag) => !selected.contains(tag))
+        .toList(growable: false);
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'Tags',
+        border: OutlineInputBorder(),
+        contentPadding: EdgeInsets.fromLTRB(12, 8, 8, 8),
+      ),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (selected.isEmpty)
+            Text(
+              'Choose tags',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            ...selected.map(
+              (tag) => InputChip(
+                label: Text(tag),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onDeleted: () => onChanged(
+                  selected.where((item) => item != tag).toList(growable: false),
+                ),
+              ),
+            ),
+          PopupMenuButton<String>(
+            tooltip: 'Add tag',
+            onSelected: (value) async {
+              if (value == _addTagAction) {
+                final tag = await _showAddTagDialog(context);
+                if (tag == null) return;
+                onChanged(_normalizeTags([...selected, tag]));
+                return;
+              }
+              onChanged(_normalizeTags([...selected, value]));
+            },
+            itemBuilder: (context) => [
+              ...available.map(
+                (tag) => PopupMenuItem<String>(value: tag, child: Text(tag)),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem<String>(
+                value: _addTagAction,
+                child: Text('Add new tag...'),
+              ),
+            ],
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.colorScheme.outline),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.arrow_drop_down,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 2),
+                    Text(
+                      'Add',
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _showAddTagDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add tag'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Tag',
+            hintText: 'guilty pleasure',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) =>
+              Navigator.of(context).pop(_normalizeTag(value)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_normalizeTag(controller.text)),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty) return null;
+    return result;
   }
 }
 
@@ -264,14 +379,66 @@ double? _parseNumber(String value) {
   return double.tryParse(cleaned);
 }
 
-List<String> _parseTags(String value) {
+String _formatQuantityUnit(BillLineItem item) {
+  final quantity = item.quantity;
+  final unit = item.unit.trim();
+  if (quantity == null && unit.isEmpty) return '';
+  final quantityText = quantity == null
+      ? ''
+      : quantity % 1 == 0
+      ? quantity.toStringAsFixed(0)
+      : quantity.toString();
+  return [quantityText, unit].where((part) => part.isNotEmpty).join(' ');
+}
+
+({double? quantity, String unit}) _parseQuantityUnit(String value) {
+  final cleaned = value.trim();
+  if (cleaned.isEmpty) {
+    return (quantity: null, unit: '');
+  }
+  final match = RegExp(
+    r'^([0-9]+(?:[,.][0-9]+)?)(?:\s*(.*))?$',
+  ).firstMatch(cleaned);
+  if (match == null) {
+    return (quantity: null, unit: cleaned);
+  }
+  return (
+    quantity: _parseNumber(match.group(1) ?? ''),
+    unit: (match.group(2) ?? '').trim(),
+  );
+}
+
+List<String> _tagChoicesFor(BillLineItem item) {
+  return _normalizeTags([
+    ...item.tags,
+    item.category,
+    item.normalizedName,
+    'grocery',
+    'vegetables',
+    'fruit',
+    'snacks',
+    'chocolate',
+    'dessert',
+    'guilty pleasure',
+    'household',
+    'personal',
+    'essentials',
+  ]);
+}
+
+List<String> _normalizeTags(Iterable<String> values) {
   final tags = <String>[];
   final seen = <String>{};
-  for (final raw in value.split(RegExp(r'[,;#\n]'))) {
-    final tag = raw.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  for (final raw in values) {
+    final tag = _normalizeTag(raw);
     if (tag.isEmpty || seen.contains(tag)) continue;
     tags.add(tag);
     seen.add(tag);
   }
   return tags;
 }
+
+String _normalizeTag(String value) =>
+    value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+const _addTagAction = '__add_tag__';

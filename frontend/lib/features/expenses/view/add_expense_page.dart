@@ -238,7 +238,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
     final selectedCard = _selectedCreditCard;
     final selectedAccount = _selectedAccount;
     final selectedDestinationAccount = _selectedDestinationAccount;
-    final tags = _parseTags(_tagsController.text);
+    final tags = _billResult == null
+        ? _parseTags(_tagsController.text)
+        : const <String>[];
     final effectiveCurrency = selectedCard?.currency ?? _currency;
     final effectivePaymentMethod = selectedCard == null
         ? _paymentMethod
@@ -389,9 +391,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       setState(() {
         _billResult = result;
         _receiptItems = result.lineItems;
-        if (_tagsController.text.trim().isEmpty) {
-          _tagsController.text = _formatTags(_suggestExpenseTags(result));
-        }
+        _tagsController.clear();
         if (result.dateExtracted) {
           _expenseDate = result.date;
         }
@@ -512,14 +512,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
       return description;
     }
     return '$description\n$notes';
-  }
-
-  List<String> _suggestExpenseTags(BillExtractionResult result) {
-    final tags = <String>[];
-    for (final item in result.lineItems) {
-      tags.addAll(item.tags);
-    }
-    return _normalizeTags(tags);
   }
 
   List<String> _parseTags(String value) => _normalizeTags(
@@ -834,15 +826,17 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   const SizedBox(height: 8),
                   _PaymentSourceNotice(message: _paymentSourcesError!),
                 ],
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _tagsController,
-                  decoration: const InputDecoration(
-                    labelText: 'Tags',
-                    hintText: 'guilty pleasure, chocolate, vegetables',
-                    border: OutlineInputBorder(),
+                if (_billResult == null) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _tagsController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tags',
+                      hintText: 'guilty pleasure, chocolate, vegetables',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
+                ],
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -1065,14 +1059,15 @@ class _AddExpensePageState extends State<AddExpensePage> {
                                 'This will update the selected credit card balance.',
                           ),
                         ),
-                      CupertinoFormRow(
-                        prefix: const Text('Tags'),
-                        child: CupertinoTextField(
-                          controller: _tagsController,
-                          placeholder: 'guilty pleasure, chocolate',
-                          textAlign: TextAlign.end,
+                      if (_billResult == null)
+                        CupertinoFormRow(
+                          prefix: const Text('Tags'),
+                          child: CupertinoTextField(
+                            controller: _tagsController,
+                            placeholder: 'guilty pleasure, chocolate',
+                            textAlign: TextAlign.end,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                   TextField(
