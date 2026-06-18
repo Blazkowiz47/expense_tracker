@@ -25,6 +25,14 @@ from app.main import (
     run_bill_extraction,
 )
 
+OPENROUTER_CONFIG_MODELS = [
+    "nex-agi/nex-n2-pro:free",
+    "google/gemma-4-31b-it:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "openrouter/free",
+]
+
 
 class FakeExtractor:
     async def extract(self, file_path: Path, original_name: str):
@@ -1188,10 +1196,7 @@ def test_openrouter_models_are_configurable_and_deduplicated(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODEL", "primary-model")
     monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "fallback-one, fallback-two, primary-model")
 
-    assert openrouter_model_names() == [
-        "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
-        "nex-agi/nex-n2-pro:free",
-    ]
+    assert openrouter_model_names() == OPENROUTER_CONFIG_MODELS
 
 
 def test_build_ai_provider_uses_openrouter_model_chain(monkeypatch):
@@ -1205,10 +1210,7 @@ def test_build_ai_provider_uses_openrouter_model_chain(monkeypatch):
     provider = build_ai_provider()
 
     assert isinstance(provider, AiProviderChain)
-    assert [item.model for item in provider.providers] == [
-        "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
-        "nex-agi/nex-n2-pro:free",
-    ]
+    assert [item.model for item in provider.providers] == OPENROUTER_CONFIG_MODELS
 
 
 def test_build_ai_provider_treats_gemini_setting_as_openrouter(monkeypatch):
@@ -1222,10 +1224,7 @@ def test_build_ai_provider_treats_gemini_setting_as_openrouter(monkeypatch):
     provider = build_ai_provider()
 
     assert isinstance(provider, AiProviderChain)
-    assert [item.model for item in provider.providers] == [
-        "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
-        "nex-agi/nex-n2-pro:free",
-    ]
+    assert [item.model for item in provider.providers] == OPENROUTER_CONFIG_MODELS
 
 
 def test_provider_chain_falls_back_between_models(tmp_path):
@@ -1257,7 +1256,10 @@ def test_provider_chain_stops_after_non_retryable_error(tmp_path):
     result = asyncio.run(provider.extract(receipt, "receipt.jpg"))
 
     assert result["merchant"] == "Receipt"
-    assert "openrouter:model-a unavailable: quota exceeded" in result["warnings"]
+    assert result["warnings"] == [
+        "AI extraction is temporarily unavailable. Review this expense manually."
+    ]
+    assert "openrouter:model-a" not in " ".join(result["warnings"])
 
 
 def test_openrouter_requests_use_temperature_zero(monkeypatch, tmp_path):

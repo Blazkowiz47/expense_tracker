@@ -1039,7 +1039,12 @@ class AiProviderChain(LocalGemmaBillExtractor):
                 warnings.append(f"{provider_name} unavailable: {exc}")
                 ai_terminal_log("provider_chain.fallback", provider=provider_name, retryable=True, error=repr(exc))
                 continue
-        return self._fallback(original_name, warnings or ["No AI providers are configured."])
+        user_warning = (
+            "AI extraction is temporarily unavailable. Review this expense manually."
+            if warnings
+            else "AI extraction is not configured. Review this expense manually."
+        )
+        return self._fallback(original_name, [user_warning])
 
     async def dashboard_summary(self, context: dict[str, Any]) -> dict[str, Any]:
         return await self._structured_with_fallback("dashboard_summary", context, None)
@@ -1067,7 +1072,12 @@ class AiProviderChain(LocalGemmaBillExtractor):
                 warnings.append(f"{provider_name} unavailable: {exc}")
                 ai_terminal_log("provider_chain.fallback", provider=provider_name, task=task, retryable=True, error=repr(exc))
                 continue
-        return with_ai_warnings(fallback, warnings or ["No AI providers are configured."])
+        user_warning = (
+            "AI assistant is temporarily unavailable; showing local fallback guidance."
+            if warnings
+            else "AI assistant is not configured; showing local fallback guidance."
+        )
+        return with_ai_warnings(fallback, [user_warning])
 
 
 def with_ai_warnings(payload: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
