@@ -823,6 +823,11 @@ class HostedAiProviderError(Exception):
 
 
 def hosted_ai_response_text(payload: dict[str, Any]) -> str:
+    error = payload.get("error")
+    if isinstance(error, dict):
+        code = str(error.get("code") or "").strip()
+        message = str(error.get("message") or "OpenRouter request failed.").strip()
+        raise ValueError(f"OpenRouter error {code}: {message}" if code else f"OpenRouter error: {message}")
     candidates = payload.get("candidates")
     if isinstance(candidates, list):
         for candidate in candidates:
@@ -990,7 +995,10 @@ class OpenRouterAiProvider(LocalGemmaBillExtractor):
                 if response.status_code in {408, 409, 429, 500, 502, 503, 504}:
                     raise HostedAiProviderError(self.provider_name, f"OpenRouter request failed with {response.status_code}.")
                 response.raise_for_status()
-                content = hosted_ai_response_text(response.json())
+                try:
+                    content = hosted_ai_response_text(response.json())
+                except ValueError as exc:
+                    raise HostedAiProviderError(self.provider_name, str(exc)) from exc
                 ai_terminal_log(
                     f"{event_prefix}.raw_model_text",
                     provider=self.provider_name,
@@ -1019,12 +1027,7 @@ class AiProviderChain(LocalGemmaBillExtractor):
         warnings: list[str] = []
         for provider in self.providers:
             try:
-                result = await provider.extract(file_path, original_name)
-                if warnings:
-                    result["warnings"] = warnings + [str(item) for item in result.get("warnings", []) if str(item).strip()]
-                    if isinstance(result.get("expenseDraft"), dict):
-                        result["expenseDraft"]["warnings"] = result["warnings"]
-                return result
+                return await provider.extract(file_path, original_name)
             except HostedAiProviderError as exc:
                 warnings.append(f"{exc.provider} unavailable: {exc}")
                 ai_terminal_log("provider_chain.fallback", provider=exc.provider, retryable=exc.retryable, error=str(exc))
@@ -1052,7 +1055,7 @@ class AiProviderChain(LocalGemmaBillExtractor):
                     result = await provider.finance_chat(context, question or "")
                 else:
                     result = await provider.dashboard_summary(context)
-                return with_ai_warnings(result, warnings) if warnings else result
+                return result
             except HostedAiProviderError as exc:
                 warnings.append(f"{exc.provider} unavailable: {exc}")
                 ai_terminal_log("provider_chain.fallback", provider=exc.provider, task=task, retryable=exc.retryable, error=str(exc))
@@ -1225,21 +1228,19 @@ def split_env_list(value: str) -> list[str]:
 
 
 def openrouter_model_names() -> list[str]:
-    configured_models = split_env_list(os.getenv("OPENROUTER_MODELS", ""))
-    if configured_models:
-        raw_models = configured_models
-    else:
-        raw_models = [
-            os.getenv("OPENROUTER_MODEL", "google/gemma-4-31b-it:free").strip(),
-            *split_env_list(os.getenv("OPENROUTER_FALLBACK_MODELS", "")),
-        ]
+    config = load_prompt_json("openrouter_models.json")
+    raw_models = [
+        str(item).strip()
+        for section in ("receiptExtraction", "structuredFinance")
+        for item in (config.get(section) if isinstance(config.get(section), list) else [])
+    ]
     models: list[str] = []
     seen: set[str] = set()
     for model_name in raw_models:
         if model_name and model_name not in seen:
             models.append(model_name)
             seen.add(model_name)
-    return models or ["google/gemma-4-31b-it:free"]
+    return models or ["nex-agi/nex-n2-pro:free"]
 
 
 def build_ai_provider() -> LocalGemmaBillExtractor:

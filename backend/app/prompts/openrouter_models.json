@@ -1,0 +1,10 @@
+{
+  "receiptExtraction": [
+    "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
+    "nex-agi/nex-n2-pro:free"
+  ],
+  "structuredFinance": [
+    "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
+    "nex-agi/nex-n2-pro:free"
+  ]
+}

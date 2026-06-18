@@ -103,21 +103,26 @@ HF_RECEIPT_MAX_NEW_TOKENS=1536
 
 ### Hosted receipt AI via OpenRouter
 
-The default hosted AI provider is OpenRouter. Configure one primary model and
-any number of fallbacks; the backend tries them in order when a model is at
-capacity or unavailable. All model calls use `temperature=0` for predictable
-JSON extraction and planning responses.
+The default hosted AI provider is OpenRouter. Configure the API key in env; the
+model order lives beside the prompts in `app/prompts/openrouter_models.json` so
+receipt/planning model choices are code-reviewed and easy to edit. The backend
+tries models in order when a model is at capacity or unavailable. All model
+calls use `temperature=0` for predictable JSON extraction and planning
+responses.
 
 ```sh
 AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=...
-OPENROUTER_MODEL=google/gemma-4-31b-it:free
-OPENROUTER_FALLBACK_MODELS=meta-llama/llama-3.2-11b-vision-instruct:free,qwen/qwen2.5-vl-72b-instruct:free
 ```
 
-You can also provide a complete ordered list with `OPENROUTER_MODELS`; when it
-is set, it takes precedence over `OPENROUTER_MODEL` and
-`OPENROUTER_FALLBACK_MODELS`.
+Current model list:
+
+```json
+[
+  "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
+  "nex-agi/nex-n2-pro:free"
+]
+```
 
 ### Gemma 4 E4B via llama-server
 

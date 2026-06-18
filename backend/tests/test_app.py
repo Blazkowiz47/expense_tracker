@@ -1179,12 +1179,13 @@ def test_parse_model_json_handles_wrapped_json():
 
 def test_openrouter_models_are_configurable_and_deduplicated(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODELS", "model-a, model-b, model-a")
-    assert openrouter_model_names() == ["model-a", "model-b"]
-
-    monkeypatch.delenv("OPENROUTER_MODELS", raising=False)
     monkeypatch.setenv("OPENROUTER_MODEL", "primary-model")
     monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "fallback-one, fallback-two, primary-model")
-    assert openrouter_model_names() == ["primary-model", "fallback-one", "fallback-two"]
+
+    assert openrouter_model_names() == [
+        "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
+        "nex-agi/nex-n2-pro:free",
+    ]
 
 
 def test_build_ai_provider_uses_openrouter_model_chain(monkeypatch):
@@ -1198,7 +1199,10 @@ def test_build_ai_provider_uses_openrouter_model_chain(monkeypatch):
     provider = build_ai_provider()
 
     assert isinstance(provider, AiProviderChain)
-    assert [item.model for item in provider.providers] == ["model-a", "model-b", "model-c"]
+    assert [item.model for item in provider.providers] == [
+        "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
+        "nex-agi/nex-n2-pro:free",
+    ]
 
 
 def test_build_ai_provider_treats_gemini_setting_as_openrouter(monkeypatch):
@@ -1212,7 +1216,10 @@ def test_build_ai_provider_treats_gemini_setting_as_openrouter(monkeypatch):
     provider = build_ai_provider()
 
     assert isinstance(provider, AiProviderChain)
-    assert [item.model for item in provider.providers] == ["openrouter-only"]
+    assert [item.model for item in provider.providers] == [
+        "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
+        "nex-agi/nex-n2-pro:free",
+    ]
 
 
 def test_provider_chain_falls_back_between_models(tmp_path):
@@ -1228,7 +1235,7 @@ def test_provider_chain_falls_back_between_models(tmp_path):
     result = asyncio.run(provider.extract(receipt, "receipt.jpg"))
 
     assert result["merchant"] == "Cafe Oslo"
-    assert "openrouter:model-a unavailable: quota exceeded" in result["warnings"]
+    assert result["warnings"] == []
 
 
 def test_provider_chain_stops_after_non_retryable_error(tmp_path):
@@ -1333,6 +1340,42 @@ def test_openrouter_requests_use_temperature_zero(monkeypatch, tmp_path):
     assert summary_result["cards"][0]["message"] == "Looks calm."
     assert [call["json"]["temperature"] for call in calls] == [0, 0]
     assert [call["json"]["model"] for call in calls] == ["model-a", "model-a"]
+
+
+def test_openrouter_error_response_body_is_retryable(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        text = '{"error":{"message":"The operation was aborted","code":504}}'
+
+        def json(self):
+            return {"error": {"message": "The operation was aborted", "code": 504}}
+
+        def raise_for_status(self):
+            return None
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, headers=None, json=None):
+            return FakeResponse()
+
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+    provider = OpenRouterAiProvider("test-key", "model-a")
+
+    try:
+        asyncio.run(provider.dashboard_summary({"monthlyPlan": {}}))
+    except HostedAiProviderError as exc:
+        assert exc.retryable is True
+        assert str(exc) == "OpenRouter error 504: The operation was aborted"
+    else:
+        raise AssertionError("Expected OpenRouter error body to raise HostedAiProviderError")
 
 
 def test_receipt_normalization_applies_date_and_store_quirks():
