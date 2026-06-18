@@ -32,6 +32,7 @@ class _FakeExpenseRepository extends ExpenseRepository {
   Future<void> createExpense(
     Expense expense, {
     List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
   }) async {
     createdExpense = expense;
     this.expense = expense;
@@ -41,6 +42,7 @@ class _FakeExpenseRepository extends ExpenseRepository {
   Future<void> updateExpense(
     Expense expense, {
     List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
   }) async {
     updatedExpense = expense;
     this.expense = expense;

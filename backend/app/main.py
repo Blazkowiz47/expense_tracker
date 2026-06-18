@@ -589,6 +589,15 @@ class LocalGemmaBillExtractor:
             fallback,
         )
 
+    async def receipt_review_memory(self, context: dict[str, Any]) -> dict[str, Any]:
+        fallback = fallback_receipt_review_memory(context)
+        return await self._complete_structured(
+            "receipt_review_memory",
+            context,
+            load_prompt("receipt_review_memory_system.md"),
+            fallback,
+        )
+
     async def _complete_structured(
         self,
         task: str,
@@ -935,6 +944,15 @@ class OpenRouterAiProvider(LocalGemmaBillExtractor):
             fallback,
         )
 
+    async def receipt_review_memory(self, context: dict[str, Any]) -> dict[str, Any]:
+        fallback = fallback_receipt_review_memory(context)
+        return await self._complete_structured(
+            "receipt_review_memory",
+            context,
+            load_prompt("receipt_review_memory_system.md"),
+            fallback,
+        )
+
     async def _complete_structured(
         self,
         task: str,
@@ -1052,13 +1070,23 @@ class AiProviderChain(LocalGemmaBillExtractor):
     async def finance_chat(self, context: dict[str, Any], question: str) -> dict[str, Any]:
         return await self._structured_with_fallback("finance_chat", context, question)
 
+    async def receipt_review_memory(self, context: dict[str, Any]) -> dict[str, Any]:
+        return await self._structured_with_fallback("receipt_review_memory", context, None)
+
     async def _structured_with_fallback(self, task: str, context: dict[str, Any], question: str | None) -> dict[str, Any]:
         warnings: list[str] = []
-        fallback = fallback_ai_finance_chat(context, question or "") if task == "finance_chat" else fallback_ai_dashboard_summary(context)
+        if task == "finance_chat":
+            fallback = fallback_ai_finance_chat(context, question or "")
+        elif task == "receipt_review_memory":
+            fallback = fallback_receipt_review_memory(context)
+        else:
+            fallback = fallback_ai_dashboard_summary(context)
         for provider in self.providers:
             try:
                 if task == "finance_chat":
                     result = await provider.finance_chat(context, question or "")
+                elif task == "receipt_review_memory":
+                    result = await provider.receipt_review_memory(context)
                 else:
                     result = await provider.dashboard_summary(context)
                 return result
@@ -1174,7 +1202,58 @@ def normalize_structured_ai_response(task: str, raw: dict[str, Any], fallback: d
             "suggestions": (suggestions or fallback.get("suggestions", []))[:4],
             "warnings": [str(item) for item in raw.get("warnings", []) if str(item).strip()],
         }
+    if task == "receipt_review_memory":
+        return normalize_receipt_review_memory_response(raw, fallback)
     return fallback
+
+
+def normalize_receipt_review_memory_response(raw: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    memories: list[dict[str, Any]] = []
+    allowed_types = {"item_tag_preference", "store_quirk", "merchant_alias"}
+    for item in raw.get("memories", []) if isinstance(raw.get("memories"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        memory_type = str(item.get("type") or "").strip().lower()
+        if memory_type not in allowed_types:
+            continue
+        preferred_tags = normalize_tags(item.get("preferredTags") or item.get("tags") or [])
+        item_pattern = canonical_item_name(str(item.get("itemPattern") or item.get("itemName") or ""))
+        merchant = str(item.get("merchant") or "").strip()[:120]
+        reason = str(item.get("reason") or "").strip()[:240]
+        try:
+            confidence = float(item.get("confidence") or 0)
+        except (TypeError, ValueError):
+            confidence = 0
+        confidence = max(0.0, min(confidence, 1.0))
+        if memory_type == "item_tag_preference" and (not item_pattern or not preferred_tags):
+            continue
+        if memory_type != "item_tag_preference" and not reason:
+            continue
+        memories.append(
+            {
+                "type": memory_type,
+                "scope": "user",
+                "merchant": merchant,
+                "itemPattern": item_pattern,
+                "preferredTags": preferred_tags,
+                "confidence": confidence,
+                "reason": reason,
+            }
+        )
+    discard = []
+    for item in raw.get("discard", []) if isinstance(raw.get("discard"), list) else []:
+        if isinstance(item, dict):
+            reason = str(item.get("reason") or "").strip()
+            if reason:
+                discard.append({"reason": reason[:240]})
+    if not memories and fallback.get("memories"):
+        memories = list(fallback.get("memories") or [])
+    return {
+        **ai_base_response("receipt_review_memory"),
+        "memories": memories[:8],
+        "discard": discard[:8],
+        "warnings": [str(item) for item in raw.get("warnings", []) if str(item).strip()],
+    }
 
 
 def fallback_ai_dashboard_summary(context: dict[str, Any]) -> dict[str, Any]:
@@ -1230,6 +1309,43 @@ def fallback_ai_finance_chat(context: dict[str, Any], question: str) -> dict[str
             "Can I afford a NOK 30,000 laptop?",
             "Cut my monthly spending",
         ],
+        "warnings": [],
+    }
+
+
+def fallback_receipt_review_memory(context: dict[str, Any]) -> dict[str, Any]:
+    merchant = str(context.get("merchant") or "").strip()
+    memories: list[dict[str, Any]] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    final_items = context.get("finalItems") if isinstance(context.get("finalItems"), list) else []
+    for item in final_items:
+        if not isinstance(item, dict):
+            continue
+        item_pattern = canonical_item_name(
+            str(item.get("normalizedName") or item.get("itemName") or item.get("originalText") or "")
+        )
+        tags = normalize_tags(item.get("tags") or [])
+        if not item_pattern or not tags:
+            continue
+        key = (item_pattern, tuple(tags))
+        if key in seen:
+            continue
+        seen.add(key)
+        memories.append(
+            {
+                "type": "item_tag_preference",
+                "scope": "user",
+                "merchant": merchant,
+                "itemPattern": item_pattern,
+                "preferredTags": tags,
+                "confidence": 0.62,
+                "reason": "User saved item tags during receipt review.",
+            }
+        )
+    return {
+        **ai_base_response("receipt_review_memory"),
+        "memories": memories[:8],
+        "discard": [],
         "warnings": [],
     }
 
@@ -1625,7 +1741,11 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         return {"expenses": [expense_out(doc) for doc in docs]}
 
     @app.post("/api/v1/expenses", status_code=201)
-    def create_expense(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    def create_expense(
+        body: dict[str, Any],
+        background_tasks: BackgroundTasks,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
         expense = build_expense(body, user["uid"])
         if expense.get("sourceType") == "setup_month_entry" and expense.get("sourcePeriod") and expense.get("sourceSetupKey"):
             existing = app.state.db.expenses.find_one({
@@ -1641,7 +1761,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 return expense_out(expense)
         app.state.db.expenses.insert_one(expense)
         if receipt_items_in_body(body):
-            save_receipt_items_for_source(
+            final_items = save_receipt_items_for_source(
                 app.state.db,
                 user=user,
                 source_type="personal",
@@ -1649,10 +1769,24 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 raw_items=body_receipt_items(body),
                 bill_job_id=str(body.get("billJobId") or ""),
             )
+            schedule_receipt_review_memory(
+                background_tasks,
+                app,
+                user=user,
+                source_type="personal",
+                expense=expense,
+                final_items=final_items,
+                bill_job_id=str(body.get("billJobId") or ""),
+            )
         return expense_out(expense)
 
     @app.put("/api/v1/expenses/{expense_id}")
-    def update_expense(expense_id: str, body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    def update_expense(
+        expense_id: str,
+        body: dict[str, Any],
+        background_tasks: BackgroundTasks,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
         existing = app.state.db.expenses.find_one({"id": expense_id, "uid": user["uid"]})
         if not existing:
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
@@ -1662,12 +1796,21 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         reconcile_credit_card_expense_update(app.state.db, user["uid"], existing, updated)
         app.state.db.expenses.replace_one({"id": expense_id, "uid": user["uid"]}, updated)
         if receipt_items_in_body(body):
-            save_receipt_items_for_source(
+            final_items = save_receipt_items_for_source(
                 app.state.db,
                 user=user,
                 source_type="personal",
                 expense=updated,
                 raw_items=body_receipt_items(body),
+                bill_job_id=str(body.get("billJobId") or ""),
+            )
+            schedule_receipt_review_memory(
+                background_tasks,
+                app,
+                user=user,
+                source_type="personal",
+                expense=updated,
+                final_items=final_items,
                 bill_job_id=str(body.get("billJobId") or ""),
             )
         return expense_out(updated)
@@ -2470,12 +2613,22 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             doc = await build_group_expense(app, body, group, app.state.db, user["uid"])
             app.state.db.group_expenses.insert_one(doc)
             if receipt_items_in_body(body):
-                save_receipt_items_for_source(
+                final_items = save_receipt_items_for_source(
                     app.state.db,
                     user=user,
                     source_type="group",
                     expense=doc,
                     raw_items=body_receipt_items(body),
+                    group=group,
+                    bill_job_id=str(body.get("billJobId") or ""),
+                )
+                schedule_receipt_review_memory(
+                    background_tasks,
+                    app,
+                    user=user,
+                    source_type="group",
+                    expense=doc,
+                    final_items=final_items,
                     group=group,
                     bill_job_id=str(body.get("billJobId") or ""),
                 )
@@ -2543,12 +2696,22 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             updated = await build_group_expense(app, body, group, app.state.db, user["uid"], expense_id=parts[1], created_by=existing["createdBy"], created_at=existing["createdAt"])
             app.state.db.group_expenses.replace_one({"groupId": group_id, "id": parts[1]}, updated)
             if receipt_items_in_body(body):
-                save_receipt_items_for_source(
+                final_items = save_receipt_items_for_source(
                     app.state.db,
                     user=user,
                     source_type="group",
                     expense=updated,
                     raw_items=body_receipt_items(body),
+                    group=group,
+                    bill_job_id=str(body.get("billJobId") or ""),
+                )
+                schedule_receipt_review_memory(
+                    background_tasks,
+                    app,
+                    user=user,
+                    source_type="group",
+                    expense=updated,
+                    final_items=final_items,
                     group=group,
                     bill_job_id=str(body.get("billJobId") or ""),
                 )
@@ -2746,7 +2909,12 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         return json_ready(job)
 
     @app.post("/api/v1/bills/{job_id}/create-expense", status_code=201)
-    def bill_to_expense(job_id: str, body: dict[str, Any] | None = None, user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    def bill_to_expense(
+        job_id: str,
+        background_tasks: BackgroundTasks,
+        body: dict[str, Any] | None = None,
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
         job = app.state.db.ai_jobs.find_one({"id": job_id, "uid": user["uid"]})
         if not job or not job.get("result"):
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "bill extraction not found"))
@@ -2762,12 +2930,21 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             user["uid"],
         )
         app.state.db.expenses.insert_one(expense)
-        save_receipt_items_for_source(
+        final_items = save_receipt_items_for_source(
             app.state.db,
             user=user,
             source_type="personal",
             expense=expense,
             raw_items=result.get("lineItems") or [],
+            bill_job_id=job_id,
+        )
+        schedule_receipt_review_memory(
+            background_tasks,
+            app,
+            user=user,
+            source_type="personal",
+            expense=expense,
+            final_items=final_items,
             bill_job_id=job_id,
         )
         app.state.db.ai_jobs.update_one({"id": job_id}, {"$set": {"expenseId": expense["id"], "updatedAt": now()}})
@@ -2872,6 +3049,8 @@ def ensure_indexes(db: Any) -> None:
     db.receipt_items.create_index([("groupId", ASCENDING), ("date", DESCENDING)])
     db.receipt_items.create_index([("normalizedName", ASCENDING), ("currency", ASCENDING), ("unitPriceNormalized", ASCENDING)])
     db.receipt_items.create_index([("sourceType", ASCENDING), ("expenseId", ASCENDING)])
+    db.receipt_memories.create_index([("uid", ASCENDING), ("type", ASCENDING), ("itemPattern", ASCENDING)])
+    db.receipt_memories.create_index([("uid", ASCENDING), ("merchantKey", ASCENDING), ("updatedAt", DESCENDING)])
     db.financial_accounts.create_index([("uid", ASCENDING), ("updatedAt", DESCENDING)])
     db.credit_cards.create_index([("uid", ASCENDING), ("updatedAt", DESCENDING)])
     db.loans.create_index([("uid", ASCENDING), ("updatedAt", ASCENDING)])
@@ -3726,12 +3905,12 @@ def save_receipt_items_for_source(
     raw_items: Any,
     group: dict[str, Any] | None = None,
     bill_job_id: str = "",
-) -> None:
+) -> list[dict[str, Any]]:
     items = normalize_receipt_line_items(raw_items)
     expense_id = str(expense.get("id") or "").strip()
     group_id = str((group or {}).get("id") or expense.get("groupId") or "").strip()
     if not expense_id:
-        return
+        return []
     delete_filter = {
         "sourceType": source_type,
         "expenseId": expense_id,
@@ -3739,7 +3918,7 @@ def save_receipt_items_for_source(
     }
     db.receipt_items.delete_many(delete_filter)
     if not items:
-        return
+        return []
     current = now()
     docs = []
     for index, item in enumerate(items):
@@ -3762,6 +3941,186 @@ def save_receipt_items_for_source(
             }
         )
     db.receipt_items.insert_many(docs)
+    return docs
+
+
+def schedule_receipt_review_memory(
+    background_tasks: BackgroundTasks,
+    app: FastAPI,
+    *,
+    user: dict[str, Any],
+    source_type: str,
+    expense: dict[str, Any],
+    final_items: list[dict[str, Any]],
+    group: dict[str, Any] | None = None,
+    bill_job_id: str = "",
+) -> None:
+    if not final_items:
+        return
+    context = build_receipt_review_memory_context(
+        app.state.db,
+        user=user,
+        source_type=source_type,
+        expense=expense,
+        final_items=final_items,
+        group=group,
+        bill_job_id=bill_job_id,
+    )
+    background_tasks.add_task(run_receipt_review_memory_generation, app, context)
+
+
+def build_receipt_review_memory_context(
+    db: Any,
+    *,
+    user: dict[str, Any],
+    source_type: str,
+    expense: dict[str, Any],
+    final_items: list[dict[str, Any]],
+    group: dict[str, Any] | None = None,
+    bill_job_id: str = "",
+) -> dict[str, Any]:
+    job = db.ai_jobs.find_one({"id": bill_job_id.strip(), "uid": user["uid"]}) if bill_job_id.strip() else None
+    extracted = job.get("result") if isinstance(job, dict) and isinstance(job.get("result"), dict) else {}
+    extracted_items = normalize_receipt_line_items(extracted.get("lineItems")) if extracted else []
+    merchant = str(expense.get("description") or extracted.get("merchant") or "").strip()
+    final_payload_items = [receipt_memory_item_payload(item) for item in final_items]
+    extracted_payload_items = [receipt_memory_item_payload(item) for item in extracted_items]
+    return {
+        "schemaVersion": LocalGemmaBillExtractor.schema_version,
+        "source": "receipt_review",
+        "uid": user["uid"],
+        "scope": "user",
+        "sourceType": source_type,
+        "expenseId": str(expense.get("id") or ""),
+        "groupId": str((group or {}).get("id") or expense.get("groupId") or ""),
+        "billJobId": bill_job_id.strip(),
+        "merchant": merchant,
+        "finalExpense": {
+            "description": merchant,
+            "amount": expense.get("amount"),
+            "currency": normalize_currency(expense.get("currency"), "INR"),
+            "category": str(expense.get("category") or "").strip(),
+            "date": iso(aware(expense.get("date") or now())),
+            "tags": normalize_tags(expense.get("tags")),
+        },
+        "extractedReceipt": {
+            "merchant": str(extracted.get("merchant") or "").strip(),
+            "amount": extracted.get("amount"),
+            "currency": normalize_currency(extracted.get("currency"), "INR") if extracted else "",
+            "category": str(extracted.get("category") or "").strip(),
+            "date": str(extracted.get("date") or "").strip(),
+            "lineItems": extracted_payload_items,
+        },
+        "finalItems": final_payload_items,
+        "diffs": receipt_review_diffs(extracted_payload_items, final_payload_items),
+    }
+
+
+def receipt_memory_item_payload(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "originalText": str(item.get("originalText") or "").strip()[:200],
+        "itemName": str(item.get("itemName") or item.get("name") or "").strip()[:120],
+        "normalizedName": canonical_item_name(str(item.get("normalizedName") or item.get("itemName") or "")),
+        "quantity": item.get("quantity"),
+        "unit": str(item.get("unit") or "").strip()[:40],
+        "lineTotal": item.get("lineTotal"),
+        "category": str(item.get("category") or "").strip()[:80],
+        "tags": normalize_tags(item.get("tags")),
+    }
+
+
+def receipt_review_diffs(extracted_items: list[dict[str, Any]], final_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    extracted_by_name = {
+        canonical_item_name(str(item.get("normalizedName") or item.get("itemName") or "")): item
+        for item in extracted_items
+        if canonical_item_name(str(item.get("normalizedName") or item.get("itemName") or ""))
+    }
+    diffs = []
+    for item in final_items:
+        key = canonical_item_name(str(item.get("normalizedName") or item.get("itemName") or ""))
+        extracted = extracted_by_name.get(key, {})
+        changes: dict[str, Any] = {}
+        if normalize_tags(extracted.get("tags")) != normalize_tags(item.get("tags")):
+            changes["tags"] = {"extracted": normalize_tags(extracted.get("tags")), "final": normalize_tags(item.get("tags"))}
+        if str(extracted.get("category") or "").strip().lower() != str(item.get("category") or "").strip().lower():
+            changes["category"] = {"extracted": extracted.get("category") or "", "final": item.get("category") or ""}
+        if changes:
+            diffs.append({"itemPattern": key, **changes})
+    return diffs[:20]
+
+
+async def run_receipt_review_memory_generation(app: FastAPI, context: dict[str, Any]) -> None:
+    started = time.perf_counter()
+    try:
+        result = await generate_receipt_review_memory(app.state.ai_provider, context)
+        store_receipt_review_memories(app.state.db, context, result)
+        ai_terminal_log(
+            "receipt_review_memory.completed",
+            elapsedMs=round((time.perf_counter() - started) * 1000),
+            memoryCount=len(result.get("memories") or []),
+            billJobId=context.get("billJobId"),
+            expenseId=context.get("expenseId"),
+        )
+    except Exception as exc:
+        ai_terminal_log(
+            "receipt_review_memory.failed",
+            elapsedMs=round((time.perf_counter() - started) * 1000),
+            billJobId=context.get("billJobId"),
+            expenseId=context.get("expenseId"),
+            error=repr(exc),
+        )
+
+
+async def generate_receipt_review_memory(provider: Any, context: dict[str, Any]) -> dict[str, Any]:
+    if hasattr(provider, "receipt_review_memory"):
+        return await provider.receipt_review_memory(context)
+    return fallback_receipt_review_memory(context)
+
+
+def store_receipt_review_memories(db: Any, context: dict[str, Any], result: dict[str, Any]) -> None:
+    memories = result.get("memories") if isinstance(result.get("memories"), list) else []
+    current = now()
+    for memory in memories:
+        if not isinstance(memory, dict):
+            continue
+        memory_type = str(memory.get("type") or "").strip()
+        item_pattern = canonical_item_name(str(memory.get("itemPattern") or ""))
+        preferred_tags = normalize_tags(memory.get("preferredTags") or [])
+        if memory_type == "item_tag_preference" and (not item_pattern or not preferred_tags):
+            continue
+        merchant = str(memory.get("merchant") or context.get("merchant") or "").strip()[:120]
+        key = {
+            "uid": context["uid"],
+            "type": memory_type,
+            "scope": "user",
+            "merchantKey": normalized_text(merchant),
+            "itemPattern": item_pattern,
+            "preferredTags": preferred_tags,
+        }
+        update = {
+            "$set": {
+                "uid": context["uid"],
+                "type": memory_type,
+                "scope": "user",
+                "merchant": merchant,
+                "merchantKey": normalized_text(merchant),
+                "itemPattern": item_pattern,
+                "preferredTags": preferred_tags,
+                "confidence": float(memory.get("confidence") or 0),
+                "reason": str(memory.get("reason") or "").strip()[:240],
+                "source": "ai_from_user_review",
+                "sourceType": context.get("sourceType") or "",
+                "expenseId": context.get("expenseId") or "",
+                "groupId": context.get("groupId") or "",
+                "billJobId": context.get("billJobId") or "",
+                "lastObservedAt": current,
+                "updatedAt": current,
+                "status": "tentative",
+            },
+            "$setOnInsert": {"id": uuid.uuid4().hex, "createdAt": current},
+            "$inc": {"evidenceCount": 1},
+        }
+        db.receipt_memories.update_one(key, update, upsert=True)
 
 
 def visible_receipt_item_filter(db: Any, uid: str) -> dict[str, Any]:

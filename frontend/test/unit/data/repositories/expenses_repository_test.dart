@@ -98,7 +98,7 @@ void main() {
       ),
     );
 
-    await repository.createExpense(expense);
+    await repository.createExpense(expense, billJobId: 'bill-job-1');
 
     expect(repository.getExpenseById('api-id'), isNotNull);
     expect(repository.getExpenseById('api-id')!.tags, [
@@ -122,6 +122,7 @@ void main() {
     expect(payload['paymentMethod'], 'cash');
     expect(payload['date'], '2026-02-25T12:30:00.000Z');
     expect(payload['tags'], ['guilty pleasure', 'restaurant']);
+    expect(payload['billJobId'], 'bill-job-1');
   });
 
   test('updateExpense sends PUT and replaces cached expense', () async {

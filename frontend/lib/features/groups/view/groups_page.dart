@@ -1480,6 +1480,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         String? billMessage;
         BillExtractionResult? billResult;
         var receiptItems = <BillLineItem>[];
+        var billJobId = '';
         var didStartInitialBillUpload = false;
 
         Future<void> scanBill(StateSetter setDialogState) async {
@@ -1543,6 +1544,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
               expenseDate = result.date;
               billResult = result;
               receiptItems = result.lineItems;
+              billJobId = result.jobId;
               billMessage =
                   'Bill ready (${(result.confidence * 100).toStringAsFixed(0)}% confidence).';
             });
@@ -2530,6 +2532,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                         .where((item) => item.name.trim().isNotEmpty)
                         .map((item) => item.toJson())
                         .toList(growable: false),
+                    'billJobId': billJobId,
                     'attachmentItems': List<_AttachmentUploadItem>.from(
                       attachmentItems,
                     ),
@@ -2596,6 +2599,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final receiptItems = (payload['receiptItems'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList(growable: false);
+    final billJobId = (payload['billJobId'] as String?)?.trim() ?? '';
     final attachmentItems =
         (payload['attachmentItems'] as List<dynamic>? ?? const [])
             .whereType<_AttachmentUploadItem>()
@@ -2627,6 +2631,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         category: category,
         attachments: attachments,
         receiptItems: receiptItems,
+        billJobId: billJobId,
         date: date,
       );
 
@@ -2755,6 +2760,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
     final receiptItems = (payload['receiptItems'] as List<dynamic>? ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList(growable: false);
+    final billJobId = (payload['billJobId'] as String?)?.trim() ?? '';
     final requiresExplicitAttachmentSave =
         payload['requiresExplicitAttachmentSave'] == true;
     final didInlineAttachmentUpload =
@@ -2851,6 +2857,7 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
         category: category,
         attachments: attachments,
         receiptItems: receiptItems,
+        billJobId: billJobId,
         date: date,
       );
       _replaceExpenseInList(updatedExpense);

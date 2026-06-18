@@ -21,22 +21,32 @@ final class RefreshExpenses extends ExpensesEvent {
 final class CreateExpense extends ExpensesEvent {
   final Expense expense;
   final List<Map<String, dynamic>> receiptItems;
+  final String billJobId;
 
-  const CreateExpense({required this.expense, this.receiptItems = const []});
+  const CreateExpense({
+    required this.expense,
+    this.receiptItems = const [],
+    this.billJobId = '',
+  });
 
   @override
-  List<Object?> get props => [expense, receiptItems];
+  List<Object?> get props => [expense, receiptItems, billJobId];
 }
 
 /// Update an existing expense
 final class UpdateExpense extends ExpensesEvent {
   final Expense expense;
   final List<Map<String, dynamic>> receiptItems;
+  final String billJobId;
 
-  const UpdateExpense({required this.expense, this.receiptItems = const []});
+  const UpdateExpense({
+    required this.expense,
+    this.receiptItems = const [],
+    this.billJobId = '',
+  });
 
   @override
-  List<Object?> get props => [expense, receiptItems];
+  List<Object?> get props => [expense, receiptItems, billJobId];
 }
 
 /// Delete an expense (soft delete)

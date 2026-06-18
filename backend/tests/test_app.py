@@ -76,6 +76,7 @@ class CapturingAiProvider(FakeExtractor):
     def __init__(self):
         self.dashboard_context = None
         self.chat_context = None
+        self.receipt_memory_context = None
 
     async def dashboard_summary(self, context):
         self.dashboard_context = context
@@ -103,6 +104,28 @@ class CapturingAiProvider(FakeExtractor):
             "answer": "Context received.",
             "steps": ["Use the compact context packet."],
             "suggestions": [],
+            "warnings": [],
+        }
+
+    async def receipt_review_memory(self, context):
+        self.receipt_memory_context = context
+        final_items = context.get("finalItems") or []
+        item = final_items[0] if final_items else {}
+        return {
+            "task": "receipt_review_memory",
+            "schemaVersion": "finance-ai-v1",
+            "memories": [
+                {
+                    "type": "item_tag_preference",
+                    "scope": "user",
+                    "merchant": context.get("merchant") or "",
+                    "itemPattern": item.get("normalizedName") or item.get("itemName") or "",
+                    "preferredTags": item.get("tags") or [],
+                    "confidence": 0.91,
+                    "reason": "User reviewed the item tag after receipt extraction.",
+                }
+            ],
+            "discard": [],
             "warnings": [],
         }
 
@@ -1169,6 +1192,85 @@ def test_receipt_items_can_be_saved_with_personal_expense(tmp_path):
     assert payload["items"][0]["merchant"] == "Kiwi"
     assert payload["items"][0]["sourceType"] == "personal"
     assert payload["summaryByCurrency"][0]["bestUnitPrice"] == 19
+
+
+def test_reviewed_receipt_save_generates_user_memory(tmp_path):
+    mongo = mongomock.MongoClient()
+    provider = CapturingAiProvider()
+    app = create_app(database=mongo.expense_tracker_test, ai_provider=provider)
+    app.state.upload_dir = tmp_path / "uploads"
+    app.state.upload_dir.mkdir(parents=True, exist_ok=True)
+    ensure_indexes(app.state.db)
+    client = TestClient(app)
+    headers = register(client)
+    user = app.state.db.users.find_one({"emailNormalized": "user@example.com"})
+    assert user is not None
+    app.state.db.ai_jobs.insert_one(
+        {
+            "id": "bill-job-1",
+            "uid": user["uid"],
+            "status": "completed",
+            "result": {
+                "merchant": "REMA 1000",
+                "amount": 52.6,
+                "currency": "NOK",
+                "category": "Groceries",
+                "date": "2026-06-17T18:42:00Z",
+                "lineItems": [
+                    {
+                        "originalText": "SOFT BROWNIE 16% 52,60",
+                        "itemName": "Soft Brownie",
+                        "normalizedName": "brownie",
+                        "quantity": 1,
+                        "unit": "each",
+                        "lineTotal": 52.6,
+                        "tags": [],
+                    }
+                ],
+            },
+            "createdAt": now(),
+            "updatedAt": now(),
+        }
+    )
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 52.6,
+            "currency": "NOK",
+            "category": "Groceries",
+            "description": "REMA 1000 Gjovik Stadion",
+            "date": "2026-06-17T18:42:00Z",
+            "billJobId": "bill-job-1",
+            "receiptItems": [
+                {
+                    "originalText": "SOFT BROWNIE 16% 52,60",
+                    "itemName": "Soft Brownie",
+                    "normalizedName": "brownie",
+                    "quantity": 1,
+                    "unit": "each",
+                    "lineTotal": 52.6,
+                    "tags": ["guilty pleasure"],
+                }
+            ],
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    assert provider.receipt_memory_context is not None
+    assert provider.receipt_memory_context["billJobId"] == "bill-job-1"
+    assert provider.receipt_memory_context["extractedReceipt"]["lineItems"][0]["tags"] == []
+    assert provider.receipt_memory_context["finalItems"][0]["tags"] == ["guilty pleasure"]
+    assert provider.receipt_memory_context["diffs"][0]["tags"]["final"] == ["guilty pleasure"]
+    memory = app.state.db.receipt_memories.find_one(
+        {"uid": user["uid"], "type": "item_tag_preference", "itemPattern": "brownie"}
+    )
+    assert memory is not None
+    assert memory["preferredTags"] == ["guilty pleasure"]
+    assert memory["source"] == "ai_from_user_review"
+    assert memory["status"] == "tentative"
+    assert memory["evidenceCount"] == 1
 
 
 def test_group_receipt_items_are_visible_to_group_members(tmp_path):

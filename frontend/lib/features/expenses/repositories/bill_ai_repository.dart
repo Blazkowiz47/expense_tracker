@@ -9,6 +9,7 @@ import 'package:http_parser/http_parser.dart';
 
 class BillExtractionResult {
   const BillExtractionResult({
+    required this.jobId,
     required this.merchant,
     required this.amount,
     required this.date,
@@ -21,6 +22,7 @@ class BillExtractionResult {
     required this.warnings,
   });
 
+  final String jobId;
   final String merchant;
   final double amount;
   final DateTime date;
@@ -35,6 +37,7 @@ class BillExtractionResult {
   factory BillExtractionResult.fromJson(Map<String, dynamic> json) {
     final parsedDate = DateTime.tryParse((json['date'] as String?) ?? '');
     return BillExtractionResult(
+      jobId: (json['jobId'] as String?) ?? '',
       merchant: (json['merchant'] as String?) ?? '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       date: parsedDate ?? DateTime.now(),
@@ -278,9 +281,10 @@ class BillAiRepository {
       }
       final payload = jsonDecode(poll.body) as Map<String, dynamic>;
       if (payload['status'] == 'completed') {
-        return BillExtractionResult.fromJson(
-          payload['result'] as Map<String, dynamic>,
-        );
+        return BillExtractionResult.fromJson({
+          ...(payload['result'] as Map<String, dynamic>),
+          'jobId': jobId,
+        });
       }
       if (payload['status'] == 'failed') {
         throw Exception(payload['error'] ?? 'Bill extraction failed');

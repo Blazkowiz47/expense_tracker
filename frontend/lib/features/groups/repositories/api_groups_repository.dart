@@ -276,6 +276,7 @@ class ApiGroupsRepository {
     String category = '',
     List<String> attachments = const [],
     List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
     required DateTime date,
   }) async {
     final response = await _request(
@@ -294,6 +295,7 @@ class ApiGroupsRepository {
         'category': category,
         'attachments': attachments,
         if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
+        if (billJobId.trim().isNotEmpty) 'billJobId': billJobId.trim(),
         'date': BackendDateCodec.encodeDate(date),
       },
     );
@@ -315,6 +317,7 @@ class ApiGroupsRepository {
     String category = '',
     List<String> attachments = const [],
     List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
     required DateTime date,
   }) async {
     final response = await _request(
@@ -332,6 +335,7 @@ class ApiGroupsRepository {
         'category': category,
         'attachments': attachments,
         if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
+        if (billJobId.trim().isNotEmpty) 'billJobId': billJobId.trim(),
         'date': BackendDateCodec.encodeDate(date),
       },
     );

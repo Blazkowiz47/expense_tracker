@@ -29,6 +29,7 @@ class ExpenseRepository {
   Future<void> createExpense(
     Expense expense, {
     List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses');
     final token = await _authTokenProvider.getBearerToken();
@@ -68,6 +69,7 @@ class ExpenseRepository {
               'sourceSetupKey': expense.sourceSetupKey!.trim(),
             if (expense.tags.isNotEmpty) 'tags': expense.tags,
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
+            if (billJobId.trim().isNotEmpty) 'billJobId': billJobId.trim(),
           }),
         )
         .timeout(_requestTimeout);
@@ -86,6 +88,7 @@ class ExpenseRepository {
   Future<void> updateExpense(
     Expense expense, {
     List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses/${expense.id}');
     final token = await _authTokenProvider.getBearerToken();
@@ -120,6 +123,7 @@ class ExpenseRepository {
               'sourceSetupKey': expense.sourceSetupKey!.trim(),
             'tags': expense.tags,
             if (receiptItems.isNotEmpty) 'receiptItems': receiptItems,
+            if (billJobId.trim().isNotEmpty) 'billJobId': billJobId.trim(),
           }),
         )
         .timeout(_requestTimeout);

@@ -61,6 +61,7 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
       await _repository.createExpense(
         event.expense,
         receiptItems: event.receiptItems,
+        billJobId: event.billJobId,
       );
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));
@@ -78,6 +79,7 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
       await _repository.updateExpense(
         event.expense,
         receiptItems: event.receiptItems,
+        billJobId: event.billJobId,
       );
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));

@@ -79,6 +79,19 @@ def test_receipt_store_quirks_file_declares_rema_registration_rule():
     assert "REMA-appen" in rema_rule["lineItemOriginalTextPatterns"][0]
 
 
+def test_receipt_review_memory_prompt_is_json_only_and_scoped():
+    prompt = load_prompt("receipt_review_memory_system.md").lower()
+
+    assert "return exactly one valid json object and nothing else" in prompt
+    assert "do not invent facts" in prompt
+    assert "do not store payment account numbers" in prompt
+    assert "item_tag_preference" in prompt
+    assert "store_quirk" in prompt
+    assert "merchant_alias" in prompt
+    assert '"memories"' in prompt
+    assert '"discard"' in prompt
+
+
 def test_structured_json_prompt_has_shared_contract_placeholders():
     prompt = load_prompt("structured_json_system.md")
 

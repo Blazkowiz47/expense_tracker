@@ -172,6 +172,7 @@ class _FakeGroupsRepository extends ApiGroupsRepository {
     String category = '',
     List<String> attachments = const [],
     List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
     required DateTime date,
   }) async {
     recordedExpenseUpdate = (

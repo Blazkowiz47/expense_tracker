@@ -93,6 +93,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   String? _billMessage;
   BillExtractionResult? _billResult;
   List<BillLineItem> _receiptItems = const [];
+  String _billJobId = '';
   List<FinancialAccount> _accounts = const [];
   List<CreditCardAccount> _creditCards = const [];
   DateTime _expenseDate = DateTime.now();
@@ -301,9 +302,21 @@ class _AddExpensePageState extends State<AddExpensePage> {
         );
         bloc.add(const RefreshExpenses());
       } else if (_editing) {
-        bloc.add(UpdateExpense(expense: expense, receiptItems: receiptItems));
+        bloc.add(
+          UpdateExpense(
+            expense: expense,
+            receiptItems: receiptItems,
+            billJobId: _billJobId,
+          ),
+        );
       } else {
-        bloc.add(CreateExpense(expense: expense, receiptItems: receiptItems));
+        bloc.add(
+          CreateExpense(
+            expense: expense,
+            receiptItems: receiptItems,
+            billJobId: _billJobId,
+          ),
+        );
       }
 
       final resultState = await bloc.stream
@@ -331,6 +344,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           _tagsController.clear();
           _billResult = null;
           _receiptItems = const [];
+          _billJobId = '';
           _billMessage = 'Saved. Ready for the next expense.';
           _expenseDate = DateTime.now();
         });
@@ -359,6 +373,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       _extractingBill = true;
       _error = null;
       _billMessage = 'Extracting bill on the backend...';
+      _billJobId = '';
     });
     try {
       final picked = await _picker.pickImage(
@@ -391,6 +406,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       setState(() {
         _billResult = result;
         _receiptItems = result.lineItems;
+        _billJobId = result.jobId;
         _tagsController.clear();
         if (result.dateExtracted) {
           _expenseDate = result.date;
