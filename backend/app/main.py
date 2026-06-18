@@ -2830,19 +2830,14 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     @app.post("/api/v1/recurring/templates", status_code=201)
     def create_recurring(body: dict[str, Any], user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         require_json(body, "title", "category", "frequency", "startDate")
-        frequency = str(body["frequency"]).strip().lower()
-        if frequency not in recurring_frequency_values():
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly, monthly, quarterly or yearly"))
+        schedule = recurring_schedule_from_body(body)
+        frequency = schedule["frequency"]
         kind = str(body.get("kind") or "expense").strip().lower()
         if kind not in {"expense", "income"}:
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "kind must be expense or income"))
-        amount = float(body.get("amount") or body.get("expectedAmount") or 0)
-        if amount <= 0:
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "amount must be positive"))
+        amount = positive_number(body.get("amount") or body.get("expectedAmount") or 0, "amount")
         start = parse_dt(str(body["startDate"]))
-        day_of_month = int(body.get("dayOfMonth") or start.day)
-        if day_of_month < 1 or day_of_month > 31:
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "dayOfMonth must be between 1 and 31"))
+        day_of_month = bounded_int(body.get("dayOfMonth") or start.day, "dayOfMonth", 1, 31)
         doc = {
             "id": uuid.uuid4().hex,
             "uid": user["uid"],
@@ -2853,12 +2848,20 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             "currency": str(body.get("currency") or "INR").strip().upper() or "INR",
             "category": str(body["category"]).strip(),
             "frequency": frequency,
+            "intervalCount": schedule["intervalCount"],
+            "intervalUnit": schedule["intervalUnit"],
             "dayOfMonth": day_of_month,
             "sourceAccountId": str(body.get("sourceAccountId") or "").strip(),
             "sourceAccountName": str(body.get("sourceAccountName") or body.get("accountName") or "").strip(),
             "startDate": start,
             "nextDueDate": recurring_next_due_date(
-                {"startDate": start, "dayOfMonth": day_of_month, "frequency": frequency},
+                {
+                    "startDate": start,
+                    "dayOfMonth": day_of_month,
+                    "frequency": frequency,
+                    "intervalCount": schedule["intervalCount"],
+                    "intervalUnit": schedule["intervalUnit"],
+                },
                 max(current_month(), f"{start.year:04d}-{start.month:02d}"),
             ),
             "active": True,
@@ -5061,9 +5064,7 @@ def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "kind must be expense or income"))
         updates["kind"] = kind
     if "amount" in body or "expectedAmount" in body:
-        amount = float(body.get("amount") or body.get("expectedAmount") or 0)
-        if amount <= 0:
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "amount must be positive"))
+        amount = positive_number(body.get("amount") or body.get("expectedAmount") or 0, "amount")
         updates["amount"] = amount
         updates["expectedAmount"] = amount
     if "currency" in body:
@@ -5077,18 +5078,15 @@ def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -
         updates["sourceAccountId"] = str(body.get("sourceAccountId") or "").strip()
     if "sourceAccountName" in body or "accountName" in body:
         updates["sourceAccountName"] = str(body.get("sourceAccountName") or body.get("accountName") or "").strip()
-    if "frequency" in body:
-        frequency = str(body.get("frequency") or "monthly").strip().lower()
-        if frequency not in recurring_frequency_values():
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly, monthly, quarterly or yearly"))
-        updates["frequency"] = frequency
+    if "frequency" in body or "intervalCount" in body or "intervalUnit" in body:
+        schedule = recurring_schedule_from_body({**existing, **body})
+        updates["frequency"] = schedule["frequency"]
+        updates["intervalCount"] = schedule["intervalCount"]
+        updates["intervalUnit"] = schedule["intervalUnit"]
     if "startDate" in body:
         updates["startDate"] = parse_dt(str(body.get("startDate") or ""))
     if "dayOfMonth" in body:
-        day_of_month = int(body.get("dayOfMonth") or 0)
-        if day_of_month < 1 or day_of_month > 31:
-            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "dayOfMonth must be between 1 and 31"))
-        updates["dayOfMonth"] = day_of_month
+        updates["dayOfMonth"] = bounded_int(body.get("dayOfMonth") or 0, "dayOfMonth", 1, 31)
     if "active" in body:
         active = parse_bool_field(body.get("active"), "active")
         updates["active"] = active
@@ -5099,7 +5097,7 @@ def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -
     if not updates:
         return {}
     merged = {**existing, **updates}
-    if any(field in updates for field in {"startDate", "dayOfMonth", "frequency", "active"}):
+    if any(field in updates for field in {"startDate", "dayOfMonth", "frequency", "intervalCount", "intervalUnit", "active"}):
         start = aware(merged.get("startDate") or now())
         updates["nextDueDate"] = recurring_next_due_date(
             merged,
@@ -5110,7 +5108,81 @@ def recurring_template_updates(body: dict[str, Any], existing: dict[str, Any]) -
 
 
 def recurring_frequency_values() -> set[str]:
-    return {"daily", "weekly", "monthly", "quarterly", "yearly"}
+    return {"daily", "weekly", "monthly", "bimonthly", "quarterly", "yearly", "custom"}
+
+
+def recurring_interval_units() -> set[str]:
+    return {"days", "weeks", "months", "years"}
+
+
+def recurring_schedule_from_body(body: dict[str, Any]) -> dict[str, Any]:
+    frequency = str(body.get("frequency") or "monthly").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "bi_monthly": "bimonthly",
+        "bi-monthly": "bimonthly",
+        "every_2_months": "bimonthly",
+        "every_two_months": "bimonthly",
+        "custom_days": "custom",
+        "custom_months": "custom",
+        "custom_weeks": "custom",
+        "custom_years": "custom",
+    }
+    frequency = aliases.get(frequency, frequency)
+    if frequency not in recurring_frequency_values():
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("INVALID_ARGUMENT", "frequency must be daily, weekly, monthly, bimonthly, quarterly, yearly or custom"),
+        )
+    default_intervals = {
+        "daily": (1, "days"),
+        "weekly": (1, "weeks"),
+        "monthly": (1, "months"),
+        "bimonthly": (2, "months"),
+        "quarterly": (3, "months"),
+        "yearly": (12, "months"),
+    }
+    if frequency == "custom":
+        interval_count = bounded_int(body.get("intervalCount") or 1, "intervalCount", 1, 366)
+        interval_unit = str(body.get("intervalUnit") or "months").strip().lower()
+        if interval_unit not in recurring_interval_units():
+            raise HTTPException(
+                status_code=400,
+                detail=api_error("INVALID_ARGUMENT", "intervalUnit must be days, weeks, months or years"),
+            )
+        return {
+            "frequency": "custom",
+            "intervalCount": interval_count,
+            "intervalUnit": interval_unit,
+        }
+    interval_count, interval_unit = default_intervals[frequency]
+    return {
+        "frequency": frequency,
+        "intervalCount": interval_count,
+        "intervalUnit": interval_unit,
+    }
+
+
+def recurring_schedule_for_template(template: dict[str, Any]) -> tuple[int, str]:
+    schedule = recurring_schedule_from_body(template)
+    return int(schedule["intervalCount"]), str(schedule["intervalUnit"])
+
+
+def recurring_interval_months(template: dict[str, Any]) -> int | None:
+    interval_count, interval_unit = recurring_schedule_for_template(template)
+    if interval_unit == "months":
+        return interval_count
+    if interval_unit == "years":
+        return interval_count * 12
+    return None
+
+
+def recurring_interval_delta(template: dict[str, Any]) -> timedelta | None:
+    interval_count, interval_unit = recurring_schedule_for_template(template)
+    if interval_unit == "days":
+        return timedelta(days=interval_count)
+    if interval_unit == "weeks":
+        return timedelta(weeks=interval_count)
+    return None
 
 
 def reconcile_recurring_template_occurrences(db: Any, uid: str, template: dict[str, Any] | None) -> None:
@@ -5153,6 +5225,9 @@ def reconcile_recurring_template_occurrences(db: Any, uid: str, template: dict[s
                     "title": template.get("title") or "Recurring item",
                     "category": template.get("category") or "Personal",
                     "currency": template.get("currency") or "INR",
+                    "frequency": template.get("frequency") or "monthly",
+                    "intervalCount": recurring_schedule_from_body(template)["intervalCount"],
+                    "intervalUnit": recurring_schedule_from_body(template)["intervalUnit"],
                     "expectedAmount": float(template.get("expectedAmount") or template.get("amount") or 0),
                     "dueDate": replacement_due_date,
                     "updatedAt": now(),
@@ -5169,35 +5244,27 @@ def recurring_occurrence_id(uid: str, template_id: str, due_date: datetime) -> s
 
 def recurring_due_dates_for_month(template: dict[str, Any], month: str) -> list[datetime]:
     start, end = month_range(month)
-    frequency = str(template.get("frequency") or "monthly").lower()
     template_start = aware(template.get("startDate") or start)
     active_from = aware(template.get("resumedAt") or template_start)
     earliest = max(start, template_start, active_from)
     if template_start >= end or active_from >= end:
         return []
-    if frequency == "monthly":
-        due_date = recurring_due_date_for_month(template, month)
-        if due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
-            return []
-        return [due_date]
-
-    if frequency in {"quarterly", "yearly"}:
+    interval_months = recurring_interval_months(template)
+    if interval_months is not None:
         year, month_number = [int(part) for part in month.split("-")]
         month_delta = (
             (year * 12 + (month_number - 1))
             - (template_start.year * 12 + (template_start.month - 1))
         )
-        interval_months = 3 if frequency == "quarterly" else 12
         if month_delta < 0 or month_delta % interval_months != 0:
             return []
         due_date = recurring_due_date_for_month(template, month)
         if due_date < start or due_date >= end or due_date < template_start or due_date < active_from:
             return []
         return [due_date]
-
-    if frequency not in {"daily", "weekly"}:
+    interval = recurring_interval_delta(template)
+    if interval is None:
         return []
-    interval = timedelta(days=1 if frequency == "daily" else 7)
     due_date = template_start
     if due_date < earliest:
         interval_seconds = interval.total_seconds()
@@ -5215,11 +5282,10 @@ def recurring_due_dates_for_month(template: dict[str, Any], month: str) -> list[
 
 def recurring_due_date_for_month(template: dict[str, Any], month: str) -> datetime:
     year, month_number = [int(part) for part in month.split("-")]
-    frequency = str(template.get("frequency") or "monthly").lower()
     start = aware(template.get("startDate") or now())
-    if frequency == "daily" or frequency == "weekly":
+    if recurring_interval_delta(template) is not None:
         dates = recurring_due_dates_for_month(template, month)
-        return dates[0] if dates else next_due(start, frequency)
+        return dates[0] if dates else next_due(start, template)
     last_day = calendar.monthrange(year, month_number)[1]
     day = int(template.get("dayOfMonth") or start.day)
     return datetime(year, month_number, min(day, last_day), tzinfo=UTC)
@@ -5233,7 +5299,7 @@ def recurring_next_due_date(template: dict[str, Any], from_month: str) -> dateti
         if dates:
             return dates[0]
     start = aware(template.get("startDate") or now())
-    return next_due(start, str(template.get("frequency") or "monthly").lower())
+    return next_due(start, template)
 
 
 def ensure_recurring_occurrences(db: Any, uid: str, month: str) -> int:
@@ -5255,6 +5321,9 @@ def ensure_recurring_occurrences(db: Any, uid: str, month: str) -> int:
                 "title": template.get("title") or "Recurring item",
                 "category": template.get("category") or "Personal",
                 "currency": template.get("currency") or "INR",
+                "frequency": template.get("frequency") or "monthly",
+                "intervalCount": recurring_schedule_from_body(template)["intervalCount"],
+                "intervalUnit": recurring_schedule_from_body(template)["intervalUnit"],
                 "expectedAmount": float(template.get("expectedAmount") or template.get("amount") or 0),
                 "actualAmount": None,
                 "actualDate": None,
@@ -6908,16 +6977,15 @@ def touch_group(db: Any, group_id: str) -> None:
         db.groups.update_one({"id": group_id}, {"$set": {"updatedAt": now(), "memberCount": len(group.get("memberUids") or [])}})
 
 
-def next_due(start: datetime, frequency: str) -> datetime:
-    if frequency == "daily":
-        return start + timedelta(days=1)
-    if frequency == "weekly":
-        return start + timedelta(days=7)
-    month_increment = 12 if frequency == "yearly" else 3 if frequency == "quarterly" else 1
+def next_due(start: datetime, template: dict[str, Any]) -> datetime:
+    interval = recurring_interval_delta(template)
+    if interval is not None:
+        return start + interval
+    month_increment = recurring_interval_months(template) or 1
     month = start.month + month_increment
     year = start.year + (month - 1) // 12
     month = ((month - 1) % 12) + 1
-    day = min(start.day, 28)
+    day = min(start.day, calendar.monthrange(year, month)[1])
     return start.replace(year=year, month=month, day=day)
 
 

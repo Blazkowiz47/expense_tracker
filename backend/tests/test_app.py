@@ -2262,6 +2262,72 @@ def test_yearly_recurring_policy_only_generates_in_due_month(tmp_path):
     assert [item["title"] for item in next_june.json()["occurrences"]] == ["Car insurance"]
 
 
+def test_bimonthly_recurring_bill_generates_every_two_months(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Light bill",
+            "kind": "expense",
+            "amount": "1,350.50",
+            "currency": "NOK",
+            "category": "Utilities",
+            "frequency": "bimonthly",
+            "dayOfMonth": 12,
+            "startDate": "2026-01-12T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["frequency"] == "bimonthly"
+    assert created.json()["intervalCount"] == 2
+    assert created.json()["intervalUnit"] == "months"
+
+    january = client.get("/api/v1/recurring/occurrences?month=2026-01", headers=headers)
+    february = client.get("/api/v1/recurring/occurrences?month=2026-02", headers=headers)
+    march = client.get("/api/v1/recurring/occurrences?month=2026-03", headers=headers)
+
+    assert [item["title"] for item in january.json()["occurrences"]] == ["Light bill"]
+    assert february.json()["occurrences"] == []
+    assert [item["title"] for item in march.json()["occurrences"]] == ["Light bill"]
+
+
+def test_custom_day_interval_recurring_item_generates_by_elapsed_days(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created = client.post(
+        "/api/v1/recurring/templates",
+        headers=headers,
+        json={
+            "title": "Water meter",
+            "kind": "expense",
+            "amount": 450,
+            "currency": "NOK",
+            "category": "Utilities",
+            "frequency": "custom",
+            "intervalCount": 45,
+            "intervalUnit": "days",
+            "dayOfMonth": 1,
+            "startDate": "2026-01-10T00:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["frequency"] == "custom"
+    assert created.json()["intervalCount"] == 45
+    assert created.json()["intervalUnit"] == "days"
+
+    january = client.get("/api/v1/recurring/occurrences?month=2026-01", headers=headers)
+    february = client.get("/api/v1/recurring/occurrences?month=2026-02", headers=headers)
+    march = client.get("/api/v1/recurring/occurrences?month=2026-03", headers=headers)
+
+    assert [item["dueDate"] for item in january.json()["occurrences"]] == ["2026-01-10T00:00:00Z"]
+    assert [item["dueDate"] for item in february.json()["occurrences"]] == ["2026-02-24T00:00:00Z"]
+    assert march.json()["occurrences"] == []
+
+
 def test_loan_emi_logging_creates_or_updates_expense(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
