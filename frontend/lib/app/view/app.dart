@@ -6,6 +6,7 @@ import 'package:expense_tracker/features/auth/cubit/auth_state.dart';
 import 'package:expense_tracker/features/auth/repositories/auth_repository.dart';
 import 'package:expense_tracker/features/auth/view/login_page.dart';
 import 'package:expense_tracker/features/credit_cards/view/credit_cards_page.dart';
+import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
 import 'package:expense_tracker/features/groups/view/groups_page.dart';
@@ -22,13 +23,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class ExpenseTrackerAppView extends StatelessWidget {
-  const ExpenseTrackerAppView({this.authRepository, super.key});
+  const ExpenseTrackerAppView({
+    this.authRepository,
+    this.dashboardRepository,
+    this.expensesRepository,
+    this.profileRepository,
+    super.key,
+  });
 
   final AuthRepository? authRepository;
+  final DashboardSnapshotRepository? dashboardRepository;
+  final ExpenseRepository? expensesRepository;
+  final UserProfileRepository? profileRepository;
 
   @override
   Widget build(BuildContext context) {
-    final profileRepository = UserProfileRepository();
+    final profileRepository = this.profileRepository ?? UserProfileRepository();
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => ThemeCubit()),
@@ -72,6 +82,8 @@ class ExpenseTrackerAppView extends StatelessWidget {
     final page = _AuthGuardedRoute(
       routeName: routeName,
       profileRepository: profileRepository,
+      dashboardRepository: dashboardRepository,
+      expensesRepository: expensesRepository,
     );
     if (kIsWeb) {
       return PageRouteBuilder<void>(
@@ -115,10 +127,14 @@ class _AuthGuardedRoute extends StatelessWidget {
   const _AuthGuardedRoute({
     required this.routeName,
     required this.profileRepository,
+    required this.dashboardRepository,
+    required this.expensesRepository,
   });
 
   final String routeName;
   final UserProfileRepository profileRepository;
+  final DashboardSnapshotRepository? dashboardRepository;
+  final ExpenseRepository? expensesRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -133,25 +149,52 @@ class _AuthGuardedRoute extends StatelessWidget {
         }
 
         final routed = switch (routeName) {
-          AppRoutes.home => const HomeShellPage(initialIndex: 0),
-          AppRoutes.overview => const HomeShellPage(initialIndex: 0),
+          AppRoutes.home => HomeShellPage(
+            initialIndex: 0,
+            repository: dashboardRepository,
+          ),
+          AppRoutes.overview => HomeShellPage(
+            initialIndex: 0,
+            repository: dashboardRepository,
+          ),
           AppRoutes.friends => const FriendsPage(autoRefresh: true),
-          AppRoutes.family => const HomeShellPage(initialIndex: 1),
+          AppRoutes.family => HomeShellPage(
+            initialIndex: 1,
+            repository: dashboardRepository,
+          ),
           AppRoutes.groups => const GroupsPage(autoRefresh: true),
           AppRoutes.recurring => const RecurringPage(autoRefresh: true),
           AppRoutes.loans => const LoansPage(autoRefresh: true),
           AppRoutes.creditCards => const CreditCardsPage(),
           AppRoutes.savings => const SavingsPage(autoRefresh: true),
           AppRoutes.priceBook => const PriceBookPage(),
-          AppRoutes.activity => const HomeShellPage(initialIndex: 2),
-          AppRoutes.account => const HomeShellPage(initialIndex: 3),
+          AppRoutes.activity => HomeShellPage(
+            initialIndex: 2,
+            repository: dashboardRepository,
+          ),
+          AppRoutes.account => HomeShellPage(
+            initialIndex: 3,
+            repository: dashboardRepository,
+          ),
           AppRoutes.accountEdit => AccountEditRoutePage(
             profileRepository: profileRepository,
           ),
-          _ => const HomeShellPage(initialIndex: 0),
+          _ => HomeShellPage(initialIndex: 0, repository: dashboardRepository),
         };
 
-        return RepositoryProvider(
+        if (expensesRepository != null) {
+          return RepositoryProvider<ExpenseRepository>.value(
+            value: expensesRepository!,
+            child: BlocProvider(
+              create: (context) =>
+                  ExpensesBloc(repository: context.read<ExpenseRepository>())
+                    ..add(const LoadExpenses()),
+              child: routed,
+            ),
+          );
+        }
+
+        return RepositoryProvider<ExpenseRepository>(
           create: (_) => ExpenseRepository(),
           dispose: (repository) => repository.dispose(),
           child: BlocProvider(

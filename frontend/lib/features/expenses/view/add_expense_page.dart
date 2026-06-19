@@ -52,6 +52,7 @@ class AddExpensePage extends StatefulWidget {
 
 class _AddExpensePageState extends State<AddExpensePage> {
   static const double _formMaxWidth = 1180;
+  static const _paymentSourceTimeout = Duration(seconds: 45);
   static const _accountPaymentPrefix = 'account:';
   static const _creditCardPaymentPrefix = 'credit_card:';
   static const _categories = <String>[
@@ -110,6 +111,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   String _destinationAccount = '';
   bool _loadedDefaultPayment = false;
   bool _loadedPaymentSources = false;
+  bool _loadingPaymentSources = false;
   String? _pendingDefaultPaymentMethod;
   bool _savePaymentAsDefault = false;
   bool _reimbursable = false;
@@ -245,6 +247,12 @@ class _AddExpensePageState extends State<AddExpensePage> {
   }
 
   Future<void> _loadPaymentSources() async {
+    if (mounted) {
+      setState(() {
+        _loadingPaymentSources = true;
+        _paymentSourcesError = null;
+      });
+    }
     List<FinancialAccount>? accounts;
     List<CreditCardAccount>? creditCards;
     Object? accountsError;
@@ -253,14 +261,14 @@ class _AddExpensePageState extends State<AddExpensePage> {
     await Future.wait<void>([
       _accountsRepository
           .fetchAccounts()
-          .timeout(const Duration(seconds: 15))
+          .timeout(_paymentSourceTimeout)
           .then<void>((value) => accounts = value)
           .catchError((Object error) {
             accountsError = error;
           }),
       _creditCardsRepository
           .fetchCards()
-          .timeout(const Duration(seconds: 15))
+          .timeout(_paymentSourceTimeout)
           .then<void>((value) => creditCards = value)
           .catchError((Object error) {
             creditCardsError = error;
@@ -275,7 +283,14 @@ class _AddExpensePageState extends State<AddExpensePage> {
         _creditCards = creditCards!;
       }
       _loadedPaymentSources = true;
+      _loadingPaymentSources = false;
       _applyPendingDefaultPaymentMethod();
+      final availablePaymentChoices = _isSelfTransfer
+          ? _transferPaymentChoices
+          : _paymentChoices;
+      if (!availablePaymentChoices.contains(_paymentMethod)) {
+        _paymentMethod = 'cash';
+      }
       _currency = _currencyForPayment(_paymentMethod) ?? _currency;
       if (_isSelfTransfer &&
           _destinationAccount.isEmpty &&
@@ -675,6 +690,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
     if (details.contains('(401)') || details.contains('MISSING_TOKEN')) {
       return 'Sign in again to load bank accounts and credit cards.';
     }
+    if (details.contains('TimeoutException')) {
+      return 'Bank accounts and credit cards are taking longer than usual to load. The backend may still be waking up.';
+    }
     if (accountsError != null && creditCardsError != null) {
       return 'Bank accounts and credit cards could not be loaded. You can still save with Cash.';
     }
@@ -763,7 +781,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           .map((card) => _creditCardPaymentValue(card.id)),
     ];
     if (_paymentMethod == 'paid_previously' ||
-        _isLegacyPaymentMethod(_paymentMethod)) {
+        (_editing && _isLegacyPaymentMethod(_paymentMethod))) {
       choices.add(_paymentMethod);
     }
     if ((_paymentMethod.startsWith(_accountPaymentPrefix) ||
@@ -1015,9 +1033,16 @@ class _AddExpensePageState extends State<AddExpensePage> {
                         'This will update the selected credit card balance.',
                   ),
                 ],
+                if (_loadingPaymentSources) ...[
+                  const SizedBox(height: 8),
+                  const _PaymentSourceLoadingNotice(),
+                ],
                 if (_paymentSourcesError != null) ...[
                   const SizedBox(height: 8),
-                  _PaymentSourceNotice(message: _paymentSourcesError!),
+                  _PaymentSourceNotice(
+                    message: _paymentSourcesError!,
+                    onRetry: _loadPaymentSources,
+                  ),
                 ],
                 CheckboxListTile(
                   dense: true,
@@ -1319,6 +1344,19 @@ class _AddExpensePageState extends State<AddExpensePage> {
                                 'This will update the selected credit card balance.',
                           ),
                         ),
+                      if (_loadingPaymentSources)
+                        const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: _PaymentSourceLoadingNotice(),
+                        ),
+                      if (_paymentSourcesError != null)
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: _PaymentSourceNotice(
+                            message: _paymentSourcesError!,
+                            onRetry: _loadPaymentSources,
+                          ),
+                        ),
                       CupertinoFormRow(
                         prefix: const Text('Default payment'),
                         child: CupertinoSwitch(
@@ -1476,18 +1514,54 @@ class _AddExpensePageState extends State<AddExpensePage> {
 }
 
 class _PaymentSourceNotice extends StatelessWidget {
-  const _PaymentSourceNotice({required this.message});
+  const _PaymentSourceNotice({required this.message, this.onRetry});
 
   final String message;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Text(
-      message,
-      style: Theme.of(
-        context,
-      ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+    final textStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: Text(message, style: textStyle)),
+        if (onRetry != null)
+          TextButton(onPressed: onRetry, child: const Text('Retry')),
+      ],
+    );
+  }
+}
+
+class _PaymentSourceLoadingNotice extends StatelessWidget {
+  const _PaymentSourceLoadingNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: colors.primary,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'Loading bank accounts and credit cards...',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1827,8 +1901,11 @@ class _DropdownField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedValue = values.contains(value) && value.trim().isNotEmpty
+        ? value
+        : (values.isNotEmpty ? values.first : null);
     return DropdownButtonFormField<String>(
-      initialValue: value,
+      initialValue: selectedValue,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,

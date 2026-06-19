@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/models/expense_core.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
@@ -71,10 +73,11 @@ class _FakeAccountsRepository extends ApiAccountsRepository {
 }
 
 class _FakeCreditCardsRepository extends ApiCreditCardsRepository {
-  _FakeCreditCardsRepository([this.cards = const []])
+  _FakeCreditCardsRepository([this.cards = const [], this.error])
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   final List<CreditCardAccount> cards;
+  final Object? error;
   String? loggedCardId;
   double? loggedAmount;
   String? loggedCategory;
@@ -85,6 +88,9 @@ class _FakeCreditCardsRepository extends ApiCreditCardsRepository {
   Future<List<CreditCardAccount>> fetchCards({
     bool includeArchived = false,
   }) async {
+    if (error != null) {
+      throw error!;
+    }
     return cards;
   }
 
@@ -621,6 +627,102 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Cash'), findsWidgets);
   });
+
+  testWidgets('payment source timeout explains backend wakeup and can retry', (
+    tester,
+  ) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            accountsRepository: _FakeAccountsRepository(
+              const [],
+              TimeoutException('accounts timed out'),
+            ),
+            creditCardsRepository: _FakeCreditCardsRepository(
+              const [],
+              TimeoutException('cards timed out'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Bank accounts and credit cards are taking longer than usual to load. The backend may still be waking up.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets(
+    'legacy generic payment methods are not offered for new expenses',
+    (tester) async {
+      final repository = _FakeExpenseRepository(
+        Expense(
+          core: ExpenseCore(
+            id: 'seed',
+            title: 'Seed',
+            amount: 1,
+            currency: 'NOK',
+            category: 'Personal',
+            createdAt: DateTime(2026, 6, 16),
+          ),
+        ),
+      );
+      final bloc = ExpensesBloc(repository: repository);
+      addTearDown(bloc.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(splashFactory: InkRipple.splashFactory),
+          home: BlocProvider.value(
+            value: bloc,
+            child: AddExpensePage(
+              initialPaymentMethod: 'card',
+              accountsRepository: _FakeAccountsRepository([
+                _account(id: 'account-1', name: 'DNB current'),
+              ]),
+              creditCardsRepository: _FakeCreditCardsRepository([
+                _card(id: 'card-1', name: 'Morrow', issuer: 'Morrow'),
+              ]),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DNB current - DNB'), findsOneWidget);
+      expect(find.text('Morrow - Morrow'), findsOneWidget);
+      expect(find.text('Card'), findsNothing);
+      expect(find.text('UPI'), findsNothing);
+      expect(find.text('Bank transfer'), findsNothing);
+      expect(find.text('Other'), findsNothing);
+    },
+  );
 
   testWidgets('edit mode preserves setup account and custom category', (
     tester,
