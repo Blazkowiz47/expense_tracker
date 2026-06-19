@@ -23,6 +23,7 @@ from app.main import (
     iso,
     now,
     openrouter_model_names,
+    parse_dt,
     parse_model_json,
     run_bill_extraction,
 )
@@ -556,6 +557,134 @@ def test_financial_account_income_and_transfers_reconcile_balance(tmp_path):
     }
     assert accounts[salary_id]["currentBalance"] == 1200
     assert accounts[savings_id]["currentBalance"] == 500
+
+
+def test_financial_account_list_backfills_legacy_current_balance(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client)
+
+    account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Salary account", "currency": "NOK", "openingBalance": 1000},
+    )
+    savings = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Savings", "currency": "NOK", "openingBalance": 200},
+    )
+    assert account.status_code == 201, account.text
+    assert savings.status_code == 201, savings.text
+    account_id = account.json()["id"]
+    savings_id = savings.json()["id"]
+    uid = client.get("/api/v1/profile", headers=headers).json()["uid"]
+
+    app.state.db.financial_accounts.update_many(
+        {"uid": uid},
+        {"$unset": {"currentBalance": "", "ledgerReconciledAt": ""}},
+    )
+    app.state.db.expenses.insert_many(
+        [
+            {
+                "id": "legacy-spend",
+                "uid": uid,
+                "amount": 125,
+                "currency": "NOK",
+                "category": "Groceries",
+                "description": "Legacy spend",
+                "paymentMethod": f"account:{account_id}",
+                "sourceAccountId": account_id,
+                "date": parse_dt("2026-06-17T12:00:00Z"),
+                "createdAt": parse_dt("2026-06-17T12:00:00Z"),
+                "updatedAt": parse_dt("2026-06-17T12:00:00Z"),
+            },
+            {
+                "id": "legacy-paid-previously",
+                "uid": uid,
+                "amount": 50,
+                "currency": "NOK",
+                "category": "Groceries",
+                "description": "Already paid",
+                "paymentMethod": "paid_previously",
+                "sourceAccountId": account_id,
+                "date": parse_dt("2026-06-17T12:00:00Z"),
+                "createdAt": parse_dt("2026-06-17T12:00:00Z"),
+                "updatedAt": parse_dt("2026-06-17T12:00:00Z"),
+            },
+            {
+                "id": "legacy-income",
+                "uid": uid,
+                "amount": 500,
+                "currency": "NOK",
+                "category": "Salary",
+                "description": "Legacy salary",
+                "paymentMethod": "income",
+                "sourcePaymentType": "income",
+                "sourceAccountId": account_id,
+                "date": parse_dt("2026-06-15T12:00:00Z"),
+                "createdAt": parse_dt("2026-06-15T12:00:00Z"),
+                "updatedAt": parse_dt("2026-06-15T12:00:00Z"),
+            },
+            {
+                "id": "legacy-transfer",
+                "uid": uid,
+                "amount": 300,
+                "currency": "NOK",
+                "category": "Savings - Trip",
+                "description": "Legacy transfer",
+                "paymentMethod": f"account:{account_id}",
+                "sourceAccountId": account_id,
+                "sourceDestinationAccountId": savings_id,
+                "date": parse_dt("2026-06-18T12:00:00Z"),
+                "createdAt": parse_dt("2026-06-18T12:00:00Z"),
+                "updatedAt": parse_dt("2026-06-18T12:00:00Z"),
+            },
+        ]
+    )
+
+    accounts = {
+        item["id"]: item
+        for item in client.get("/api/v1/accounts", headers=headers).json()["accounts"]
+    }
+    assert accounts[account_id]["currentBalance"] == 1075
+    assert accounts[savings_id]["currentBalance"] == 500
+
+
+def test_financial_account_recompute_route_rebuilds_from_ledger(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client)
+
+    account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Salary account", "currency": "NOK", "openingBalance": 1000},
+    )
+    assert account.status_code == 201, account.text
+    account_id = account.json()["id"]
+    uid = client.get("/api/v1/profile", headers=headers).json()["uid"]
+    app.state.db.financial_accounts.update_one(
+        {"id": account_id, "uid": uid},
+        {"$set": {"currentBalance": 999}},
+    )
+    app.state.db.expenses.insert_one(
+        {
+            "id": "legacy-spend",
+            "uid": uid,
+            "amount": 125,
+            "currency": "NOK",
+            "category": "Groceries",
+            "description": "Legacy spend",
+            "paymentMethod": f"account:{account_id}",
+            "sourceAccountId": account_id,
+            "date": parse_dt("2026-06-17T12:00:00Z"),
+            "createdAt": parse_dt("2026-06-17T12:00:00Z"),
+            "updatedAt": parse_dt("2026-06-17T12:00:00Z"),
+        }
+    )
+
+    recomputed = client.post("/api/v1/accounts/recompute-balances", headers=headers)
+    assert recomputed.status_code == 200, recomputed.text
+    assert recomputed.json()["accounts"][0]["currentBalance"] == 875
 
 
 def test_credit_cards_track_cycle_spend_and_expenses(tmp_path):

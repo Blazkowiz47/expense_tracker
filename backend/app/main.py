@@ -1789,10 +1789,22 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         includeArchived: bool = False,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
+        backfill_missing_financial_account_balances(app.state.db, user["uid"])
         filters: dict[str, Any] = {"uid": user["uid"]}
         if not includeArchived:
             filters["archivedAt"] = {"$exists": False}
         docs = list(app.state.db.financial_accounts.find(filters).sort("updatedAt", DESCENDING))
+        return {"accounts": [financial_account_out(doc) for doc in docs]}
+
+    @app.post("/api/v1/accounts/recompute-balances")
+    def recompute_financial_account_balances_route(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+        recompute_financial_account_balances(app.state.db, user["uid"])
+        docs = list(
+            app.state.db.financial_accounts.find({
+                "uid": user["uid"],
+                "archivedAt": {"$exists": False},
+            }).sort("updatedAt", DESCENDING)
+        )
         return {"accounts": [financial_account_out(doc) for doc in docs]}
 
     @app.post("/api/v1/accounts", status_code=201)
@@ -4754,6 +4766,74 @@ def expense_account_deltas(db: Any, uid: str, expense: dict[str, Any]) -> list[A
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "bank account currency must match the expense currency"))
         deltas.append((account_id, delta))
     return deltas
+
+
+def financial_account_ledger_delta(db: Any, uid: str, account: dict[str, Any]) -> float:
+    account_id = str(account.get("id") or "").strip()
+    if not account_id:
+        return 0.0
+    account_currency = normalize_currency(account.get("currency"), "NOK")
+    docs = db.expenses.find(
+        {
+            "uid": uid,
+            "$or": [
+                {"sourceAccountId": account_id},
+                {"sourceDestinationAccountId": account_id},
+            ],
+        }
+    )
+    delta = 0.0
+    for expense in docs:
+        amount = round(float(expense.get("amount") or 0), 2)
+        if amount <= 0:
+            continue
+        if normalize_default_payment_method(expense.get("paymentMethod")) == "paid_previously":
+            continue
+        if normalize_currency(expense.get("currency"), account_currency) != account_currency:
+            continue
+        is_income = (
+            str(expense.get("sourcePaymentType") or "").strip().lower() == "income"
+            or normalize_default_payment_method(expense.get("paymentMethod")) == "income"
+        )
+        if str(expense.get("sourceAccountId") or "").strip() == account_id:
+            delta += amount if is_income else -amount
+        if (
+            not is_income
+            and str(expense.get("sourceDestinationAccountId") or "").strip() == account_id
+        ):
+            delta += amount
+    return round(delta, 2)
+
+
+def recompute_financial_account_balances(
+    db: Any,
+    uid: str,
+    *,
+    only_missing: bool = False,
+) -> None:
+    filters: dict[str, Any] = {"uid": uid}
+    if only_missing:
+        filters["currentBalance"] = {"$exists": False}
+    current = now()
+    for account in list(db.financial_accounts.find(filters)):
+        current_balance = round(
+            float(account.get("openingBalance") or 0)
+            + financial_account_ledger_delta(db, uid, account),
+            2,
+        )
+        db.financial_accounts.update_one(
+            {"id": account.get("id"), "uid": uid},
+            {
+                "$set": {
+                    "currentBalance": current_balance,
+                    "ledgerReconciledAt": current,
+                }
+            },
+        )
+
+
+def backfill_missing_financial_account_balances(db: Any, uid: str) -> None:
+    recompute_financial_account_balances(db, uid, only_missing=True)
 
 
 def apply_financial_account_delta(
