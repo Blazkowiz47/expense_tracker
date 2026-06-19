@@ -109,6 +109,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
   String _paymentMethod = 'cash';
   String _destinationAccount = '';
   bool _loadedDefaultPayment = false;
+  bool _loadedPaymentSources = false;
+  String? _pendingDefaultPaymentMethod;
   bool _savePaymentAsDefault = false;
   bool _reimbursable = false;
 
@@ -151,10 +153,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
       _expenseDate = expense.createdAt;
       _category = _normalizedCategory(expense.category ?? 'Personal');
       _currency = _normalizedChoice(expense.currency, _currencies, 'INR');
-      _paymentMethod = _normalizedChoice(
+      _paymentMethod = _normalizedPaymentMethod(
         expense.paymentMethod ?? 'cash',
-        _paymentMethods,
-        'cash',
       );
       final destinationId = expense.sourceDestinationAccountId?.trim();
       final destinationName = expense.sourceDestinationAccountName?.trim();
@@ -182,11 +182,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
         _currency = _normalizedChoice(initialCurrency, _currencies, 'INR');
       }
       if (initialPaymentMethod != null && initialPaymentMethod.isNotEmpty) {
-        _paymentMethod = _normalizedChoice(
-          initialPaymentMethod,
-          _paymentMethods,
-          'cash',
-        );
+        _paymentMethod = _normalizedPaymentMethod(initialPaymentMethod);
       }
     }
     if (widget.initialBillUpload && expense == null) {
@@ -243,8 +239,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
     final method = profile.defaultPaymentMethod.trim();
     if (method.isEmpty) return;
     setState(() {
-      _paymentMethod = _normalizedChoice(method, _paymentChoices, 'cash');
-      _currency = _currencyForPayment(_paymentMethod) ?? _currency;
+      _pendingDefaultPaymentMethod = method;
+      _applyPendingDefaultPaymentMethod();
     });
   }
 
@@ -278,6 +274,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
       if (creditCards != null) {
         _creditCards = creditCards!;
       }
+      _loadedPaymentSources = true;
+      _applyPendingDefaultPaymentMethod();
       _currency = _currencyForPayment(_paymentMethod) ?? _currency;
       if (_isSelfTransfer &&
           _destinationAccount.isEmpty &&
@@ -702,6 +700,39 @@ class _AddExpensePageState extends State<AddExpensePage> {
     );
   }
 
+  String _normalizedPaymentMethod(String value, {String fallback = 'cash'}) {
+    final trimmed = value.trim();
+    final lower = trimmed.toLowerCase();
+    if (lower.startsWith(_accountPaymentPrefix) ||
+        lower.startsWith(_creditCardPaymentPrefix)) {
+      final parts = lower.split(':');
+      if (parts.length == 2 && parts.last.trim().isNotEmpty) {
+        return '${parts.first}:${parts.last.trim()}';
+      }
+    }
+    return _normalizedChoice(trimmed, _paymentMethods, fallback);
+  }
+
+  bool _paymentMethodCanBeApplied(String value) {
+    if (_paymentChoices.contains(value)) return true;
+    return false;
+  }
+
+  void _applyPendingDefaultPaymentMethod() {
+    final pending = _pendingDefaultPaymentMethod?.trim();
+    if (pending == null || pending.isEmpty) return;
+    final normalized = _normalizedPaymentMethod(pending);
+    if (!_paymentMethodCanBeApplied(normalized)) {
+      if (_loadedPaymentSources) {
+        _pendingDefaultPaymentMethod = null;
+      }
+      return;
+    }
+    _pendingDefaultPaymentMethod = null;
+    _paymentMethod = normalized;
+    _currency = _currencyForPayment(_paymentMethod) ?? _currency;
+  }
+
   List<String> get _categoryChoices {
     final choices = <String>[..._categories];
     if (!choices.any(
@@ -724,6 +755,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
     ];
     if (_paymentMethod == 'paid_previously' ||
         _isLegacyPaymentMethod(_paymentMethod)) {
+      choices.add(_paymentMethod);
+    }
+    if ((_paymentMethod.startsWith(_accountPaymentPrefix) ||
+            _paymentMethod.startsWith(_creditCardPaymentPrefix)) &&
+        !choices.contains(_paymentMethod)) {
       choices.add(_paymentMethod);
     }
     return choices;

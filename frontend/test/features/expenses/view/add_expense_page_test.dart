@@ -169,6 +169,56 @@ void main() {
     expect(repository.createdExpense!.paymentMethod, 'paid_previously');
   });
 
+  testWidgets('planned expense keeps initial bank account payment source', (
+    tester,
+  ) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            initialCategory: 'Groceries',
+            initialDescription: 'Rema 1000',
+            initialAmount: 125,
+            initialCurrency: 'NOK',
+            initialPaymentMethod: 'account:account-1',
+            accountsRepository: _FakeAccountsRepository([
+              _account(id: 'account-1', name: 'DNB current'),
+            ]),
+            creditCardsRepository: _FakeCreditCardsRepository(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('DNB current - DNB'), findsOneWidget);
+
+    await tester.tap(find.text('Save expense'));
+    await tester.pumpAndSettle();
+
+    expect(repository.createdExpense, isNotNull);
+    expect(repository.createdExpense!.paymentMethod, 'account:account-1');
+    expect(repository.createdExpense!.sourceAccountId, 'account-1');
+    expect(repository.createdExpense!.sourceAccountName, 'DNB current - DNB');
+  });
+
   testWidgets('manual expense saves normalized tags', (tester) async {
     final repository = _FakeExpenseRepository(
       Expense(
