@@ -1,0 +1,10 @@
+{
+  "receiptExtraction": [
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash-lite"
+  ],
+  "structuredFinance": [
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash-lite"
+  ]
+}

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import app.main as main_module
 from app.main import (
     AiProviderChain,
+    GeminiAiProvider,
     HostedAiProviderError,
     LocalGemmaBillExtractor,
     OpenRouterAiProvider,
@@ -18,6 +19,7 @@ from app.main import (
     create_app,
     current_month,
     ensure_indexes,
+    gemini_model_names,
     iso,
     now,
     openrouter_model_names,
@@ -32,6 +34,11 @@ OPENROUTER_CONFIG_MODELS = [
     "google/gemma-4-26b-a4b-it:free",
     "nvidia/nemotron-nano-12b-v2-vl:free",
     "openrouter/free",
+]
+
+GEMINI_CONFIG_MODELS = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash-lite",
 ]
 
 
@@ -75,10 +82,12 @@ class FakeExtractor:
 class CapturingAiProvider(FakeExtractor):
     def __init__(self):
         self.dashboard_context = None
+        self.dashboard_call_count = 0
         self.chat_context = None
         self.receipt_memory_context = None
 
     async def dashboard_summary(self, context):
+        self.dashboard_call_count += 1
         self.dashboard_context = context
         return {
             "task": "dashboard_summary",
@@ -1140,6 +1149,49 @@ def test_dashboard_ai_insights_endpoint_returns_ai_cards(tmp_path):
     assert payload["aiInsights"][0]["label"] == "AI summary"
     assert payload["aiSummary"]["task"] == "dashboard_summary"
     assert provider.dashboard_context["purpose"] == "home_summary"
+    assert payload["aiSummary"]["cache"]["hit"] is False
+
+
+def test_dashboard_ai_insights_endpoint_caches_daily_summary(tmp_path):
+    mongo = mongomock.MongoClient()
+    provider = CapturingAiProvider()
+    app = create_app(database=mongo.expense_tracker_test, ai_provider=provider)
+    app.state.upload_dir = tmp_path / "uploads"
+    client = TestClient(app)
+    ensure_indexes(app.state.db)
+    headers = register(client)
+
+    first = client.get("/api/v1/dashboard/ai-insights", headers=headers)
+    second = client.get("/api/v1/dashboard/ai-insights", headers=headers)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert provider.dashboard_call_count == 1
+    assert first.json()["aiSummary"]["cache"]["hit"] is False
+    assert second.json()["aiSummary"]["cache"]["hit"] is True
+    cached = app.state.db.ai_response_cache.find_one({"task": "dashboard_summary"})
+    assert cached is not None
+    assert cached["purpose"] == "home_summary"
+    assert cached["response"]["cards"][0]["message"] == "Context received."
+
+
+def test_dashboard_ai_insights_refresh_bypasses_daily_cache(tmp_path):
+    mongo = mongomock.MongoClient()
+    provider = CapturingAiProvider()
+    app = create_app(database=mongo.expense_tracker_test, ai_provider=provider)
+    app.state.upload_dir = tmp_path / "uploads"
+    client = TestClient(app)
+    ensure_indexes(app.state.db)
+    headers = register(client)
+
+    first = client.get("/api/v1/dashboard/ai-insights", headers=headers)
+    refreshed = client.get("/api/v1/dashboard/ai-insights?refresh=true", headers=headers)
+
+    assert first.status_code == 200, first.text
+    assert refreshed.status_code == 200, refreshed.text
+    assert provider.dashboard_call_count == 2
+    assert refreshed.json()["aiSummary"]["cache"]["hit"] is False
+    assert refreshed.json()["aiSummary"]["cache"]["refreshed"] is True
 
 
 def test_ai_chat_returns_structured_plan(tmp_path):
@@ -1434,6 +1486,12 @@ def test_openrouter_models_are_configurable_and_deduplicated(monkeypatch):
     assert openrouter_model_names() == OPENROUTER_CONFIG_MODELS
 
 
+def test_gemini_models_are_loaded_from_prompt_config(monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "ignored-env-model")
+
+    assert gemini_model_names() == GEMINI_CONFIG_MODELS
+
+
 def test_build_ai_provider_uses_openrouter_model_chain(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
@@ -1448,8 +1506,9 @@ def test_build_ai_provider_uses_openrouter_model_chain(monkeypatch):
     assert [item.model for item in provider.providers] == OPENROUTER_CONFIG_MODELS
 
 
-def test_build_ai_provider_treats_gemini_setting_as_openrouter(monkeypatch):
+def test_build_ai_provider_uses_gemini_before_openrouter_by_default(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_MODEL", "openrouter-only")
     monkeypatch.delenv("OPENROUTER_FALLBACK_MODELS", raising=False)
@@ -1459,7 +1518,8 @@ def test_build_ai_provider_treats_gemini_setting_as_openrouter(monkeypatch):
     provider = build_ai_provider()
 
     assert isinstance(provider, AiProviderChain)
-    assert [item.model for item in provider.providers] == OPENROUTER_CONFIG_MODELS
+    assert [type(item) for item in provider.providers[:2]] == [GeminiAiProvider, GeminiAiProvider]
+    assert [item.model for item in provider.providers] == GEMINI_CONFIG_MODELS + OPENROUTER_CONFIG_MODELS
 
 
 def test_provider_chain_falls_back_between_models(tmp_path):
@@ -1583,6 +1643,105 @@ def test_openrouter_requests_use_temperature_zero(monkeypatch, tmp_path):
     assert summary_result["cards"][0]["message"] == "Looks calm."
     assert [call["json"]["temperature"] for call in calls] == [0, 0]
     assert [call["json"]["model"] for call in calls] == ["model-a", "model-a"]
+
+
+def test_gemini_requests_use_temperature_zero_and_json_mode(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, content):
+            self._content = content
+            self.text = json.dumps(content)
+
+        def json(self):
+            return self._content
+
+        def raise_for_status(self):
+            return None
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, params=None, headers=None, json=None):
+            calls.append({"url": url, "params": params, "headers": headers, "json": json, "timeout": self.timeout})
+            parts = json.get("contents", [{}])[0].get("parts", [])
+            if any(isinstance(part, dict) and "inlineData" in part for part in parts):
+                content = {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": json_module.dumps(
+                                            {
+                                                "merchant": "REMA 1000",
+                                                "date": "2026-06-17",
+                                                "amount": 52.6,
+                                                "currency": "NOK",
+                                                "category": "Groceries",
+                                                "lineItems": [],
+                                                "confidence": 0.9,
+                                                "warnings": [],
+                                            }
+                                        )
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            else:
+                content = {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": json_module.dumps(
+                                            {
+                                                "cards": [
+                                                    {
+                                                        "label": "AI summary",
+                                                        "message": "Looks calm.",
+                                                        "tone": "positive",
+                                                        "actions": [],
+                                                    }
+                                                ]
+                                            }
+                                        )
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            return FakeResponse(content)
+
+    json_module = json
+    monkeypatch.setattr(main_module.httpx, "AsyncClient", FakeAsyncClient)
+    receipt = tmp_path / "receipt.jpg"
+    receipt.write_bytes(b"fake-image")
+    provider = GeminiAiProvider("gemini-key", "gemini-test")
+
+    receipt_result = asyncio.run(provider.extract(receipt, "receipt.jpg"))
+    summary_result = asyncio.run(provider.dashboard_summary({"monthlyPlan": {}}))
+
+    assert receipt_result["merchant"] == "REMA 1000"
+    assert summary_result["cards"][0]["message"] == "Looks calm."
+    assert [call["json"]["generationConfig"]["temperature"] for call in calls] == [0, 0]
+    assert [call["json"]["generationConfig"]["responseMimeType"] for call in calls] == ["application/json", "application/json"]
+    assert calls[0]["json"]["contents"][0]["parts"][1]["inlineData"]["mimeType"] == "image/jpeg"
+    assert calls[0]["params"] == {"key": "gemini-key"}
+    assert calls[0]["url"].endswith("/models/gemini-test:generateContent")
 
 
 def test_openrouter_error_response_body_is_retryable(monkeypatch):

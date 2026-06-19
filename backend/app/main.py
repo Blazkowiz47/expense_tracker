@@ -1039,6 +1039,153 @@ class OpenRouterAiProvider(LocalGemmaBillExtractor):
         return f"data:{mime_type};base64,{encoded}"
 
 
+class GeminiAiProvider(LocalGemmaBillExtractor):
+    def __init__(self, api_key: str, model: str):
+        super().__init__(None, model)
+        self.api_key = api_key.strip()
+        self.model = model.strip() or "gemini-2.5-flash-lite"
+        self.provider_name = f"gemini:{self.model}"
+
+    async def extract(self, file_path: Path, original_name: str) -> dict[str, Any]:
+        if not self.api_key:
+            raise HostedAiProviderError(self.provider_name, "GEMINI_API_KEY is not configured.", retryable=False)
+        system_prompt = load_prompt("receipt_extraction_system.md")
+        user_prompt = load_prompt("receipt_extraction_user.md")
+        mime_type = mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+        encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
+        payload = self._payload(
+            system_prompt,
+            [
+                {"text": user_prompt},
+                {"inlineData": {"mimeType": mime_type, "data": encoded}},
+            ],
+        )
+        log_payload = self._payload(
+            system_prompt,
+            [
+                {"text": user_prompt},
+                {"inlineData": {"mimeType": mime_type, "data": f"[redacted {len(encoded)} chars base64]"}},
+            ],
+        )
+        content = await self._generate_content("receipt.extract", payload, log_payload, timeout=float(os.getenv("AI_RECEIPT_TIMEOUT_SECONDS", "60")))
+        return self._normalize(parse_model_json(content), original_name, [])
+
+    async def dashboard_summary(self, context: dict[str, Any]) -> dict[str, Any]:
+        fallback = fallback_ai_dashboard_summary(context)
+        return await self._complete_structured(
+            "dashboard_summary",
+            context,
+            (
+                "Write two concise finance summary cards for the home screen. "
+                "Use the provided finance-context-v1 packet; do not request raw transactions. "
+                "Return JSON with cards: [{label, message, tone, actions}]. "
+                "Use tone positive, warning, critical, or neutral. Keep each message under 150 characters."
+            ),
+            fallback,
+        )
+
+    async def finance_chat(self, context: dict[str, Any], question: str) -> dict[str, Any]:
+        fallback = fallback_ai_finance_chat(context, question)
+        return await self._complete_structured(
+            "finance_chat",
+            {**context, "question": question},
+            (
+                "Answer a personal finance planning question for an expense tracker. "
+                "Use the provided finance-context-v1 packet; backend math is authoritative. "
+                "Return JSON with question, title, answer, steps, and suggestions. "
+                "steps must be short actionable strings. Use only facts in the provided context."
+            ),
+            fallback,
+        )
+
+    async def receipt_review_memory(self, context: dict[str, Any]) -> dict[str, Any]:
+        fallback = fallback_receipt_review_memory(context)
+        return await self._complete_structured(
+            "receipt_review_memory",
+            context,
+            load_prompt("receipt_review_memory_system.md"),
+            fallback,
+        )
+
+    async def _complete_structured(
+        self,
+        task: str,
+        context: dict[str, Any],
+        instructions: str,
+        fallback: dict[str, Any],
+    ) -> dict[str, Any]:
+        system_prompt = load_prompt("structured_json_system.md").format(
+            schema_version=self.schema_version,
+            instructions=instructions,
+        )
+        payload = self._payload(system_prompt, [{"text": json.dumps(context, default=str)}])
+        content = await self._generate_content(f"structured.{task}", payload, payload, timeout=90)
+        return normalize_structured_ai_response(task, parse_model_json(content), fallback)
+
+    def _payload(self, system_prompt: str, user_parts: list[dict[str, Any]]) -> dict[str, Any]:
+        return {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": user_parts}],
+            "generationConfig": {
+                "temperature": 0,
+                "responseMimeType": "application/json",
+            },
+        }
+
+    async def _generate_content(self, event_prefix: str, payload: dict[str, Any], log_payload: dict[str, Any], timeout: float) -> str:
+        started = time.perf_counter()
+        ai_terminal_log(
+            f"{event_prefix}.request",
+            provider=self.provider_name,
+            model=self.model,
+            timeoutSeconds=timeout,
+            payload=log_payload,
+        )
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    url,
+                    params={"key": self.api_key},
+                    headers={"Content-Type": "application/json"},
+                    json=payload,
+                )
+                ai_terminal_log(
+                    f"{event_prefix}.http_response",
+                    provider=self.provider_name,
+                    model=self.model,
+                    statusCode=response.status_code,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    body=response.text,
+                )
+                if response.status_code in {400, 401, 403}:
+                    retryable = response.status_code == 400
+                    raise HostedAiProviderError(
+                        self.provider_name,
+                        f"Gemini request failed with {response.status_code}.",
+                        retryable=retryable,
+                    )
+                if response.status_code in {408, 409, 429, 500, 502, 503, 504}:
+                    raise HostedAiProviderError(self.provider_name, f"Gemini request failed with {response.status_code}.")
+                response.raise_for_status()
+                try:
+                    content = hosted_ai_response_text(response.json())
+                except ValueError as exc:
+                    raise HostedAiProviderError(self.provider_name, str(exc)) from exc
+                ai_terminal_log(
+                    f"{event_prefix}.raw_model_text",
+                    provider=self.provider_name,
+                    model=self.model,
+                    elapsedMs=round((time.perf_counter() - started) * 1000),
+                    content=content,
+                )
+                return content
+        except HostedAiProviderError:
+            raise
+        except Exception as exc:
+            raise HostedAiProviderError(self.provider_name, f"Gemini provider unavailable: {exc}") from exc
+
+
 class AiProviderChain(LocalGemmaBillExtractor):
     def __init__(self, providers: list[Any]):
         super().__init__(None, "")
@@ -1392,10 +1539,27 @@ def openrouter_model_names() -> list[str]:
     return models or ["nex-agi/nex-n2-pro:free"]
 
 
+def gemini_model_names() -> list[str]:
+    config = load_prompt_json("gemini_models.json")
+    raw_models = [
+        str(item).strip()
+        for section in ("receiptExtraction", "structuredFinance")
+        for item in (config.get(section) if isinstance(config.get(section), list) else [])
+    ]
+    models: list[str] = []
+    seen: set[str] = set()
+    for model_name in raw_models:
+        if model_name and model_name not in seen:
+            models.append(model_name)
+            seen.add(model_name)
+    return models or ["gemini-2.5-flash-lite"]
+
+
 def build_ai_provider() -> LocalGemmaBillExtractor:
     base_url = os.getenv("AI_BASE_URL")
     model = os.getenv("AI_MODEL", "unsloth/gemma-4-E4B-it-GGUF")
-    provider = os.getenv("AI_PROVIDER", "openrouter").strip().lower()
+    provider = os.getenv("AI_PROVIDER", "gemini").strip().lower()
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 
     def provider_for(name: str) -> Any | None:
@@ -1406,10 +1570,10 @@ def build_ai_provider() -> LocalGemmaBillExtractor:
             return LocalGemmaBillExtractor(base_url, model)
         return None
 
-    if provider in {"gemini", "google-gemini"}:
-        provider = "openrouter"
-    if provider in {"openrouter", "open-router"}:
+    if provider in {"gemini", "google-gemini", "openrouter", "open-router"}:
         providers: list[Any] = []
+        if provider in {"gemini", "google-gemini"} and gemini_key:
+            providers.extend(GeminiAiProvider(gemini_key, model_name) for model_name in gemini_model_names())
         if openrouter_key:
             providers.extend(OpenRouterAiProvider(openrouter_key, model_name) for model_name in openrouter_model_names())
         providers.extend(
@@ -2405,6 +2569,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     @app.get("/api/v1/dashboard/snapshot")
     async def dashboard(
         include_ai: bool = Query(True, alias="includeAi"),
+        refresh_ai: bool = Query(False, alias="refreshAi"),
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
         ensure_setup_month_activity_entries(app.state.db, user["uid"])
@@ -2412,8 +2577,10 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         overall_summary = dashboard_overall_summary(app.state.db, user["uid"])
         action_items = dashboard_action_items(app.state.db, user["uid"])
         ai_summary = (
-            await generate_ai_dashboard_summary(
+            await generate_cached_ai_dashboard_summary(
+                app.state.db,
                 app.state.ai_provider,
+                user["uid"],
                 build_ai_financial_context(
                     app.state.db,
                     user["uid"],
@@ -2422,6 +2589,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                     action_items=action_items,
                     activity_items=docs,
                 ),
+                force_refresh=refresh_ai,
             )
             if include_ai
             else {}
@@ -2439,13 +2607,18 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         }
 
     @app.get("/api/v1/dashboard/ai-insights")
-    async def dashboard_ai_insights(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+    async def dashboard_ai_insights(
+        refresh: bool = Query(False),
+        user: dict[str, Any] = Depends(current_user),
+    ) -> dict[str, Any]:
         ensure_setup_month_activity_entries(app.state.db, user["uid"])
         docs = [expense_out(doc) for doc in app.state.db.expenses.find({"uid": user["uid"]}).sort("date", -1).limit(20)]
         overall_summary = dashboard_overall_summary(app.state.db, user["uid"])
         action_items = dashboard_action_items(app.state.db, user["uid"])
-        ai_summary = await generate_ai_dashboard_summary(
+        ai_summary = await generate_cached_ai_dashboard_summary(
+            app.state.db,
             app.state.ai_provider,
+            user["uid"],
             build_ai_financial_context(
                 app.state.db,
                 user["uid"],
@@ -2454,6 +2627,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 action_items=action_items,
                 activity_items=docs,
             ),
+            force_refresh=refresh,
         )
         return {
             "aiInsights": ai_summary.get("cards", []),
@@ -3071,8 +3245,10 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "period must be daily or monthly"))
         docs = list(app.state.db.expenses.find({"uid": user["uid"]}))
         total = sum(float(doc.get("amount") or 0) for doc in docs)
-        ai_summary = await generate_ai_dashboard_summary(
+        ai_summary = await generate_cached_ai_dashboard_summary(
+            app.state.db,
             app.state.ai_provider,
+            user["uid"],
             build_ai_financial_context(app.state.db, user["uid"], purpose="home_summary"),
         )
         primary_card = (ai_summary.get("cards") or [{}])[0]
@@ -3143,6 +3319,18 @@ def ensure_indexes(db: Any) -> None:
     db.group_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.group_expense_tombstones.create_index([("memberUids", ASCENDING), ("deletedAt", ASCENDING)])
     db.ai_jobs.create_index([("uid", ASCENDING), ("createdAt", ASCENDING)])
+    db.ai_response_cache.create_index(
+        [
+            ("uid", ASCENDING),
+            ("task", ASCENDING),
+            ("purpose", ASCENDING),
+            ("month", ASCENDING),
+            ("currency", ASCENDING),
+            ("cacheDate", ASCENDING),
+        ],
+        unique=True,
+    )
+    db.ai_response_cache.create_index("expiresAt", expireAfterSeconds=0)
     db.receipt_items.create_index([("uid", ASCENDING), ("date", DESCENDING)])
     db.receipt_items.create_index([("groupId", ASCENDING), ("date", DESCENDING)])
     db.receipt_items.create_index([("normalizedName", ASCENDING), ("currency", ASCENDING), ("unitPriceNormalized", ASCENDING)])
@@ -5725,6 +5913,113 @@ async def generate_ai_dashboard_summary(provider: Any, context: dict[str, Any]) 
     if hasattr(provider, "dashboard_summary"):
         return await provider.dashboard_summary(context)
     return fallback_ai_dashboard_summary(context)
+
+
+def ai_dashboard_summary_cache_key(uid: str, context: dict[str, Any]) -> dict[str, str]:
+    plan = context.get("monthlyPlan") if isinstance(context.get("monthlyPlan"), dict) else {}
+    currency = str(plan.get("currency") or context.get("currency") or "INR").strip().upper() or "INR"
+    return {
+        "uid": uid,
+        "task": "dashboard_summary",
+        "purpose": str(context.get("purpose") or "home_summary"),
+        "month": str(context.get("month") or current_month()),
+        "currency": currency,
+        "cacheDate": now().date().isoformat(),
+    }
+
+
+def ai_dashboard_summary_cache_meta(
+    *,
+    hit: bool,
+    cache_key: dict[str, str],
+    cached_at: datetime | None,
+    expires_at: datetime | None,
+    refreshed: bool = False,
+) -> dict[str, Any]:
+    return {
+        "hit": hit,
+        "refreshed": refreshed,
+        "date": cache_key["cacheDate"],
+        "month": cache_key["month"],
+        "currency": cache_key["currency"],
+        "purpose": cache_key["purpose"],
+        "cachedAt": iso(cached_at),
+        "expiresAt": iso(expires_at),
+    }
+
+
+def with_ai_dashboard_summary_cache_meta(
+    summary: dict[str, Any],
+    *,
+    hit: bool,
+    cache_key: dict[str, str],
+    cached_at: datetime | None,
+    expires_at: datetime | None,
+    refreshed: bool = False,
+) -> dict[str, Any]:
+    payload = json_ready(summary)
+    if not isinstance(payload, dict):
+        payload = fallback_ai_dashboard_summary({})
+    return {
+        **payload,
+        "cache": ai_dashboard_summary_cache_meta(
+            hit=hit,
+            cache_key=cache_key,
+            cached_at=cached_at,
+            expires_at=expires_at,
+            refreshed=refreshed,
+        ),
+    }
+
+
+async def generate_cached_ai_dashboard_summary(
+    db: Any,
+    provider: Any,
+    uid: str,
+    context: dict[str, Any],
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    cache_key = ai_dashboard_summary_cache_key(uid, context)
+    if not force_refresh:
+        cached = db.ai_response_cache.find_one(cache_key)
+        if cached and isinstance(cached.get("response"), dict):
+            return with_ai_dashboard_summary_cache_meta(
+                cached["response"],
+                hit=True,
+                cache_key=cache_key,
+                cached_at=cached.get("updatedAt") or cached.get("createdAt"),
+                expires_at=cached.get("expiresAt"),
+            )
+
+    generated_at = now()
+    summary = json_ready(await generate_ai_dashboard_summary(provider, context))
+    expires_at = generated_at + timedelta(days=7)
+    db.ai_response_cache.update_one(
+        cache_key,
+        {
+            "$set": {
+                **cache_key,
+                "response": summary,
+                "contextSchemaVersion": context.get("schemaVersion"),
+                "updatedAt": generated_at,
+                "expiresAt": expires_at,
+            },
+            "$setOnInsert": {
+                "id": uuid.uuid4().hex,
+                "createdAt": generated_at,
+            },
+        },
+        upsert=True,
+    )
+    return with_ai_dashboard_summary_cache_meta(
+        summary,
+        hit=False,
+        cache_key=cache_key,
+        cached_at=generated_at,
+        expires_at=expires_at,
+        refreshed=force_refresh,
+    )
 
 
 async def generate_ai_finance_chat(provider: Any, context: dict[str, Any], question: str) -> dict[str, Any]:

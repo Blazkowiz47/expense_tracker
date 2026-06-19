@@ -101,27 +101,22 @@ HF_TORCH_DTYPE=bfloat16       # or float16/float32/auto
 HF_RECEIPT_MAX_NEW_TOKENS=1536
 ```
 
-### Hosted receipt AI via OpenRouter
+### Hosted AI via Gemini and OpenRouter
 
-The default hosted AI provider is OpenRouter. Configure the API key in env; the
-model order lives beside the prompts in `app/prompts/openrouter_models.json` so
+The default hosted AI provider is Gemini, with OpenRouter behind it as a
+fallback when Gemini is capped, slow, or temporarily unavailable. Configure one
+or both API keys in env. Model order lives beside the prompts in
+`app/prompts/gemini_models.json` and `app/prompts/openrouter_models.json` so
 receipt/planning model choices are code-reviewed and easy to edit. The backend
 tries models in order when a model is at capacity or unavailable. All model
 calls use `temperature=0` for predictable JSON extraction and planning
-responses.
+responses. Dashboard AI summaries are cached once per user/day/month/currency so
+normal home loads preserve hosted AI quota for receipt extraction.
 
 ```sh
-AI_PROVIDER=openrouter
+AI_PROVIDER=gemini
+GEMINI_API_KEY=...
 OPENROUTER_API_KEY=...
-```
-
-Current model list:
-
-```json
-[
-  "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
-  "nex-agi/nex-n2-pro:free"
-]
 ```
 
 ### Gemma 4 E4B via llama-server
