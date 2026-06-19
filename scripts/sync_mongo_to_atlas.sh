@@ -11,9 +11,9 @@ if [[ -f "$ROOT/.env" ]]; then
   set +a
 fi
 
-if [[ -z "${TARGET_MONGO_URI:-${REMOTE_MONGO_URI:-${ATLAS_MONGO_URI:-}}}" ]]; then
+if [[ -z "${TARGET_MONGO_URI:-${REMOTE_MONGO_URI:-${ATLAS_MONGO_URI:-${MONGODB_URI:-}}}}}" ]]; then
   cat >&2 <<'EOF'
-Set TARGET_MONGO_URI to the Atlas connection string before running.
+Set TARGET_MONGO_URI or MONGODB_URI to the Atlas connection string before running.
 
 Example:
   TARGET_MONGO_URI='mongodb+srv://user:password@cluster.mongodb.net/expense_tracker_prod?retryWrites=true&w=majority' \

@@ -285,6 +285,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
         );
       }
       _paymentSourcesError = _paymentSourcesMessage(
+        accounts: _accounts,
+        creditCards: _creditCards,
         accountsError: accountsError,
         creditCardsError: creditCardsError,
       );
@@ -653,10 +655,17 @@ class _AddExpensePageState extends State<AddExpensePage> {
   String _formatTags(List<String> tags) => tags.join(', ');
 
   String? _paymentSourcesMessage({
+    required List<FinancialAccount> accounts,
+    required List<CreditCardAccount> creditCards,
     required Object? accountsError,
     required Object? creditCardsError,
   }) {
     if (accountsError == null && creditCardsError == null) {
+      final hasAccounts = accounts.any((account) => !account.archived);
+      final hasCards = creditCards.any((card) => !card.archived);
+      if (!hasAccounts && !hasCards) {
+        return 'No bank accounts or credit cards found for this signed-in account yet. Add them from Account, or sync local data if you moved to the hosted app.';
+      }
       return null;
     }
     final details = [

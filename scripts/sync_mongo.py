@@ -61,8 +61,8 @@ def parse_args(argv: list[str]) -> SyncConfig:
     )
     parser.add_argument(
         "--target-uri",
-        default=env_first("TARGET_MONGO_URI", "REMOTE_MONGO_URI", "ATLAS_MONGO_URI"),
-        help="Target Mongo URI. Prefer env TARGET_MONGO_URI.",
+        default=env_first("TARGET_MONGO_URI", "REMOTE_MONGO_URI", "ATLAS_MONGO_URI", "MONGODB_URI"),
+        help="Target Mongo URI. Prefer env TARGET_MONGO_URI; MONGODB_URI is accepted as an alias.",
     )
     parser.add_argument(
         "--target-db",

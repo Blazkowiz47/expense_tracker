@@ -12,8 +12,9 @@ uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload
 ```
 
 The server expects MongoDB at `MONGO_URI` and defaults to
-`mongodb://127.0.0.1:27017`. Runtime data is stored in `expense_tracker_local`
-unless `MONGO_DB` is set.
+`mongodb://127.0.0.1:27017`; `MONGODB_URI` is also accepted as a deployment
+alias. Runtime data is stored in `expense_tracker_local` unless `MONGO_DB` is
+set.
 
 From the repository root, the tmux dev script uses backend port `8080` and
 frontend port `7357` by default. Override `BACKEND_PORT` / `FRONTEND_PORT`

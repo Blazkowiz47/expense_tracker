@@ -22,7 +22,13 @@ API_BASE_URL_USED="${API_BASE_URL:-http://$BACKEND_HOST_USED:$BACKEND_PORT_USED}
 MONGO_HOST_USED="${MONGO_HOST:-127.0.0.1}"
 MONGO_PORT_USED="${MONGO_PORT:-27017}"
 MONGO_URI_USED="${MONGO_URI:-mongodb://$MONGO_HOST_USED:$MONGO_PORT_USED}"
-MONGO_DB_USED="${MONGO_DB:-expense_tracker_local}"
+if [[ -z "${MONGO_URI:-}" && "${USE_MONGODB_URI_FOR_DEV:-0}" == "1" && -n "${MONGODB_URI:-}" ]]; then
+  MONGO_URI_USED="$MONGODB_URI"
+fi
+MONGO_DB_USED="${DEV_MONGO_DB:-expense_tracker_local}"
+if [[ -n "${MONGO_URI:-}" || "${USE_MONGODB_URI_FOR_DEV:-0}" == "1" ]]; then
+  MONGO_DB_USED="${MONGO_DB:-$MONGO_DB_USED}"
+fi
 AI_PROVIDER_USED="${AI_PROVIDER:-openrouter}"
 START_HF_AI_USED="${START_HF_AI:-0}"
 HF_AI_HOST_USED="${HF_AI_HOST:-127.0.0.1}"
@@ -80,9 +86,9 @@ if [[ "$SHOULD_BOOTSTRAP_MONGO" -eq 1 ]] && \
   ! nc -z "$MONGO_BOOTSTRAP_HOST" "$MONGO_BOOTSTRAP_PORT" >/dev/null 2>&1; then
   echo "MongoDB is not listening on $MONGO_BOOTSTRAP_HOST:$MONGO_BOOTSTRAP_PORT."
   if [[ "${SKIP_MONGO_BOOTSTRAP:-0}" == "1" ]]; then
-    echo "Start MongoDB locally, or set MONGO_URI to a reachable managed server."
+    echo "Start MongoDB locally, set MONGO_URI to a reachable managed server, or set USE_MONGODB_URI_FOR_DEV=1 with MONGODB_URI."
   else
-    echo "Start MongoDB locally, set MONGO_URI to a reachable server, or rerun with SKIP_MONGO_BOOTSTRAP=1 if Mongo is managed separately."
+    echo "Start MongoDB locally, set MONGO_URI to a reachable server, set USE_MONGODB_URI_FOR_DEV=1 with MONGODB_URI, or rerun with SKIP_MONGO_BOOTSTRAP=1 if Mongo is managed separately."
   fi
   exit 1
 fi

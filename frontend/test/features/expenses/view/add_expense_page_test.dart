@@ -579,6 +579,49 @@ void main() {
     expect(find.text('Morrow - Morrow'), findsOneWidget);
   });
 
+  testWidgets('empty payment sources explain why only cash is available', (
+    tester,
+  ) async {
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            accountsRepository: _FakeAccountsRepository(),
+            creditCardsRepository: _FakeCreditCardsRepository(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'No bank accounts or credit cards found for this signed-in account yet. Add them from Account, or sync local data if you moved to the hosted app.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cash'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cash'), findsWidgets);
+  });
+
   testWidgets('edit mode preserves setup account and custom category', (
     tester,
   ) async {

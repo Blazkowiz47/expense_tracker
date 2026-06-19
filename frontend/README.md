@@ -30,9 +30,13 @@ BACKEND_PORT=8081 FRONTEND_PORT=7358 ../scripts/start_expense_dev_tmux.sh --no-a
 ```
 
 When MongoDB is managed separately, set `MONGO_URI` to that reachable server.
-Use `SKIP_MONGO_BOOTSTRAP=1` only when that MongoDB server is already running
-and you want to prevent the script from trying to start the local Docker Mongo
-container.
+If your `.env` only has a deployment-style `MONGODB_URI`, opt in with
+`USE_MONGODB_URI_FOR_DEV=1`. Local dev uses `expense_tracker_local` even if
+`.env` has a deployment `MONGO_DB`; override with `DEV_MONGO_DB` for a different
+local database, or set `MONGO_URI`/`USE_MONGODB_URI_FOR_DEV=1` to pair with
+`MONGO_DB`. Use `SKIP_MONGO_BOOTSTRAP=1` only when that MongoDB server is
+already running and you want to prevent the script from trying to start the
+local Docker Mongo container.
 
 ## Production Web / PWA Build
 

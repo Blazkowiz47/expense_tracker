@@ -1595,7 +1595,8 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     if database is None:
-        client = MongoClient(os.getenv("MONGO_URI", "mongodb://127.0.0.1:27017"), serverSelectionTimeoutMS=1000)
+        mongo_uri = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI") or "mongodb://127.0.0.1:27017"
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=1000)
         database = client[os.getenv("MONGO_DB", "expense_tracker_local")]
         app.state.mongo_client = client
     app.state.db = database
