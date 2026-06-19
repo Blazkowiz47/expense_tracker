@@ -6,6 +6,7 @@ class FinancialAccount {
     required this.accountType,
     required this.currency,
     required this.openingBalance,
+    required this.currentBalance,
     required this.balanceAsOf,
     required this.familyVisibility,
     required this.notes,
@@ -21,6 +22,7 @@ class FinancialAccount {
   final String accountType;
   final String currency;
   final double openingBalance;
+  final double currentBalance;
   final DateTime? balanceAsOf;
   final String familyVisibility;
   final String notes;
@@ -37,6 +39,9 @@ class FinancialAccount {
       accountType: (json['accountType'] as String?) ?? 'savings',
       currency: ((json['currency'] as String?) ?? 'NOK').toUpperCase(),
       openingBalance: _asDouble(json['openingBalance']),
+      currentBalance: _asDouble(
+        json['currentBalance'] ?? json['openingBalance'],
+      ),
       balanceAsOf: _parseDate(json['balanceAsOf']),
       familyVisibility: (json['familyVisibility'] as String?) ?? 'private',
       notes: (json['notes'] as String?) ?? '',

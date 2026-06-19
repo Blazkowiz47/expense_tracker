@@ -1944,6 +1944,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
         expense = build_expense(body, user["uid"], user=user)
+        updated_account_deltas = expense_account_deltas(app.state.db, user["uid"], expense)
         if expense.get("sourceType") == "setup_month_entry" and expense.get("sourcePeriod") and expense.get("sourceSetupKey"):
             existing = app.state.db.expenses.find_one({
                 "uid": user["uid"],
@@ -1952,11 +1953,26 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
                 "sourceSetupKey": expense["sourceSetupKey"],
             })
             if existing:
+                existing_account_deltas = expense_account_deltas(app.state.db, user["uid"], existing)
                 expense["id"] = existing["id"]
                 expense["createdAt"] = existing.get("createdAt") or expense["createdAt"]
                 app.state.db.expenses.replace_one({"id": expense["id"], "uid": user["uid"]}, expense)
+                apply_financial_account_delta_changes(
+                    app.state.db,
+                    user["uid"],
+                    existing_account_deltas,
+                    updated_account_deltas,
+                    expense.get("date"),
+                )
                 return expense_out(expense)
         app.state.db.expenses.insert_one(expense)
+        apply_financial_account_delta_changes(
+            app.state.db,
+            user["uid"],
+            [],
+            updated_account_deltas,
+            expense.get("date"),
+        )
         if receipt_items_in_body(body):
             final_items = save_receipt_items_for_source(
                 app.state.db,
@@ -1990,8 +2006,17 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         if is_loan_payment_expense(existing):
             raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be updated from Loans"))
         updated = build_expense({**existing, **body}, user["uid"], expense_id=expense_id, created_at=existing["createdAt"], user=user)
+        existing_account_deltas = expense_account_deltas(app.state.db, user["uid"], existing)
+        updated_account_deltas = expense_account_deltas(app.state.db, user["uid"], updated)
         reconcile_credit_card_expense_update(app.state.db, user["uid"], existing, updated)
         app.state.db.expenses.replace_one({"id": expense_id, "uid": user["uid"]}, updated)
+        apply_financial_account_delta_changes(
+            app.state.db,
+            user["uid"],
+            existing_account_deltas,
+            updated_account_deltas,
+            updated.get("date"),
+        )
         if receipt_items_in_body(body):
             final_items = save_receipt_items_for_source(
                 app.state.db,
@@ -2081,11 +2106,19 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
         if is_loan_payment_expense(existing):
             raise HTTPException(status_code=409, detail=api_error("LINKED_RECORD", "loan payment expenses must be deleted from Loans"))
+        existing_account_deltas = expense_account_deltas(app.state.db, user["uid"], existing)
         reconcile_credit_card_expense_delete(app.state.db, user["uid"], existing)
         record_expense_tombstone(app.state.db, existing, user["uid"])
         result = app.state.db.expenses.delete_one({"id": expense_id, "uid": user["uid"]})
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail=api_error("NOT_FOUND", "expense not found"))
+        apply_financial_account_delta_changes(
+            app.state.db,
+            user["uid"],
+            existing_account_deltas,
+            [],
+            existing.get("date"),
+        )
         app.state.db.receipt_items.delete_many({"sourceType": "personal", "expenseId": expense_id, "uid": user["uid"]})
         return Response(status_code=204)
 
@@ -4219,6 +4252,11 @@ def build_expense(
         value = str(body.get(key) or "").strip()
         if value:
             expense[key] = value
+    payment_method = str(expense.get("paymentMethod") or "").strip()
+    if "sourceAccountId" not in expense and payment_method.startswith("account:"):
+        account_id = payment_method.split(":", 1)[1].strip()
+        if account_id:
+            expense["sourceAccountId"] = account_id
     return expense
 
 
@@ -4630,6 +4668,8 @@ def build_financial_account(
         raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "name is required"))
     current = now()
     raw_balance_as_of = body.get("balanceAsOf")
+    opening_balance = finite_number(body_first(body, ("openingBalance", "balance"), 0), "openingBalance")
+    current_balance = finite_number(body_first(body, ("currentBalance", "openingBalance", "balance"), opening_balance), "currentBalance")
     return {
         "id": account_id or uuid.uuid4().hex,
         "uid": uid,
@@ -4637,7 +4677,8 @@ def build_financial_account(
         "institution": str(body.get("institution") or "").strip(),
         "accountType": normalize_financial_account_type(body.get("accountType") or body.get("type")),
         "currency": normalize_currency(body.get("currency"), "NOK"),
-        "openingBalance": finite_number(body_first(body, ("openingBalance", "balance"), 0), "openingBalance"),
+        "openingBalance": opening_balance,
+        "currentBalance": current_balance,
         "balanceAsOf": parse_dt(str(raw_balance_as_of)) if raw_balance_as_of else current,
         "familyVisibility": normalize_family_visibility(body.get("familyVisibility") or body.get("visibility")),
         "notes": str(body.get("notes") or "").strip(),
@@ -4645,6 +4686,12 @@ def build_financial_account(
         "updatedAt": current,
         **({"archivedAt": archived_at} if archived_at else {}),
     }
+
+
+def financial_account_current_balance(doc: dict[str, Any]) -> float:
+    if doc.get("currentBalance") is not None:
+        return float(doc.get("currentBalance") or 0)
+    return float(doc.get("openingBalance") or 0)
 
 
 def financial_account_out(doc: dict[str, Any]) -> dict[str, Any]:
@@ -4655,6 +4702,7 @@ def financial_account_out(doc: dict[str, Any]) -> dict[str, Any]:
         "accountType": normalize_financial_account_type(doc.get("accountType")),
         "currency": normalize_currency(doc.get("currency"), "NOK"),
         "openingBalance": float(doc.get("openingBalance") or 0),
+        "currentBalance": financial_account_current_balance(doc),
         "balanceAsOf": doc.get("balanceAsOf"),
         "familyVisibility": normalize_family_visibility(doc.get("familyVisibility")),
         "notes": doc.get("notes") or "",
@@ -4663,6 +4711,92 @@ def financial_account_out(doc: dict[str, Any]) -> dict[str, Any]:
         "createdAt": doc.get("createdAt"),
         "updatedAt": doc.get("updatedAt"),
     })
+
+
+AccountDelta = tuple[str, float]
+
+
+def expense_account_deltas(db: Any, uid: str, expense: dict[str, Any]) -> list[AccountDelta]:
+    amount = round(float(expense.get("amount") or 0), 2)
+    if amount <= 0:
+        return []
+    payment_method = normalize_default_payment_method(expense.get("paymentMethod"))
+    if payment_method == "paid_previously":
+        return []
+    currency = normalize_currency(expense.get("currency"), "INR")
+    source_account_id = str(expense.get("sourceAccountId") or "").strip()
+    destination_account_id = str(expense.get("sourceDestinationAccountId") or "").strip()
+    is_income = (
+        str(expense.get("sourcePaymentType") or "").strip().lower() == "income"
+        or payment_method == "income"
+    )
+    raw_deltas: list[AccountDelta] = []
+    if source_account_id:
+        raw_deltas.append((source_account_id, amount if is_income else -amount))
+    if destination_account_id and not is_income:
+        raw_deltas.append((destination_account_id, amount))
+    if not raw_deltas:
+        return []
+
+    merged: dict[str, float] = {}
+    for account_id, delta in raw_deltas:
+        merged[account_id] = round(merged.get(account_id, 0) + delta, 2)
+
+    deltas: list[AccountDelta] = []
+    for account_id, delta in merged.items():
+        if abs(delta) <= 0.005:
+            continue
+        account = db.financial_accounts.find_one({"id": account_id, "uid": uid})
+        if not account:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "selected bank account was not found"))
+        account_currency = normalize_currency(account.get("currency"), currency)
+        if account_currency != currency:
+            raise HTTPException(status_code=400, detail=api_error("INVALID_ARGUMENT", "bank account currency must match the expense currency"))
+        deltas.append((account_id, delta))
+    return deltas
+
+
+def apply_financial_account_delta(
+    db: Any,
+    uid: str,
+    account_id: str,
+    delta: float,
+    balance_as_of: datetime | None,
+) -> None:
+    if abs(delta) <= 0.005:
+        return
+    account = db.financial_accounts.find_one({"id": account_id, "uid": uid})
+    if not account:
+        return
+    current = now()
+    if account.get("currentBalance") is None:
+        db.financial_accounts.update_one(
+            {"id": account_id, "uid": uid, "currentBalance": {"$exists": False}},
+            {"$set": {"currentBalance": float(account.get("openingBalance") or 0)}},
+        )
+    db.financial_accounts.update_one(
+        {"id": account_id, "uid": uid},
+        {
+            "$inc": {"currentBalance": round(delta, 2)},
+            "$set": {"balanceAsOf": balance_as_of or current, "updatedAt": current},
+        },
+    )
+
+
+def apply_financial_account_delta_changes(
+    db: Any,
+    uid: str,
+    existing_deltas: list[AccountDelta],
+    updated_deltas: list[AccountDelta],
+    balance_as_of: datetime | None,
+) -> None:
+    net: dict[str, float] = {}
+    for account_id, delta in existing_deltas:
+        net[account_id] = round(net.get(account_id, 0) - delta, 2)
+    for account_id, delta in updated_deltas:
+        net[account_id] = round(net.get(account_id, 0) + delta, 2)
+    for account_id, delta in net.items():
+        apply_financial_account_delta(db, uid, account_id, delta, balance_as_of)
 
 
 def build_credit_card(

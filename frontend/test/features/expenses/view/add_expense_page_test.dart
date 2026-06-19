@@ -363,7 +363,7 @@ void main() {
   });
 
   testWidgets(
-    'ios edit mode changes currency category and payment',
+    'ios edit mode changes category and payment source',
     (tester) async {
       final existing = Expense(
         core: ExpenseCore(
@@ -387,7 +387,9 @@ void main() {
             value: bloc,
             child: AddExpensePage(
               expense: existing,
-              accountsRepository: _FakeAccountsRepository(),
+              accountsRepository: _FakeAccountsRepository([
+                _account(id: 'account-1', name: 'DNB current'),
+              ]),
               creditCardsRepository: _FakeCreditCardsRepository(),
             ),
           ),
@@ -409,18 +411,19 @@ void main() {
 
       await tester.tap(find.widgetWithText(CupertinoButton, 'Card').first);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Bank transfer'));
+      await tester.ensureVisible(find.text('DNB current - DNB'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Bank transfer'));
+      await tester.tap(find.text('DNB current - DNB'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.widgetWithText(CupertinoButton, 'Save'));
       await tester.pumpAndSettle();
 
       expect(repository.updatedExpense, isNotNull);
-      expect(repository.updatedExpense!.currency, 'USD');
+      expect(repository.updatedExpense!.currency, 'NOK');
       expect(repository.updatedExpense!.category, 'Travel');
-      expect(repository.updatedExpense!.paymentMethod, 'bank_transfer');
+      expect(repository.updatedExpense!.paymentMethod, 'account:account-1');
+      expect(repository.updatedExpense!.sourceAccountId, 'account-1');
     },
     variant: const TargetPlatformVariant(<TargetPlatform>{TargetPlatform.iOS}),
   );
@@ -615,6 +618,7 @@ FinancialAccount _account({
     accountType: 'checking',
     currency: 'NOK',
     openingBalance: 1000,
+    currentBalance: 1000,
     balanceAsOf: DateTime(2026, 6, 17),
     familyVisibility: 'private',
     notes: '',

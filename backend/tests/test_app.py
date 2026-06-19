@@ -362,6 +362,7 @@ def test_financial_accounts_lifecycle(tmp_path):
     assert payload["accountType"] == "checking"
     assert payload["currency"] == "NOK"
     assert payload["openingBalance"] == 12345.67
+    assert payload["currentBalance"] == 12345.67
     account_id = payload["id"]
 
     listed = client.get("/api/v1/accounts", headers=headers)
@@ -382,6 +383,7 @@ def test_financial_accounts_lifecycle(tmp_path):
     assert updated.json()["name"] == "DNB savings"
     assert updated.json()["accountType"] == "savings"
     assert updated.json()["notes"] == "Emergency buffer"
+    assert updated.json()["currentBalance"] == 12345.67
 
     archived = client.delete(f"/api/v1/accounts/{account_id}", headers=headers)
     assert archived.status_code == 204, archived.text
@@ -412,6 +414,148 @@ def test_financial_account_inputs_return_api_errors(tmp_path):
     )
     assert bad_currency.status_code == 400, bad_currency.text
     assert bad_currency.json()["error"]["code"] == "INVALID_ARGUMENT"
+
+
+def test_financial_account_expenses_reconcile_balance(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created_account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={
+            "name": "Salary account",
+            "currency": "NOK",
+            "openingBalance": 1000,
+        },
+    )
+    assert created_account.status_code == 201, created_account.text
+    account_id = created_account.json()["id"]
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 125,
+            "currency": "NOK",
+            "category": "Groceries",
+            "description": "Rema 1000",
+            "paymentMethod": f"account:{account_id}",
+            "date": "2026-06-17T12:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    expense_id = created.json()["id"]
+    assert created.json()["sourceAccountId"] == account_id
+    account = client.get("/api/v1/accounts", headers=headers).json()["accounts"][0]
+    assert account["currentBalance"] == 875
+
+    edited = client.put(
+        f"/api/v1/expenses/{expense_id}",
+        headers=headers,
+        json={
+            "amount": 200,
+            "currency": "NOK",
+            "category": "Groceries",
+            "description": "Rema 1000 corrected",
+            "paymentMethod": f"account:{account_id}",
+            "date": "2026-06-17T12:00:00Z",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    account = client.get("/api/v1/accounts", headers=headers).json()["accounts"][0]
+    assert account["currentBalance"] == 800
+
+    deleted = client.delete(f"/api/v1/expenses/{expense_id}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+    account = client.get("/api/v1/accounts", headers=headers).json()["accounts"][0]
+    assert account["currentBalance"] == 1000
+
+
+def test_paid_previously_does_not_reconcile_financial_account(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    created_account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Salary account", "currency": "NOK", "openingBalance": 1000},
+    )
+    assert created_account.status_code == 201, created_account.text
+    account_id = created_account.json()["id"]
+
+    created = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 125,
+            "currency": "NOK",
+            "category": "Groceries",
+            "description": "Already paid",
+            "paymentMethod": "paid_previously",
+            "sourceAccountId": account_id,
+            "date": "2026-06-17T12:00:00Z",
+        },
+    )
+    assert created.status_code == 201, created.text
+    account = client.get("/api/v1/accounts", headers=headers).json()["accounts"][0]
+    assert account["currentBalance"] == 1000
+
+
+def test_financial_account_income_and_transfers_reconcile_balance(tmp_path):
+    client, _ = make_client(tmp_path)
+    headers = register(client)
+
+    salary_account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Salary account", "currency": "NOK", "openingBalance": 1000},
+    )
+    savings_account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Savings", "currency": "NOK", "openingBalance": 200},
+    )
+    assert salary_account.status_code == 201, salary_account.text
+    assert savings_account.status_code == 201, savings_account.text
+    salary_id = salary_account.json()["id"]
+    savings_id = savings_account.json()["id"]
+
+    income = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 500,
+            "currency": "NOK",
+            "category": "Salary",
+            "description": "Salary",
+            "paymentMethod": f"account:{salary_id}",
+            "sourcePaymentType": "income",
+            "date": "2026-06-15T12:00:00Z",
+        },
+    )
+    assert income.status_code == 201, income.text
+    transfer = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 300,
+            "currency": "NOK",
+            "category": "Savings - Trip",
+            "description": "Transfer to savings",
+            "paymentMethod": f"account:{salary_id}",
+            "sourceDestinationAccountId": savings_id,
+            "date": "2026-06-17T12:00:00Z",
+        },
+    )
+    assert transfer.status_code == 201, transfer.text
+
+    accounts = {
+        account["id"]: account
+        for account in client.get("/api/v1/accounts", headers=headers).json()["accounts"]
+    }
+    assert accounts[salary_id]["currentBalance"] == 1200
+    assert accounts[savings_id]["currentBalance"] == 500
 
 
 def test_credit_cards_track_cycle_spend_and_expenses(tmp_path):
@@ -521,13 +665,21 @@ def test_profile_default_payment_method_is_applied_to_new_expenses(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)
 
+    account = client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Salary", "currency": "NOK", "openingBalance": 1000},
+    )
+    assert account.status_code == 201, account.text
+    account_id = account.json()["id"]
+
     updated_profile = client.put(
         "/api/v1/profile/preferences",
         headers=headers,
-        json={"defaultPaymentMethod": "account:salary-1"},
+        json={"defaultPaymentMethod": f"account:{account_id}"},
     )
     assert updated_profile.status_code == 200, updated_profile.text
-    assert updated_profile.json()["defaultPaymentMethod"] == "account:salary-1"
+    assert updated_profile.json()["defaultPaymentMethod"] == f"account:{account_id}"
 
     created = client.post(
         "/api/v1/expenses",
@@ -542,7 +694,10 @@ def test_profile_default_payment_method_is_applied_to_new_expenses(tmp_path):
     )
 
     assert created.status_code == 201, created.text
-    assert created.json()["paymentMethod"] == "account:salary-1"
+    assert created.json()["paymentMethod"] == f"account:{account_id}"
+    assert created.json()["sourceAccountId"] == account_id
+    account_after_expense = client.get("/api/v1/accounts", headers=headers).json()["accounts"][0]
+    assert account_after_expense["currentBalance"] == 900.5
 
 
 def test_reimbursable_expense_records_linked_income(tmp_path):
