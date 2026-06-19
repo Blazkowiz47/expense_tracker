@@ -51,6 +51,7 @@ class AddExpensePage extends StatefulWidget {
 }
 
 class _AddExpensePageState extends State<AddExpensePage> {
+  static const double _formMaxWidth = 1180;
   static const _accountPaymentPrefix = 'account:';
   static const _creditCardPaymentPrefix = 'credit_card:';
   static const _categories = <String>[
@@ -713,7 +714,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
   List<String> get _paymentChoices {
     final choices = <String>[
-      ..._paymentMethods,
+      'cash',
       ..._accounts
           .where((account) => !account.archived)
           .map((account) => _accountPaymentValue(account.id)),
@@ -721,7 +722,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
           .where((card) => !card.archived)
           .map((card) => _creditCardPaymentValue(card.id)),
     ];
-    if (!choices.contains(_paymentMethod)) {
+    if (_paymentMethod == 'paid_previously' ||
+        _isLegacyPaymentMethod(_paymentMethod)) {
       choices.add(_paymentMethod);
     }
     return choices;
@@ -729,6 +731,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
 
   List<String> get _transferPaymentChoices {
     final choices = <String>[
+      'cash',
       'paid_previously',
       ..._accounts
           .where((account) => !account.archived)
@@ -759,6 +762,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
       if (card.id == id && !card.archived) return card;
     }
     return null;
+  }
+
+  bool _isLegacyPaymentMethod(String value) {
+    return const {'card', 'upi', 'bank_transfer', 'other'}.contains(value);
   }
 
   FinancialAccount? get _selectedAccount {
@@ -832,7 +839,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
         ],
       ),
       body: AppPageContainer(
-        maxWidth: 920,
+        maxWidth: _formMaxWidth,
         children: [
           AppCard(
             padding: const EdgeInsets.all(20),
@@ -1094,7 +1101,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.fromLTRB(16, 10, 16, 18),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 920),
+          constraints: const BoxConstraints(maxWidth: _formMaxWidth),
           child: Row(
             children: [
               if (!_editing) ...[
@@ -1145,7 +1152,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 920),
+              constraints: const BoxConstraints(maxWidth: _formMaxWidth),
               child: ListView(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 children: [
