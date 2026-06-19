@@ -27,6 +27,19 @@ BACKEND_PORT=8081 FRONTEND_PORT=7358 scripts/start_expense_dev_tmux.sh --no-atta
 Uploaded files are stored under `DATA_DIR/uploads` and default to
 `backend/data/uploads`.
 
+## Smoke Check
+
+After starting the local tmux stack, run the end-to-end API smoke from the
+repository root:
+
+```sh
+python3 scripts/smoke_expense_api.py --base-url http://127.0.0.1:8080
+```
+
+It creates a disposable user and verifies the core first-user journey: accounts,
+credit cards, monthly planning, income, expense logging, savings transfers,
+activity, dashboard reads, and balance reconciliation.
+
 ## Exchange Rates
 
 Group expenses can store purchase-time conversion snapshots. The backend owns
