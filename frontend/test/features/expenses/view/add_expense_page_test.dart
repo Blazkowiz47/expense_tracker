@@ -8,6 +8,7 @@ import 'package:expense_tracker/features/accounts/repositories/api_accounts_repo
 import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
 import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
+import 'package:expense_tracker/features/expenses/repositories/payment_sources_cache.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -117,6 +118,9 @@ class _FakeCreditCardsRepository extends ApiCreditCardsRepository {
 }
 
 void main() {
+  setUp(PaymentSourcesCache.clear);
+  tearDown(PaymentSourcesCache.clear);
+
   testWidgets('planned expense opens with amount currency and category', (
     tester,
   ) async {
@@ -583,6 +587,57 @@ void main() {
     await tester.tap(find.text('Cash'));
     await tester.pumpAndSettle();
     expect(find.text('Morrow - Morrow'), findsOneWidget);
+  });
+
+  testWidgets('uses cached payment sources while refreshing in background', (
+    tester,
+  ) async {
+    PaymentSourcesCache.prime(
+      accounts: [_account(id: 'account-1', name: 'DNB current')],
+      creditCards: [
+        _card(id: 'card-1', name: 'Morrow', issuer: 'Morrow', last4: '4321'),
+      ],
+    );
+    final repository = _FakeExpenseRepository(
+      Expense(
+        core: ExpenseCore(
+          id: 'seed',
+          title: 'Seed',
+          amount: 1,
+          currency: 'NOK',
+          category: 'Personal',
+          createdAt: DateTime(2026, 6, 16),
+        ),
+      ),
+    );
+    final bloc = ExpensesBloc(repository: repository);
+    addTearDown(bloc.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(splashFactory: InkRipple.splashFactory),
+        home: BlocProvider.value(
+          value: bloc,
+          child: AddExpensePage(
+            accountsRepository: _FakeAccountsRepository(
+              const [],
+              TimeoutException('accounts timed out'),
+            ),
+            creditCardsRepository: _FakeCreditCardsRepository(
+              const [],
+              TimeoutException('cards timed out'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Cash'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('DNB current - DNB'), findsOneWidget);
+    expect(find.text('Morrow - Morrow · •••• 4321'), findsOneWidget);
   });
 
   testWidgets('empty payment sources explain why only cash is available', (

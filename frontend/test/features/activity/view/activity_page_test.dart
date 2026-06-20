@@ -28,12 +28,42 @@ class _FakeExpenseRepository extends ExpenseRepository {
     : super(client: MockClient((_) async => http.Response('{}', 200)));
 
   List<Expense> expenses;
+  Expense? updatedExpense;
 
   @override
   Future<void> refresh() async {}
 
   @override
   List<Expense> getExpenses() => expenses;
+
+  @override
+  Expense? getExpenseById(String id) {
+    for (final expense in expenses) {
+      if (expense.id == id) return expense;
+    }
+    return null;
+  }
+
+  @override
+  void upsertCachedExpenses(Iterable<Expense> updates) {
+    final byId = <String, Expense>{
+      for (final expense in expenses) expense.id: expense,
+    };
+    for (final expense in updates) {
+      byId[expense.id] = expense;
+    }
+    expenses = byId.values.toList(growable: false);
+  }
+
+  @override
+  Future<void> updateExpense(
+    Expense expense, {
+    List<Map<String, dynamic>> receiptItems = const [],
+    String billJobId = '',
+  }) async {
+    updatedExpense = expense;
+    upsertCachedExpenses([expense]);
+  }
 }
 
 class _FakeGroupsRepository extends ApiGroupsRepository {
@@ -604,12 +634,72 @@ void main() {
       expect(find.text('You paid Bob'), findsOneWidget);
       expect(find.text('Bob paid you'), findsOneWidget);
       expect(find.text('Received Salary'), findsOneWidget);
-      expect(find.text('₹0.00'), findsOneWidget);
+      expect(find.text('NOK 0.00'), findsOneWidget);
       expect(find.text('USD 25.00'), findsOneWidget);
       expect(find.text('₹50.00'), findsOneWidget);
       expect(find.text('₹30,500.00'), findsOneWidget);
     },
   );
+
+  testWidgets('recording setup expense removes action tick immediately', (
+    tester,
+  ) async {
+    final today = DateTime.now();
+    final setupExpense = Expense(
+      core: ExpenseCore(
+        id: 'setup-pc',
+        title: 'PC',
+        amount: 561,
+        currency: 'NOK',
+        category: 'Loans / EMI',
+        createdAt: today,
+      ),
+      description: 'PC',
+      paymentMethod: 'paid_previously',
+      sourceType: 'setup_month_entry',
+      sourceAccountId: 'account-1',
+      sourceAccountName: 'DNB current - DNB',
+      sourcePaymentType: 'expense',
+      sourcePeriod: '2026-06',
+      sourceSetupKey: 'loan:pc',
+    );
+    final expenseRepository = _FakeExpenseRepository([setupExpense]);
+    final expensesBloc = ExpensesBloc(repository: expenseRepository);
+    final dashboardCubit = DashboardSnapshotCubit(
+      repository: const MockDashboardSnapshotRepository(),
+    )..load();
+    addTearDown(expensesBloc.close);
+    addTearDown(dashboardCubit.close);
+
+    await tester.pumpWidget(
+      RepositoryProvider<ExpenseRepository>.value(
+        value: expenseRepository,
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: expensesBloc),
+            BlocProvider.value(value: dashboardCubit),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: InkRipple.splashFactory),
+            home: ActivityPage(groupsRepository: _FakeGroupsRepository()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _scrollUntilTextVisible(tester, 'PC');
+    expect(find.byTooltip('Mark as paid'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Mark as paid'));
+    await tester.pumpAndSettle();
+
+    expect(
+      expenseRepository.updatedExpense?.paymentMethod,
+      'account:account-1',
+    );
+    expect(find.byTooltip('Mark as paid'), findsNothing);
+  });
 
   testWidgets('loads older activity event pages', (tester) async {
     final today = DateTime.now();

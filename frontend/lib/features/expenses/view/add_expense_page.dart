@@ -13,6 +13,7 @@ import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
 import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
 import 'package:expense_tracker/features/expenses/repositories/bill_ai_repository.dart';
+import 'package:expense_tracker/features/expenses/repositories/payment_sources_cache.dart';
 import 'package:expense_tracker/features/profile/models/user_profile.dart';
 import 'package:expense_tracker/features/profile/repositories/user_profile_repository.dart';
 import 'package:expense_tracker/features/receipts/widgets/receipt_line_items_review.dart';
@@ -135,6 +136,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     _creditCardsRepository =
         widget.creditCardsRepository ??
         ApiCreditCardsRepository(client: _client ?? http.Client());
+    _applyCachedPaymentSources();
     final expense = widget.expense;
     if (expense != null) {
       final descriptionParts = _splitDescription(
@@ -246,42 +248,31 @@ class _AddExpensePageState extends State<AddExpensePage> {
     });
   }
 
-  Future<void> _loadPaymentSources() async {
+  void _applyCachedPaymentSources() {
+    final cached = PaymentSourcesCache.snapshot;
+    if (cached == null) return;
+    _accounts = cached.accounts;
+    _creditCards = cached.creditCards;
+    _loadedPaymentSources = true;
+  }
+
+  Future<void> _loadPaymentSources({bool forceRefresh = false}) async {
     if (mounted) {
       setState(() {
         _loadingPaymentSources = true;
         _paymentSourcesError = null;
       });
     }
-    List<FinancialAccount>? accounts;
-    List<CreditCardAccount>? creditCards;
-    Object? accountsError;
-    Object? creditCardsError;
-
-    await Future.wait<void>([
-      _accountsRepository
-          .fetchAccounts()
-          .timeout(_paymentSourceTimeout)
-          .then<void>((value) => accounts = value)
-          .catchError((Object error) {
-            accountsError = error;
-          }),
-      _creditCardsRepository
-          .fetchCards()
-          .timeout(_paymentSourceTimeout)
-          .then<void>((value) => creditCards = value)
-          .catchError((Object error) {
-            creditCardsError = error;
-          }),
-    ]);
+    final result = await PaymentSourcesCache.load(
+      accountsRepository: _accountsRepository,
+      creditCardsRepository: _creditCardsRepository,
+      timeout: _paymentSourceTimeout,
+      forceRefresh: forceRefresh,
+    );
     if (!mounted) return;
     setState(() {
-      if (accounts != null) {
-        _accounts = accounts!;
-      }
-      if (creditCards != null) {
-        _creditCards = creditCards!;
-      }
+      _accounts = result.snapshot.accounts;
+      _creditCards = result.snapshot.creditCards;
       _loadedPaymentSources = true;
       _loadingPaymentSources = false;
       _applyPendingDefaultPaymentMethod();
@@ -302,8 +293,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
       _paymentSourcesError = _paymentSourcesMessage(
         accounts: _accounts,
         creditCards: _creditCards,
-        accountsError: accountsError,
-        creditCardsError: creditCardsError,
+        accountsError: result.accountsError,
+        creditCardsError: result.creditCardsError,
       );
     });
   }
@@ -505,44 +496,68 @@ class _AddExpensePageState extends State<AddExpensePage> {
         });
         return;
       }
-      final result = await _billRepository.uploadAndWait(
+      final jobId = await _billRepository.uploadBill(
         bytes: await picked.readAsBytes(),
         fileName: picked.name,
         contentType: _contentTypeFor(picked.name),
       );
       if (!mounted) return;
-      final primaryDescription = result.merchant.isNotEmpty
-          ? result.merchant
-          : result.notes;
-      _descriptionController.text = primaryDescription;
-      _notesController.text = result.notes.trim() == primaryDescription.trim()
-          ? ''
-          : result.notes;
-      if (result.amount > 0) {
-        _amountController.text = result.amount.toStringAsFixed(2);
-      }
       setState(() {
-        _billResult = result;
-        _receiptItems = result.lineItems;
-        _billJobId = result.jobId;
-        _tagsController.clear();
-        if (result.dateExtracted) {
-          _expenseDate = result.date;
-        }
-        _category = _normalizedChoice(result.category, _categories, 'Personal');
-        _currency = _normalizedChoice(result.currency, _currencies, 'INR');
         _extractingBill = false;
+        _billJobId = jobId;
         _billMessage =
-            'Bill autofill ready (${(result.confidence * 100).toStringAsFixed(0)}% confidence).';
+            'Receipt uploaded. You can choose payment now; autofill will appear when processing finishes.';
       });
+      unawaited(_pollBillExtraction(jobId));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _extractingBill = false;
+        _error = 'Bill upload failed: $error';
+        _billMessage = null;
+      });
+    }
+  }
+
+  Future<void> _pollBillExtraction(String jobId) async {
+    try {
+      final result = await _billRepository.waitForJob(jobId);
+      if (!mounted) return;
+      _applyBillExtractionResult(result);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _extractingBill = false;
         _error = 'Bill extraction failed: $error';
-        _billMessage = null;
       });
     }
+  }
+
+  void _applyBillExtractionResult(BillExtractionResult result) {
+    final primaryDescription = result.merchant.isNotEmpty
+        ? result.merchant
+        : result.notes;
+    _descriptionController.text = primaryDescription;
+    _notesController.text = result.notes.trim() == primaryDescription.trim()
+        ? ''
+        : result.notes;
+    if (result.amount > 0) {
+      _amountController.text = result.amount.toStringAsFixed(2);
+    }
+    setState(() {
+      _billResult = result;
+      _receiptItems = result.lineItems;
+      _billJobId = result.jobId;
+      _tagsController.clear();
+      if (result.dateExtracted) {
+        _expenseDate = result.date;
+      }
+      _category = _normalizedChoice(result.category, _categories, 'Personal');
+      _currency = _normalizedChoice(result.currency, _currencies, 'INR');
+      _extractingBill = false;
+      _billMessage =
+          'Receipt processed (${(result.confidence * 100).toStringAsFixed(0)}% confidence).';
+    });
   }
 
   Future<void> _pickDate() async {
@@ -1041,7 +1056,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   const SizedBox(height: 8),
                   _PaymentSourceNotice(
                     message: _paymentSourcesError!,
-                    onRetry: _loadPaymentSources,
+                    onRetry: () => _loadPaymentSources(forceRefresh: true),
                   ),
                 ],
                 CheckboxListTile(
@@ -1354,7 +1369,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
                           padding: const EdgeInsets.all(12),
                           child: _PaymentSourceNotice(
                             message: _paymentSourcesError!,
-                            onRetry: _loadPaymentSources,
+                            onRetry: () =>
+                                _loadPaymentSources(forceRefresh: true),
                           ),
                         ),
                       CupertinoFormRow(

@@ -11,6 +11,8 @@ import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/features/auth/cubit/auth_cubit.dart';
 import 'package:expense_tracker/features/account/view/account_page.dart';
 import 'package:expense_tracker/features/activity/view/activity_page.dart';
+import 'package:expense_tracker/features/accounts/repositories/api_accounts_repository.dart';
+import 'package:expense_tracker/features/credit_cards/repositories/api_credit_cards_repository.dart';
 import 'package:expense_tracker/features/credit_cards/view/credit_cards_page.dart';
 import 'package:expense_tracker/features/dashboard/bloc/dashboard_snapshot_cubit.dart';
 import 'package:expense_tracker/features/dashboard/models/dashboard_snapshot.dart';
@@ -18,6 +20,7 @@ import 'package:expense_tracker/features/dashboard/repositories/api_dashboard_sn
 import 'package:expense_tracker/features/dashboard/repositories/dashboard_snapshot_repository.dart';
 import 'package:expense_tracker/features/dashboard/view/home_page.dart';
 import 'package:expense_tracker/features/expenses/bloc/expenses_bloc.dart';
+import 'package:expense_tracker/features/expenses/repositories/payment_sources_cache.dart';
 import 'package:expense_tracker/features/expenses/view/add_expense_page.dart';
 import 'package:expense_tracker/features/family/view/family_page.dart';
 import 'package:expense_tracker/features/friends/view/friends_page.dart';
@@ -54,6 +57,8 @@ class _HomeShellPageState extends State<HomeShellPage>
   late int _selectedIndex;
   http.Client? _httpClient;
   late final http.Client _actionHttpClient;
+  late final ApiAccountsRepository _paymentAccountsRepository;
+  late final ApiCreditCardsRepository _paymentCreditCardsRepository;
   late final bool _ownsHttpClient;
   late final DashboardSnapshotCubit _dashboardCubit;
   late final AnimationController _actionMenuController;
@@ -63,6 +68,7 @@ class _HomeShellPageState extends State<HomeShellPage>
   bool _hasOnboardingDraft = false;
   bool _addExpenseOpen = false;
   bool _pendingShellBackgroundLoad = false;
+  int _activityRefreshSignal = 0;
   Timer? _shellBackgroundLoadTimer;
 
   static const _destinations = <_ShellDestination>[
@@ -100,6 +106,12 @@ class _HomeShellPageState extends State<HomeShellPage>
     super.initState();
     _selectedIndex = widget.initialIndex;
     _actionHttpClient = http.Client();
+    _paymentAccountsRepository = ApiAccountsRepository(
+      client: _actionHttpClient,
+    );
+    _paymentCreditCardsRepository = ApiCreditCardsRepository(
+      client: _actionHttpClient,
+    );
     _ownsHttpClient = widget.repository == null;
     final repository = widget.repository ?? _buildApiRepository();
     _dashboardCubit = DashboardSnapshotCubit(repository: repository);
@@ -177,6 +189,7 @@ class _HomeShellPageState extends State<HomeShellPage>
       _pendingShellBackgroundLoad = false;
       unawaited(_dashboardCubit.load());
       unawaited(_loadOnboardingDraftStatus());
+      unawaited(_hydratePaymentSources());
     });
   }
 
@@ -186,11 +199,29 @@ class _HomeShellPageState extends State<HomeShellPage>
       _pendingShellBackgroundLoad = false;
       unawaited(_dashboardCubit.load());
       unawaited(_loadOnboardingDraftStatus());
+      unawaited(_hydratePaymentSources());
       return;
     }
     if (forceRefresh) {
+      setState(() => _activityRefreshSignal += 1);
       unawaited(_dashboardCubit.load(showLoading: false));
+      unawaited(
+        PaymentSourcesCache.load(
+          accountsRepository: _paymentAccountsRepository,
+          creditCardsRepository: _paymentCreditCardsRepository,
+          forceRefresh: true,
+        ),
+      );
     }
+  }
+
+  Future<void> _hydratePaymentSources() async {
+    try {
+      await PaymentSourcesCache.load(
+        accountsRepository: _paymentAccountsRepository,
+        creditCardsRepository: _paymentCreditCardsRepository,
+      );
+    } catch (_) {}
   }
 
   Future<bool> _openAddExpense({
@@ -238,6 +269,8 @@ class _HomeShellPageState extends State<HomeShellPage>
                 initialAmount: initialAmount,
                 initialCurrency: initialCurrency,
                 initialPaymentMethod: initialPaymentMethod,
+                accountsRepository: _paymentAccountsRepository,
+                creditCardsRepository: _paymentCreditCardsRepository,
               ),
             ),
           ),
@@ -565,7 +598,10 @@ class _HomeShellPageState extends State<HomeShellPage>
       return FamilyPage(autoRefresh: autoRefresh);
     }
     if (destination.label == 'Activity') {
-      return ActivityPage(autoRefresh: autoRefresh);
+      return ActivityPage(
+        autoRefresh: autoRefresh,
+        refreshSignal: _activityRefreshSignal,
+      );
     }
     return destination.page;
   }

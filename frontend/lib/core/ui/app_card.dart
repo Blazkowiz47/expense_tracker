@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 
 class AppCard extends StatelessWidget {
-  const AppCard({required this.child, this.padding, this.onTap, super.key});
+  const AppCard({
+    required this.child,
+    this.padding,
+    this.onTap,
+    this.color,
+    super.key,
+  });
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final VoidCallback? onTap;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -14,6 +21,7 @@ class AppCard extends StatelessWidget {
         : Padding(padding: padding!, child: child);
 
     return Card(
+      color: color,
       child: onTap == null
           ? content
           : InkWell(

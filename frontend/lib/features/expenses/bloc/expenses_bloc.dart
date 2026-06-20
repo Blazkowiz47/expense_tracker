@@ -57,6 +57,8 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
     CreateExpense event,
     Emitter<ExpensesState> emit,
   ) async {
+    _repository.upsertCachedExpenses([event.expense]);
+    emit(ExpensesLoaded(expenses: _repository.getExpenses()));
     try {
       await _repository.createExpense(
         event.expense,
@@ -66,6 +68,7 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));
     } catch (e) {
+      _repository.removeCachedDeletedIds([event.expense.id]);
       emit(ExpensesError(message: e.toString()));
     }
   }
@@ -75,6 +78,9 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
     UpdateExpense event,
     Emitter<ExpensesState> emit,
   ) async {
+    final previous = _repository.getExpenseById(event.expense.id);
+    _repository.upsertCachedExpenses([event.expense]);
+    emit(ExpensesLoaded(expenses: _repository.getExpenses()));
     try {
       await _repository.updateExpense(
         event.expense,
@@ -84,6 +90,9 @@ class ExpensesBloc extends Bloc<ExpensesEvent, ExpensesState> {
       final expenses = _repository.getExpenses();
       emit(ExpensesLoaded(expenses: expenses));
     } catch (e) {
+      if (previous != null) {
+        _repository.upsertCachedExpenses([previous]);
+      }
       emit(ExpensesError(message: e.toString()));
     }
   }

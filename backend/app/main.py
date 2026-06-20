@@ -1940,6 +1940,7 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         category: str = "",
         from_: str | None = Query(default=None, alias="from"),
         to: str | None = None,
+        updated_since: str | None = Query(default=None, alias="updatedSince"),
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
         ensure_setup_month_activity_entries(app.state.db, user["uid"])
@@ -1947,8 +1948,25 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         if category.strip():
             filters["category"] = category.strip()
         add_date_filter(filters, from_, to)
+        since = parse_dt(updated_since) if updated_since else None
+        if since is not None:
+            filters["updatedAt"] = {"$gt": since}
         docs = list(app.state.db.expenses.find(filters).sort("date", -1).skip(max(page - 1, 0) * limit).limit(max(1, min(limit, 1000))))
-        return {"expenses": [expense_out(doc) for doc in docs]}
+        deleted_ids = []
+        if since is not None:
+            deleted_ids = [
+                str(tombstone.get("expenseId"))
+                for tombstone in app.state.db.expense_tombstones.find(
+                    {"uid": user["uid"], "deletedAt": {"$gt": since}},
+                    {"expenseId": 1},
+                )
+                if tombstone.get("expenseId")
+            ]
+        return {
+            "expenses": [expense_out(doc) for doc in docs],
+            "deletedIds": deleted_ids,
+            "serverTime": iso(now()),
+        }
 
     @app.post("/api/v1/expenses", status_code=201)
     def create_expense(
@@ -1956,7 +1974,13 @@ def create_app(database: Any | None = None, ai_provider: LocalGemmaBillExtractor
         background_tasks: BackgroundTasks,
         user: dict[str, Any] = Depends(current_user),
     ) -> dict[str, Any]:
-        expense = build_expense(body, user["uid"], user=user)
+        raw_expense_id = str(body.get("id") or "").strip()
+        expense = build_expense(
+            body,
+            user["uid"],
+            expense_id=raw_expense_id if raw_expense_id else None,
+            user=user,
+        )
         updated_account_deltas = expense_account_deltas(app.state.db, user["uid"], expense)
         if expense.get("sourceType") == "setup_month_entry" and expense.get("sourcePeriod") and expense.get("sourceSetupKey"):
             existing = app.state.db.expenses.find_one({

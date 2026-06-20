@@ -28,6 +28,7 @@ class ActivityPage extends StatefulWidget {
     this.activityFeedRepository,
     this.initialCategoryFilter = '',
     this.autoRefresh = false,
+    this.refreshSignal = 0,
     super.key,
   });
 
@@ -37,6 +38,7 @@ class ActivityPage extends StatefulWidget {
   final ActivityFeedRepository? activityFeedRepository;
   final String initialCategoryFilter;
   final bool autoRefresh;
+  final int refreshSignal;
 
   @override
   State<ActivityPage> createState() => _ActivityPageState();
@@ -113,6 +115,14 @@ class _ActivityPageState extends State<ActivityPage> {
     _loadedRepository = true;
     _repository = context.read<ExpenseRepository?>();
     _refreshActivityData();
+  }
+
+  @override
+  void didUpdateWidget(covariant ActivityPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshSignal != widget.refreshSignal) {
+      _refreshActivityData(showLoading: false);
+    }
   }
 
   Future<void> _refreshActivityData({bool showLoading = true}) async {
@@ -736,6 +746,26 @@ class _ActivityPageState extends State<ActivityPage> {
     return currencies.length == 1 ? currencies.first : null;
   }
 
+  String _fallbackCurrency({
+    required Map<String, double> currentTotals,
+    required Map<String, double> previousTotals,
+    required List<_ActivityExpenseEntry> entries,
+  }) {
+    for (final currency in currentTotals.keys) {
+      final normalized = currency.trim().toUpperCase();
+      if (normalized.isNotEmpty) return normalized;
+    }
+    for (final currency in previousTotals.keys) {
+      final normalized = currency.trim().toUpperCase();
+      if (normalized.isNotEmpty) return normalized;
+    }
+    for (final entry in entries) {
+      final normalized = entry.currency.trim().toUpperCase();
+      if (normalized.isNotEmpty) return normalized;
+    }
+    return 'NOK';
+  }
+
   Future<void> _editExpense(Expense expense) async {
     final bloc = context.read<ExpensesBloc?>();
     if (bloc == null) return;
@@ -787,28 +817,38 @@ class _ActivityPageState extends State<ActivityPage> {
       await _editExpense(expense);
       return;
     }
-    final updated = Expense(
-      core: expense.core,
-      description: expense.description,
+    final updated = expense.copyWith(
       updatedAt: DateTime.now(),
       paymentMethod: 'account:$sourceAccountId',
-      sourceType: expense.sourceType,
       sourceAccountId: expense.sourceAccountId,
       sourceAccountName: expense.sourceAccountName,
-      sourceDestinationAccountId: expense.sourceDestinationAccountId,
-      sourceDestinationAccountName: expense.sourceDestinationAccountName,
-      sourcePaymentType: expense.sourcePaymentType,
-      sourcePeriod: expense.sourcePeriod,
-      sourceSetupKey: expense.sourceSetupKey,
       isSynced: false,
-      deleted: expense.deleted,
     );
-    await repository.updateExpense(updated);
+    _replacePersonalExpense(updated);
+    repository.upsertCachedExpenses([updated]);
+    try {
+      await repository.updateExpense(updated);
+    } catch (_) {
+      repository.upsertCachedExpenses([expense]);
+      _replacePersonalExpense(expense);
+      rethrow;
+    }
     if (!mounted) return;
     await Future.wait([
       _refreshActivityData(showLoading: false),
       context.read<DashboardSnapshotCubit>().load(showLoading: false),
     ]);
+  }
+
+  void _replacePersonalExpense(Expense replacement) {
+    if (!mounted) return;
+    setState(() {
+      _expenses = _expenses
+          .map(
+            (expense) => expense.id == replacement.id ? replacement : expense,
+          )
+          .toList(growable: false);
+    });
   }
 
   @override
@@ -835,6 +875,11 @@ class _ActivityPageState extends State<ActivityPage> {
         );
         final currentTotals = periodExpenses.totalAmountsByCurrency;
         final previousTotals = previousExpenses.totalAmountsByCurrency;
+        final summaryCurrency = _fallbackCurrency(
+          currentTotals: currentTotals,
+          previousTotals: previousTotals,
+          entries: activityEntries,
+        );
         final timelineEntries = _timelineEntries(activityEntries);
         final periodTimelineEntries = _timelineEntriesInPeriod(
           timelineEntries,
@@ -867,7 +912,9 @@ class _ActivityPageState extends State<ActivityPage> {
           autoRefresh: widget.autoRefresh,
           children: [
             _SpendSummaryCard(
-              totalText: AppMoney.formatCurrencyAmounts(currentTotals),
+              totalText: currentTotals.isEmpty
+                  ? AppMoney.formatCurrency(0, summaryCurrency)
+                  : AppMoney.formatCurrencyAmounts(currentTotals),
               comparison: comparison,
               increasedSpend: increasedSpend,
               loading: _loadingExpenses,
@@ -1134,7 +1181,9 @@ class _TimelineActivityTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final actionable = entry.canRecord;
     return AppCard(
+      color: actionable ? AppPalette.warningSoft : null,
       child: ListTile(
         onTap: onTap,
         leading: AppAvatar(icon: entry.icon),
@@ -1145,10 +1194,11 @@ class _TimelineActivityTile extends StatelessWidget {
           children: [
             if (onRecord != null) ...[
               Tooltip(
-                message: 'Record',
+                message: 'Mark as paid',
                 child: IconButton(
                   onPressed: onRecord,
                   icon: const Icon(Icons.check_circle_outline),
+                  color: AppPalette.warningText,
                 ),
               ),
               const SizedBox(width: 4),

@@ -115,6 +115,7 @@ void main() {
             ).captured.single
             as String;
     final payload = jsonDecode(body) as Map<String, dynamic>;
+    expect(payload['id'], 'local-id');
     expect(payload['amount'], 120);
     expect(payload['currency'], 'INR');
     expect(payload['category'], 'Personal');
@@ -123,6 +124,72 @@ void main() {
     expect(payload['date'], '2026-02-25T12:30:00.000Z');
     expect(payload['tags'], ['guilty pleasure', 'restaurant']);
     expect(payload['billJobId'], 'bill-job-1');
+  });
+
+  test('refresh merges changed expenses and removes deleted ids', () async {
+    var requestCount = 0;
+    when(() => client.get(any(), headers: any(named: 'headers'))).thenAnswer((
+      invocation,
+    ) async {
+      requestCount += 1;
+      final uri = invocation.positionalArguments.first as Uri;
+      if (requestCount == 1) {
+        expect(uri.queryParameters.containsKey('updatedSince'), isFalse);
+        return http.Response(
+          jsonEncode({
+            'serverTime': '2026-02-25T12:00:00Z',
+            'expenses': [
+              {
+                'id': 'old',
+                'amount': 100,
+                'currency': 'NOK',
+                'category': 'Food',
+                'description': 'Old row',
+                'date': '2026-02-24T10:00:00Z',
+                'updatedAt': '2026-02-25T10:00:00Z',
+              },
+              {
+                'id': 'deleted',
+                'amount': 50,
+                'currency': 'NOK',
+                'category': 'Food',
+                'description': 'Deleted row',
+                'date': '2026-02-24T11:00:00Z',
+                'updatedAt': '2026-02-25T10:30:00Z',
+              },
+            ],
+          }),
+          200,
+        );
+      }
+
+      expect(uri.queryParameters['updatedSince'], '2026-02-25T12:00:00.000Z');
+      return http.Response(
+        jsonEncode({
+          'serverTime': '2026-02-25T12:05:00Z',
+          'deletedIds': ['deleted'],
+          'expenses': [
+            {
+              'id': 'new',
+              'amount': 200,
+              'currency': 'NOK',
+              'category': 'Travel',
+              'description': 'New row',
+              'date': '2026-02-25T12:01:00Z',
+              'updatedAt': '2026-02-25T12:01:00Z',
+            },
+          ],
+        }),
+        200,
+      );
+    });
+
+    await repository.initialize();
+    await repository.refresh();
+
+    expect(repository.getExpenseById('old'), isNotNull);
+    expect(repository.getExpenseById('deleted'), isNull);
+    expect(repository.getExpenseById('new')?.amount, 200);
   });
 
   test('updateExpense sends PUT and replaces cached expense', () async {

@@ -790,6 +790,74 @@ def test_expenses_persist_in_mongo(tmp_path):
     assert listed.json()["expenses"][0]["id"] == expense_id
 
 
+def test_expenses_delta_lists_updated_rows_and_tombstones(tmp_path):
+    client, app = make_client(tmp_path)
+    headers = register(client)
+
+    old = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 99.5,
+            "currency": "NOK",
+            "category": "Food",
+            "description": "Old dinner",
+            "date": "2026-05-30T12:00:00Z",
+        },
+    )
+    assert old.status_code == 201, old.text
+    old_id = old.json()["id"]
+    cursor = parse_dt("2026-05-30T13:00:00Z")
+    app.state.db.expenses.update_one(
+        {"id": old_id},
+        {"$set": {"updatedAt": parse_dt("2026-05-30T12:30:00Z")}},
+    )
+
+    updated = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 42,
+            "currency": "NOK",
+            "category": "Travel",
+            "description": "Bus",
+            "date": "2026-05-30T13:30:00Z",
+        },
+    )
+    assert updated.status_code == 201, updated.text
+    updated_id = updated.json()["id"]
+    app.state.db.expenses.update_one(
+        {"id": updated_id},
+        {"$set": {"updatedAt": parse_dt("2026-05-30T13:30:00Z")}},
+    )
+
+    deleted = client.post(
+        "/api/v1/expenses",
+        headers=headers,
+        json={
+            "amount": 12,
+            "currency": "NOK",
+            "category": "Food",
+            "description": "Delete me",
+            "date": "2026-05-30T14:00:00Z",
+        },
+    )
+    assert deleted.status_code == 201, deleted.text
+    deleted_id = deleted.json()["id"]
+    deleted_response = client.delete(f"/api/v1/expenses/{deleted_id}", headers=headers)
+    assert deleted_response.status_code == 204, deleted_response.text
+
+    listed = client.get(
+        f"/api/v1/expenses?updatedSince={iso(cursor)}",
+        headers=headers,
+    )
+    assert listed.status_code == 200, listed.text
+    payload = listed.json()
+    assert [expense["id"] for expense in payload["expenses"]] == [updated_id]
+    assert payload["deletedIds"] == [deleted_id]
+    assert payload["serverTime"]
+
+
 def test_profile_default_payment_method_is_applied_to_new_expenses(tmp_path):
     client, _ = make_client(tmp_path)
     headers = register(client)

@@ -238,7 +238,7 @@ class BillAiRepository {
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;
 
-  Future<BillExtractionResult> uploadAndWait({
+  Future<String> uploadBill({
     required Uint8List bytes,
     required String fileName,
     required String contentType,
@@ -267,35 +267,57 @@ class BillAiRepository {
       );
     }
     final job = jsonDecode(response.body) as Map<String, dynamic>;
-    final jobId = job['id'] as String;
+    return (job['id'] as String?) ?? '';
+  }
+
+  Future<BillExtractionResult?> fetchJob(String jobId) async {
+    final token = await _authTokenProvider.getBearerToken();
+    final poll = await _client.get(
+      Uri.parse('${ApiConfig.baseUrl}/api/v1/bills/$jobId'),
+      headers: {'Accept': 'application/json', 'Authorization': 'Bearer $token'},
+    );
+    if (poll.statusCode != 200) {
+      throw Exception(
+        'Bill extraction status failed (${poll.statusCode}): ${poll.body}',
+      );
+    }
+    final payload = jsonDecode(poll.body) as Map<String, dynamic>;
+    if (payload['status'] == 'completed') {
+      return BillExtractionResult.fromJson({
+        ...(payload['result'] as Map<String, dynamic>),
+        'jobId': jobId,
+      });
+    }
+    if (payload['status'] == 'failed') {
+      throw Exception(payload['error'] ?? 'Bill extraction failed');
+    }
+    return null;
+  }
+
+  Future<BillExtractionResult> waitForJob(String jobId) async {
     final deadline = DateTime.now().add(extractionTimeout);
     while (DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(pollInterval);
-      final poll = await _client.get(
-        Uri.parse('${ApiConfig.baseUrl}/api/v1/bills/$jobId'),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-      if (poll.statusCode != 200) {
-        throw Exception(
-          'Bill extraction status failed (${poll.statusCode}): ${poll.body}',
-        );
-      }
-      final payload = jsonDecode(poll.body) as Map<String, dynamic>;
-      if (payload['status'] == 'completed') {
-        return BillExtractionResult.fromJson({
-          ...(payload['result'] as Map<String, dynamic>),
-          'jobId': jobId,
-        });
-      }
-      if (payload['status'] == 'failed') {
-        throw Exception(payload['error'] ?? 'Bill extraction failed');
+      final result = await fetchJob(jobId);
+      if (result != null) {
+        return result;
       }
     }
     throw TimeoutException(
       'Bill extraction timed out after ${extractionTimeout.inSeconds} seconds.',
     );
+  }
+
+  Future<BillExtractionResult> uploadAndWait({
+    required Uint8List bytes,
+    required String fileName,
+    required String contentType,
+  }) async {
+    final jobId = await uploadBill(
+      bytes: bytes,
+      fileName: fileName,
+      contentType: contentType,
+    );
+    return waitForJob(jobId);
   }
 }

@@ -15,15 +15,28 @@ class ExpenseRepository {
   final http.Client _client;
   final AuthTokenProvider _authTokenProvider;
   final Map<String, Expense> _expensesCache = {};
+  DateTime? _lastRefreshCursor;
   static const _requestTimeout = Duration(seconds: 20);
 
   Future<void> initialize() => refresh();
 
   Future<void> refresh() async {
-    final expenses = await _fetchExpenses();
-    _expensesCache
-      ..clear()
-      ..addEntries(expenses.map((expense) => MapEntry(expense.id, expense)));
+    final since = _expensesCache.isEmpty ? null : _lastRefreshCursor;
+    final result = await _fetchExpenses(updatedSince: since);
+    if (since == null) {
+      _expensesCache
+        ..clear()
+        ..addEntries(
+          result.expenses.map((expense) => MapEntry(expense.id, expense)),
+        );
+    } else {
+      removeCachedDeletedIds(result.deletedIds);
+      upsertCachedExpenses(result.expenses);
+    }
+    _lastRefreshCursor =
+        result.serverTime ??
+        _maxUpdatedAt(result.expenses) ??
+        _lastRefreshCursor;
   }
 
   Future<void> createExpense(
@@ -42,6 +55,7 @@ class ExpenseRepository {
             'Authorization': 'Bearer $token',
           },
           body: jsonEncode(<String, dynamic>{
+            'id': expense.id,
             'amount': expense.amount,
             'currency': expense.currency,
             'category': expense.category ?? 'Personal',
@@ -88,6 +102,7 @@ class ExpenseRepository {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final created = Expense.fromBackendJson(payload);
     _expensesCache[created.id] = created;
+    _lastRefreshCursor = _maxDate(_lastRefreshCursor, created.updatedAt);
   }
 
   Future<void> updateExpense(
@@ -146,6 +161,7 @@ class ExpenseRepository {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final updated = Expense.fromBackendJson(payload);
     _expensesCache[updated.id] = updated;
+    _lastRefreshCursor = _maxDate(_lastRefreshCursor, updated.updatedAt);
   }
 
   Future<void> deleteExpense(String id) async {
@@ -168,6 +184,7 @@ class ExpenseRepository {
     }
 
     _expensesCache.remove(id);
+    _lastRefreshCursor = DateTime.now().toUtc();
   }
 
   Future<String> exportExpensesCsv({
@@ -226,6 +243,7 @@ class ExpenseRepository {
     for (final expense in expenses) {
       if (expense.id.isNotEmpty) {
         _expensesCache[expense.id] = expense;
+        _lastRefreshCursor = _maxDate(_lastRefreshCursor, expense.updatedAt);
       }
     }
   }
@@ -246,9 +264,14 @@ class ExpenseRepository {
     await refresh();
   }
 
-  Future<List<Expense>> _fetchExpenses() async {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/api/v1/expenses?page=1&limit=200',
+  Future<_ExpenseFetchResult> _fetchExpenses({DateTime? updatedSince}) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/api/v1/expenses').replace(
+      queryParameters: {
+        'page': '1',
+        'limit': '200',
+        if (updatedSince != null)
+          'updatedSince': updatedSince.toUtc().toIso8601String(),
+      },
     );
     final token = await _authTokenProvider.getBearerToken();
     final response = await _client
@@ -270,10 +293,48 @@ class ExpenseRepository {
     final payload = jsonDecode(response.body) as Map<String, dynamic>;
     final list = (payload['expenses'] as List<dynamic>? ?? const [])
         .cast<Map<String, dynamic>>();
-    return list.map(Expense.fromBackendJson).toList(growable: false);
+    final expenses = list.map(Expense.fromBackendJson).toList(growable: false);
+    return _ExpenseFetchResult(
+      expenses: expenses,
+      deletedIds: (payload['deletedIds'] as List<dynamic>? ?? const [])
+          .map((id) => id.toString())
+          .where((id) => id.trim().isNotEmpty)
+          .toList(growable: false),
+      serverTime: DateTime.tryParse((payload['serverTime'] as String?) ?? ''),
+    );
   }
 
   void dispose() {
     _client.close();
   }
+
+  DateTime? _maxUpdatedAt(Iterable<Expense> expenses) {
+    DateTime? latest;
+    for (final expense in expenses) {
+      latest = _maxDate(latest, expense.updatedAt);
+    }
+    return latest;
+  }
+
+  DateTime? _maxDate(DateTime? first, DateTime? second) {
+    if (first == null) return second?.toUtc();
+    if (second == null) return first.toUtc();
+    final normalizedFirst = first.toUtc();
+    final normalizedSecond = second.toUtc();
+    return normalizedSecond.isAfter(normalizedFirst)
+        ? normalizedSecond
+        : normalizedFirst;
+  }
+}
+
+class _ExpenseFetchResult {
+  const _ExpenseFetchResult({
+    required this.expenses,
+    required this.deletedIds,
+    required this.serverTime,
+  });
+
+  final List<Expense> expenses;
+  final List<String> deletedIds;
+  final DateTime? serverTime;
 }
