@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:expense_tracker/core/constants/app_timing.dart';
 import 'package:expense_tracker/core/constants/app_spacing.dart';
 import 'package:flutter/material.dart';
 
@@ -12,7 +13,7 @@ class AppPageContainer extends StatefulWidget {
     this.onAutoRefresh,
     this.autoRefresh = false,
     this.refreshOnResume = true,
-    this.refreshInterval = const Duration(seconds: 45),
+    this.refreshInterval = AppTiming.pageAutoRefreshInterval,
     this.showSyncStatus = true,
     super.key,
   });

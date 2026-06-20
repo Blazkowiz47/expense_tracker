@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:expense_tracker/core/constants/app_timing.dart';
 import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
 import 'package:expense_tracker/features/credit_cards/models/credit_card.dart';
@@ -618,7 +619,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.pump(const Duration(seconds: 45));
+    await tester.pump(AppTiming.pageAutoRefreshInterval);
     await tester.pump();
 
     expect(repository.fetchCount, 1);

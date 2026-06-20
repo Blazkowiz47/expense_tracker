@@ -1,3 +1,4 @@
+import 'package:expense_tracker/core/constants/app_timing.dart';
 import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/data/models/group.dart';
 import 'package:expense_tracker/data/repositories/freshness_repository.dart';
@@ -451,7 +452,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.pump(const Duration(seconds: 45));
+    await tester.pump(AppTiming.pageAutoRefreshInterval);
     await tester.pump();
 
     expect(repository.fetchGroupCount, 1);
@@ -486,7 +487,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.pump(const Duration(seconds: 45));
+    await tester.pump(AppTiming.pageAutoRefreshInterval);
     await tester.pump();
 
     expect(repository.fetchGroupCount, 1);

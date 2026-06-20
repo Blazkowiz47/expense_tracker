@@ -1,4 +1,5 @@
 import 'package:expense_tracker/core/auth/auth_token_provider.dart';
+import 'package:expense_tracker/core/constants/app_timing.dart';
 import 'package:expense_tracker/data/models/freshness_snapshot.dart';
 import 'package:expense_tracker/data/models/expense.dart';
 import 'package:expense_tracker/data/repositories/expenses_repository.dart';
@@ -251,7 +252,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.pump(const Duration(seconds: 45));
+    await tester.pump(AppTiming.pageAutoRefreshInterval);
     await tester.pump();
 
     expect(friendsRepository.fetchFriendsCount, 1);
